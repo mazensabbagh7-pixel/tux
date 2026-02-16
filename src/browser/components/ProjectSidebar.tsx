@@ -41,7 +41,6 @@ import {
   sortSectionsByLinkedList,
 } from "@/browser/utils/ui/workspaceFiltering";
 import { Tooltip, TooltipTrigger, TooltipContent } from "./ui/tooltip";
-import { SidebarCollapseButton } from "./ui/SidebarCollapseButton";
 import { ConfirmationModal } from "./ConfirmationModal";
 import SecretsModal from "./SecretsModal";
 import type { Secret } from "@/common/types/secrets";
@@ -50,7 +49,7 @@ import { WorkspaceListItem, type WorkspaceSelection } from "./WorkspaceListItem"
 import { WorkspaceStatusIndicator } from "./WorkspaceStatusIndicator";
 import { RenameProvider } from "@/browser/contexts/WorkspaceRenameContext";
 import { useProjectContext } from "@/browser/contexts/ProjectContext";
-import { ChevronRight, MessageCircle, KeyRound } from "lucide-react";
+import { ChevronRight, MessageCircle, KeyRound, PanelLeftClose, PanelLeft, Plus } from "lucide-react";
 import { MUX_HELP_CHAT_WORKSPACE_ID } from "@/common/constants/muxChat";
 import { useWorkspaceActions } from "@/browser/contexts/WorkspaceContext";
 import { useRouter } from "@/browser/contexts/RouterContext";
@@ -58,6 +57,7 @@ import { usePopoverError } from "@/browser/hooks/usePopoverError";
 import { PopoverError } from "./PopoverError";
 import { SectionHeader } from "./SectionHeader";
 import { AddSectionButton } from "./AddSectionButton";
+import { SettingsButton } from "./SettingsButton";
 import { WorkspaceSectionDropZone } from "./WorkspaceSectionDropZone";
 import { WorkspaceDragLayer } from "./WorkspaceDragLayer";
 import { SectionDragLayer } from "./SectionDragLayer";
@@ -759,32 +759,41 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
             <>
               <div className="border-dark flex flex-col border-b py-3 pr-3 pl-4">
                 <div className="flex items-center justify-between">
-                <div className="flex min-w-0 items-center gap-2">
-                  <button
-                    onClick={handleOpenMuxChat}
-                    className="shrink-0 cursor-pointer border-none bg-transparent p-0"
-                    aria-label="Open Chat with Mux"
-                  >
-                    <MuxLogo className="h-5 w-[44px]" aria-hidden="true" />
-                  </button>
-                  {muxChatProjectPath && (
-                    <>
-                      <MuxChatHelpButton
-                        onClick={handleOpenMuxChat}
-                        isSelected={selectedWorkspace?.workspaceId === MUX_HELP_CHAT_WORKSPACE_ID}
-                      />
-                      <MuxChatStatusIndicator />
-                    </>
-                  )}
-                </div>
-                <button
-                  onClick={onAddProject}
-                  aria-label="Add project"
-                  className="text-secondary hover:bg-hover hover:border-border-light flex h-6 shrink-0 cursor-pointer items-center gap-1 rounded border border-transparent bg-transparent px-1.5 text-xs transition-all duration-200"
-                >
-                  <span className="text-base leading-none">+</span>
-                  <span>Add Project</span>
-                </button>
+                  <div className="flex min-w-0 items-center gap-2">
+                    <button
+                      onClick={handleOpenMuxChat}
+                      className="shrink-0 cursor-pointer border-none bg-transparent p-0"
+                      aria-label="Open Chat with Mux"
+                    >
+                      <MuxLogo className="h-5 w-[44px]" aria-hidden="true" />
+                    </button>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    {muxChatProjectPath && (
+                      <>
+                        <MuxChatHelpButton
+                          onClick={handleOpenMuxChat}
+                          isSelected={selectedWorkspace?.workspaceId === MUX_HELP_CHAT_WORKSPACE_ID}
+                        />
+                        <MuxChatStatusIndicator />
+                      </>
+                    )}
+                    <SettingsButton />
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          onClick={onToggleCollapsed}
+                          aria-label="Collapse sidebar"
+                          className="border-border-light text-muted-foreground hover:border-border-medium/80 hover:bg-toggle-bg/70 flex h-5 w-5 cursor-pointer items-center justify-center rounded border bg-transparent transition-all duration-200"
+                        >
+                          <PanelLeftClose className="h-3.5 w-3.5" aria-hidden />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        Collapse sidebar ({formatKeybind(KEYBINDS.TOGGLE_SIDEBAR)})
+                      </TooltipContent>
+                    </Tooltip>
+                  </div>
                 </div>
                 <span className="text-[10px] text-muted-foreground mt-1 tracking-wide">
                   {VERSION.git_describe ?? "(dev)"}
@@ -1349,12 +1358,35 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
               </div>
             </>
           )}
-          <SidebarCollapseButton
-            collapsed={collapsed}
-            onToggle={onToggleCollapsed}
-            side="left"
-            shortcut={formatKeybind(KEYBINDS.TOGGLE_SIDEBAR)}
-          />
+          {!collapsed ? (
+            <div className="border-dark mt-auto flex shrink-0 items-center justify-center border-t py-2">
+              <button
+                onClick={onAddProject}
+                aria-label="Add project"
+                className="text-muted hover:text-foreground flex cursor-pointer items-center gap-1.5 border-none bg-transparent text-sm transition-colors duration-200"
+              >
+                <Plus className="h-4 w-4" />
+                <span>Project</span>
+              </button>
+            </div>
+          ) : (
+            <div className="mt-auto flex shrink-0 items-center justify-center pb-2">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    onClick={onToggleCollapsed}
+                    aria-label="Expand sidebar"
+                    className="border-border-light text-muted-foreground hover:border-border-medium/80 hover:bg-toggle-bg/70 flex h-7 w-7 cursor-pointer items-center justify-center rounded border bg-transparent transition-all duration-200"
+                  >
+                    <PanelLeft className="h-4 w-4" aria-hidden />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="right">
+                  Expand sidebar ({formatKeybind(KEYBINDS.TOGGLE_SIDEBAR)})
+                </TooltipContent>
+              </Tooltip>
+            </div>
+          )}
           {secretsModalState && (
             <SecretsModal
               isOpen={secretsModalState.isOpen}

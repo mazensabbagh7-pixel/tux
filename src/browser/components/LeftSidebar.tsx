@@ -2,7 +2,6 @@ import React from "react";
 import { cn } from "@/common/lib/utils";
 import type { FrontendWorkspaceMetadata } from "@/common/types/workspace";
 import ProjectSidebar from "./ProjectSidebar";
-import { TitleBar } from "./TitleBar";
 import { isDesktopMode } from "@/browser/hooks/useDesktopTitlebar";
 
 interface LeftSidebarProps {
@@ -31,15 +30,8 @@ export function LeftSidebar(props: LeftSidebarProps) {
     typeof window !== "undefined" &&
     window.matchMedia("(max-width: 768px) and (pointer: coarse)").matches;
 
-  const handleBeforeOpenSettings = () => {
-    // Keep settings navigation escapable on touch devices by dismissing the
-    // off-canvas sidebar as soon as the user opens settings from this sidebar.
-    if (!collapsed && isMobileTouch) {
-      onToggleCollapsed();
-    }
-  };
 
-  const width = collapsed ? "20px" : `${widthPx ?? 288}px`;
+  const width = collapsed ? "40px" : `${widthPx ?? 288}px`;
 
   return (
     <>
@@ -64,11 +56,11 @@ export function LeftSidebar(props: LeftSidebarProps) {
           // so it aligns with titlebar bottom edge and doesn't cut through traffic lights
           isDesktop &&
             collapsed &&
-            "border-r-0 after:absolute after:right-0 after:top-8 after:bottom-0 after:w-px after:bg-border"
+            "border-r-0 after:absolute after:right-0 after:top-0 after:bottom-0 after:w-px after:bg-border"
         )}
         style={{ width }}
       >
-        {!collapsed && <TitleBar onBeforeOpenSettings={handleBeforeOpenSettings} />}
+
         <ProjectSidebar
           {...projectSidebarProps}
           collapsed={collapsed}
