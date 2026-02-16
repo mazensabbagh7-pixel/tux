@@ -49,7 +49,7 @@ import { WorkspaceListItem, type WorkspaceSelection } from "./WorkspaceListItem"
 import { WorkspaceStatusIndicator } from "./WorkspaceStatusIndicator";
 import { RenameProvider } from "@/browser/contexts/WorkspaceRenameContext";
 import { useProjectContext } from "@/browser/contexts/ProjectContext";
-import { ChevronRight, MessageCircle, KeyRound, PanelLeftClose, PanelLeft, Plus } from "lucide-react";
+import { ChevronRight, MessageCircle, KeyRound, PanelLeftClose, PanelLeftOpen, Plus } from "lucide-react";
 import { MUX_HELP_CHAT_WORKSPACE_ID } from "@/common/constants/muxChat";
 import { useWorkspaceActions } from "@/browser/contexts/WorkspaceContext";
 import { useRouter } from "@/browser/contexts/RouterContext";
@@ -57,6 +57,7 @@ import { usePopoverError } from "@/browser/hooks/usePopoverError";
 import { PopoverError } from "./PopoverError";
 import { SectionHeader } from "./SectionHeader";
 import { AddSectionButton } from "./AddSectionButton";
+import { Button } from "@/browser/components/ui/button";
 import { SettingsButton } from "./SettingsButton";
 import { WorkspaceSectionDropZone } from "./WorkspaceSectionDropZone";
 import { WorkspaceDragLayer } from "./WorkspaceDragLayer";
@@ -85,9 +86,11 @@ const MuxChatHelpButton: React.FC<{
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <button
+        <Button
+          variant="ghost"
+          size="icon"
           onClick={onClick}
-          className="text-muted hover:text-primary relative flex shrink-0 cursor-pointer items-center border-none bg-transparent p-0 transition-colors"
+          className="border-border-light text-muted-foreground hover:border-border-medium/80 hover:bg-toggle-bg/70 relative h-5 w-5 border"
           aria-label="Open Chat with Mux"
         >
           <MessageCircle className="h-3.5 w-3.5" />
@@ -97,7 +100,7 @@ const MuxChatHelpButton: React.FC<{
               aria-label="Unread messages"
             />
           )}
-        </button>
+        </Button>
       </TooltipTrigger>
       <TooltipContent side="bottom">Chat with Mux</TooltipContent>
     </Tooltip>
@@ -765,7 +768,7 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
                       className="shrink-0 cursor-pointer border-none bg-transparent p-0"
                       aria-label="Open Chat with Mux"
                     >
-                      <MuxLogo className="h-5 w-auto" aria-hidden="true" />
+                      <MuxLogo className="h-4 w-auto" aria-hidden="true" />
                     </button>
                   </div>
                   <div className="flex items-center gap-1.5">
@@ -781,13 +784,15 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
                     <SettingsButton />
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <button
+                        <Button
+                          variant="ghost"
+                          size="icon"
                           onClick={onToggleCollapsed}
                           aria-label="Collapse sidebar"
-                          className="border-border-light text-muted-foreground hover:border-border-medium/80 hover:bg-toggle-bg/70 flex h-5 w-5 cursor-pointer items-center justify-center rounded border bg-transparent transition-all duration-200"
+                          className="border-border-light text-muted-foreground hover:border-border-medium/80 hover:bg-toggle-bg/70 h-5 w-5 border"
                         >
                           <PanelLeftClose className="h-3.5 w-3.5" aria-hidden />
-                        </button>
+                        </Button>
                       </TooltipTrigger>
                       <TooltipContent>
                         Collapse sidebar ({formatKeybind(KEYBINDS.TOGGLE_SIDEBAR)})
@@ -1373,13 +1378,15 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
             <div className="flex shrink-0 items-center justify-center pt-3 pb-2">
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <button
+                  <Button
+                    variant="ghost"
+                    size="icon"
                     onClick={onToggleCollapsed}
                     aria-label="Expand sidebar"
-                    className="border-border-light text-muted-foreground hover:border-border-medium/80 hover:bg-toggle-bg/70 flex h-7 w-7 cursor-pointer items-center justify-center rounded border bg-transparent transition-all duration-200"
+                    className="border-border-light text-muted-foreground hover:border-border-medium/80 hover:bg-toggle-bg/70 h-5 w-5 border"
                   >
-                    <PanelLeft className="h-4 w-4" aria-hidden />
-                  </button>
+                    <PanelLeftOpen className="h-3.5 w-3.5" aria-hidden />
+                  </Button>
                 </TooltipTrigger>
                 <TooltipContent side="right">
                   Expand sidebar ({formatKeybind(KEYBINDS.TOGGLE_SIDEBAR)})
