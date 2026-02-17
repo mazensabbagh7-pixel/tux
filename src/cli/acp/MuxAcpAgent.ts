@@ -165,7 +165,12 @@ export class MuxAcpAgent implements AcpAgent {
 
     return {
       sessionId: workspaceId,
-      configOptions: this.buildConfigOptions(modeOptions, { agentId, model, thinkingLevel }),
+      configOptions: this.buildConfigOptions(modeOptions, {
+        sessionId: workspaceId,
+        agentId,
+        model,
+        thinkingLevel,
+      }),
       modes: this.buildModes(modeOptions, agentId),
     };
   }
@@ -199,6 +204,7 @@ export class MuxAcpAgent implements AcpAgent {
 
     return {
       configOptions: this.buildConfigOptions(modeOptions, {
+        sessionId: workspaceId,
         agentId,
         model,
         thinkingLevel,
@@ -494,6 +500,7 @@ export class MuxAcpAgent implements AcpAgent {
 
     return {
       configOptions: this.buildConfigOptions(modeOptions, {
+        sessionId: params.sessionId,
         agentId: updated.agentId,
         model: updated.model,
         thinkingLevel: updated.thinkingLevel,
@@ -652,6 +659,7 @@ export class MuxAcpAgent implements AcpAgent {
     return {
       sessionId: workspaceId,
       configOptions: this.buildConfigOptions(modeOptions, {
+        sessionId: workspaceId,
         agentId,
         model,
         thinkingLevel,
@@ -1086,6 +1094,7 @@ export class MuxAcpAgent implements AcpAgent {
   private buildConfigOptions(
     modeOptions: ModeOption[],
     current: {
+      sessionId: string;
       agentId: string;
       model: string;
       thinkingLevel: ThinkingLevel;
@@ -1093,9 +1102,15 @@ export class MuxAcpAgent implements AcpAgent {
   ): acpSchema.SessionConfigOption[] {
     const modeValueIds = new Set(modeOptions.map((mode) => mode.id));
 
-    const normalizedAgentId = modeValueIds.has(current.agentId)
-      ? current.agentId
-      : (modeOptions[0]?.id ?? DEFAULT_AGENT_ID);
+    // If the session's agent isn't in the available modes (e.g. a hidden or
+    // non-uiSelectable agent loaded from workspace metadata), fall back to the
+    // first mode option and update session state so prompt() executes with the
+    // same agent the client sees in its UI.
+    let normalizedAgentId = current.agentId;
+    if (!modeValueIds.has(normalizedAgentId)) {
+      normalizedAgentId = modeOptions[0]?.id ?? DEFAULT_AGENT_ID;
+      this.sessionManager.updateConfig(current.sessionId, { agentId: normalizedAgentId });
+    }
 
     const modelOptions = this.getModelOptions(current.model);
 
