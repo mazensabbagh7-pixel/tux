@@ -145,17 +145,27 @@ export function useResumeManager() {
   };
 
   const shouldResumeAsCriticTurn = (state: WorkspaceState): boolean => {
-    const lastPartialAssistantLike = [...state.messages].reverse().find((message) => {
+    // Inspect only the latest partial assistant/reasoning message. Older partial critic
+    // entries can remain in state after later actor partials and must not force critic resume.
+    const latestPartialAssistantLike = [...state.messages].reverse().find((message) => {
       if (message.type !== "assistant" && message.type !== "reasoning") {
         return false;
       }
-      if (message.isPartial !== true) {
-        return false;
-      }
-      return message.messageSource === "critic";
+      return message.isPartial === true;
     });
 
-    return lastPartialAssistantLike !== undefined;
+    if (!latestPartialAssistantLike) {
+      return false;
+    }
+
+    if (
+      latestPartialAssistantLike.type !== "assistant" &&
+      latestPartialAssistantLike.type !== "reasoning"
+    ) {
+      return false;
+    }
+
+    return latestPartialAssistantLike.messageSource === "critic";
   };
 
   /**

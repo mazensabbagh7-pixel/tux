@@ -172,12 +172,20 @@ export function isCriticDoneResponse(parts: CompletedMessagePart[]): boolean {
     return false;
   }
 
-  if (parts.some((part) => part.type !== "text")) {
+  // Thinking-enabled critics may emit reasoning parts alongside visible text.
+  // Treat reasoning as non-user-visible metadata when checking the /done sentinel.
+  if (parts.some((part) => part.type !== "text" && part.type !== "reasoning")) {
     return false;
   }
 
-  const combined = parts
-    .filter((part): part is Extract<CompletedMessagePart, { type: "text" }> => part.type === "text")
+  const textParts = parts.filter(
+    (part): part is Extract<CompletedMessagePart, { type: "text" }> => part.type === "text"
+  );
+  if (textParts.length === 0) {
+    return false;
+  }
+
+  const combined = textParts
     .map((part) => part.text)
     .join("")
     .trim();
