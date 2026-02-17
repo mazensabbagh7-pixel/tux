@@ -40,6 +40,22 @@ describe("MemoryWriterPolicy", () => {
     }
   }
 
+  async function waitForCondition(
+    predicate: () => boolean,
+    timeoutMs: number,
+    errorMessage: string
+  ): Promise<void> {
+    const startedAt = Date.now();
+    while (Date.now() - startedAt < timeoutMs) {
+      if (predicate()) {
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+
+    throw new Error(errorMessage);
+  }
+
   function createTestConfig(params: {
     sessionsDir: string;
     interval: number;
@@ -214,7 +230,14 @@ describe("MemoryWriterPolicy", () => {
       resolveHistory();
       await first;
 
-      await policy.onAssistantStreamEnd(createContext({ messageId: "msg_3" }));
+      // If a new turn arrives while a run is in-flight, the pending run should
+      // begin automatically once the in-flight run completes (without requiring
+      // an additional message after the user stops chatting).
+      await waitForCondition(
+        () => getHistoryCalls >= 2,
+        2_000,
+        "expected deferred memory-writer run to start after in-flight completion"
+      );
       expect(getHistoryCalls).toBe(2);
     });
   });

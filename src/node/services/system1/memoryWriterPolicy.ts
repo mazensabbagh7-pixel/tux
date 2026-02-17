@@ -103,6 +103,9 @@ export class MemoryWriterPolicy {
   private readonly stateByWorkspace = new Map<string, MemoryWriterSchedulingState>();
   private readonly queueByWorkspace = new Map<string, Promise<void>>();
   private readonly inFlightByWorkspace = new Map<string, Promise<void>>();
+  // Keep the most recent eligible stream context so we can trigger a deferred run
+  // when turns reach the interval while another run is still in-flight.
+  private readonly latestContextByWorkspace = new Map<string, MemoryWriterStreamContext>();
   private readonly stateFileManager: SessionFileManager<MemoryWriterSchedulingState>;
 
   constructor(
@@ -153,6 +156,10 @@ export class MemoryWriterPolicy {
       });
       return;
     }
+
+    // Store the latest eligible context so we can run immediately after an
+    // in-flight memory writer completes, without waiting for another message.
+    this.latestContextByWorkspace.set(ctx.workspaceId, ctx);
 
     const scheduleResult = await this.enqueueWorkspaceUpdate(
       ctx.workspaceId,
@@ -250,11 +257,28 @@ export class MemoryWriterPolicy {
     state.turnsSinceLastRun += 1;
 
     const inFlight = this.inFlightByWorkspace.get(ctx.workspaceId);
-    if (inFlight || state.turnsSinceLastRun < interval) {
+    if (inFlight) {
       await this.persistState(ctx.workspaceId, state);
       return {};
     }
 
+    if (state.turnsSinceLastRun < interval) {
+      await this.persistState(ctx.workspaceId, state);
+      return {};
+    }
+
+    const { runPromise } = await this.startScheduledRun(ctx, state);
+    return { runPromise };
+  }
+
+  private async startScheduledRun(
+    ctx: MemoryWriterStreamContext,
+    state: MemoryWriterSchedulingState
+  ): Promise<{ runPromise: Promise<void> }> {
+    // Wrap the run promise so queue-serialized callers can await schedule setup
+    // (state persistence + run start) without accidentally awaiting run completion.
+    // Awaiting completion inside the queue operation can deadlock against run-finally
+    // bookkeeping that is also queued.
     state.turnsSinceLastRun = 0;
 
     const runStartedAt = Date.now();
@@ -266,6 +290,34 @@ export class MemoryWriterPolicy {
 
     const runPromise = this.startRun(ctx, runStartedAt);
     return { runPromise };
+  }
+
+  private async maybeStartDeferredRun(workspaceId: string): Promise<void> {
+    const inFlight = this.inFlightByWorkspace.get(workspaceId);
+    if (inFlight) {
+      return;
+    }
+
+    const taskSettings = this.config.loadConfigOrDefault().taskSettings ?? DEFAULT_TASK_SETTINGS;
+    const interval =
+      taskSettings.memoryWriterIntervalMessages ??
+      SYSTEM1_MEMORY_WRITER_LIMITS.memoryWriterIntervalMessages.default;
+
+    if (!Number.isInteger(interval) || interval <= 0) {
+      return;
+    }
+
+    const state = await this.getOrLoadState(workspaceId);
+    if (state.turnsSinceLastRun < interval) {
+      return;
+    }
+
+    const latestCtx = this.latestContextByWorkspace.get(workspaceId);
+    if (!latestCtx) {
+      return;
+    }
+
+    await this.startScheduledRun(latestCtx, state);
   }
 
   private startRun(ctx: MemoryWriterStreamContext, runStartedAt: number): Promise<void> {
@@ -301,6 +353,15 @@ export class MemoryWriterPolicy {
         if (current === runPromise) {
           this.inFlightByWorkspace.delete(ctx.workspaceId);
         }
+
+        await this.enqueueWorkspaceUpdate(
+          ctx.workspaceId,
+          "maybe-start-deferred-run",
+          async () => {
+            await this.maybeStartDeferredRun(ctx.workspaceId);
+          },
+          undefined
+        );
       });
 
     this.inFlightByWorkspace.set(ctx.workspaceId, runPromise);
