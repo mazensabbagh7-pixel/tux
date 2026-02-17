@@ -231,12 +231,21 @@ export class MuxAcpAgent implements AcpAgent {
       // lastSeenHistorySequence reflects all replayed stream-starts and the
       // prompt resolver's minHistorySequence guard is accurate.
       const CAUGHT_UP_TIMEOUT_MS = 30_000;
+      let timer: ReturnType<typeof setTimeout> | undefined;
       const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => {
+        timer = setTimeout(() => {
           reject(new Error("Timed out waiting for session replay to finish"));
         }, CAUGHT_UP_TIMEOUT_MS);
       });
-      await Promise.race([session.caughtUpPromise, timeoutPromise]);
+      try {
+        await Promise.race([session.caughtUpPromise, timeoutPromise]);
+      } finally {
+        // Clear the timer so it doesn't keep the event loop alive or
+        // accumulate across sessions after the race settles.
+        if (timer != null) {
+          clearTimeout(timer);
+        }
+      }
     }
 
     // Re-read session after await.
