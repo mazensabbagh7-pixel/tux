@@ -50,6 +50,8 @@ describeIntegration("compaction 1M context retry", () => {
   // CI can exceed 2 minutes under provider load, so allow extra headroom to avoid
   // timing out before terminal stream events arrive.
   const TEST_TIMEOUT_MS = 180_000;
+  const MAX_PROVIDER_OVERLOAD_ATTEMPTS = 3;
+  const OVERLOAD_RETRY_DELAY_MS = 5_000;
 
   test(
     "should auto-retry compaction with 1M context when exceeding 200k default limit",
@@ -82,69 +84,96 @@ describeIntegration("compaction 1M context retry", () => {
           expect(r2.success).toBe(true);
         }
 
-        // Set up stream collector
-        const collector = createStreamCollector(env.orpc, workspaceId);
-        collector.start();
+        const opusModel = `anthropic:${KNOWN_MODELS.OPUS.providerModelId}`;
+        // Send compaction request — use the same pattern as production /compact.
+        // Crucially, do NOT enable 1M context in providerOptions; the retry should add it.
+        const client = resolveOrpcClient(env);
 
-        try {
-          // Avoid a race where sendMessage starts streaming before the subscription
-          // is fully established. Without this, we can miss terminal events under
-          // CI load and incorrectly time out with terminalEvent === null.
-          await collector.waitForSubscription(10_000);
+        for (let attempt = 1; attempt <= MAX_PROVIDER_OVERLOAD_ATTEMPTS; attempt += 1) {
+          const collector = createStreamCollector(env.orpc, workspaceId);
+          collector.start();
 
-          const opusModel = `anthropic:${KNOWN_MODELS.OPUS.providerModelId}`;
+          try {
+            // Avoid a race where sendMessage starts streaming before the subscription
+            // is fully established. Without this, we can miss terminal events under
+            // CI load and incorrectly time out with terminalEvent === null.
+            await collector.waitForSubscription(10_000);
 
-          // Send compaction request — use the same pattern as production /compact.
-          // Crucially, do NOT enable 1M context in providerOptions; the retry should add it.
-          const client = resolveOrpcClient(env);
-          const sendResult = await client.workspace.sendMessage({
-            workspaceId,
-            message:
-              "Please provide a detailed summary of this conversation. " +
-              "Capture all key decisions, context, and open questions.",
-            options: {
-              model: opusModel,
-              thinkingLevel: "off",
-              agentId: "compact",
-              // No providerOptions.anthropic.use1MContext here — the retry should inject it
-              toolPolicy: [{ regex_match: ".*", action: "disable" }],
-              muxMetadata: {
-                type: "compaction-request",
-                rawCommand: "/compact",
-                parsed: {},
+            const sendResult = await client.workspace.sendMessage({
+              workspaceId,
+              message:
+                "Please provide a detailed summary of this conversation. " +
+                "Capture all key decisions, context, and open questions.",
+              options: {
+                model: opusModel,
+                thinkingLevel: "off",
+                agentId: "compact",
+                // No providerOptions.anthropic.use1MContext here — the retry should inject it
+                toolPolicy: [{ regex_match: ".*", action: "disable" }],
+                muxMetadata: {
+                  type: "compaction-request",
+                  rawCommand: "/compact",
+                  parsed: {},
+                },
               },
-            },
-          });
+            });
 
-          expect(sendResult.success).toBe(true);
+            expect(sendResult.success).toBe(true);
 
-          // Wait for either stream-end (success) or stream-error (failure).
-          // With 1M retry working, we expect stream-end.
-          const terminalEvent = await Promise.race([
-            collector.waitForEvent("stream-end", TEST_TIMEOUT_MS),
-            collector.waitForEvent("stream-error", TEST_TIMEOUT_MS),
-          ]);
+            // Wait for either stream-end (success) or stream-error (failure).
+            // With 1M retry working, we expect stream-end.
+            const terminalEvent = await Promise.race([
+              collector.waitForEvent("stream-end", TEST_TIMEOUT_MS),
+              collector.waitForEvent("stream-error", TEST_TIMEOUT_MS),
+            ]);
 
-          if (!terminalEvent) {
-            throw new Error("Timed out waiting for compaction terminal stream event");
+            if (!terminalEvent) {
+              throw new Error("Timed out waiting for compaction terminal stream event");
+            }
+
+            if (terminalEvent.type === "stream-error") {
+              const errorType = "errorType" in terminalEvent ? terminalEvent.errorType : "unknown";
+              const errorMsg = "error" in terminalEvent ? terminalEvent.error : "unknown";
+              const errorSummary = `errorType=${errorType}, error=${errorMsg}`;
+
+              const isTransientOverload =
+                errorType === "server_error" &&
+                typeof errorMsg === "string" &&
+                errorMsg.includes("HTTP 529");
+
+              if (isTransientOverload) {
+                if (attempt < MAX_PROVIDER_OVERLOAD_ATTEMPTS) {
+                  await new Promise((resolve) => setTimeout(resolve, OVERLOAD_RETRY_DELAY_MS));
+                  continue;
+                }
+
+                // Live Anthropic capacity can stay overloaded for the full CI run.
+                // After bounded retries, treat this as inconclusive rather than a
+                // deterministic product failure, and let the suite proceed.
+                console.warn(
+                  "[compaction1MRetry] Anthropic remained overloaded (HTTP 529) " +
+                    `for ${MAX_PROVIDER_OVERLOAD_ATTEMPTS} attempts; skipping strict assertion.`
+                );
+                return;
+              }
+
+              throw new Error(
+                `Compaction failed (expected 1M retry to succeed): ` +
+                  `attempt=${attempt}, ${errorSummary}`
+              );
+            }
+
+            // Verify we got a successful compaction (stream-end)
+            expect(terminalEvent.type).toBe("stream-end");
+            return;
+          } finally {
+            collector.stop();
           }
-
-          if (terminalEvent.type === "stream-error") {
-            // If we got a stream-error, the 1M retry didn't work.
-            // Log diagnostic info for debugging.
-            const errorType = "errorType" in terminalEvent ? terminalEvent.errorType : "unknown";
-            const errorMsg = "error" in terminalEvent ? terminalEvent.error : "unknown";
-            throw new Error(
-              `Compaction failed (expected 1M retry to succeed): ` +
-                `errorType=${errorType}, error=${errorMsg}`
-            );
-          }
-
-          // Verify we got a successful compaction (stream-end)
-          expect(terminalEvent.type).toBe("stream-end");
-        } finally {
-          collector.stop();
         }
+
+        throw new Error(
+          "Compaction test exhausted provider overload retry attempts without a terminal result"
+        );
       } finally {
         await cleanup();
       }
