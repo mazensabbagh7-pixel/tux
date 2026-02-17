@@ -167,6 +167,13 @@ function buildSessionState(params: BuildSessionStateParams): SessionState {
     "off"
   );
 
+  // Resolve workspace-level base defaults (ignoring per-mode overrides) so
+  // mode switches can fall back to the user's configured baseline rather
+  // than hard-coded defaults when no per-mode entry exists.
+  const baseSettings = params.metadata.aiSettings;
+  const defaultModelId = resolveModelAlias(baseSettings?.model ?? defaultModel);
+  const defaultThinkingLevel = resolveThinkingLevel(baseSettings?.thinkingLevel, "off");
+
   return {
     sessionId: params.sessionId,
     workspaceId: params.workspaceId,
@@ -174,6 +181,8 @@ function buildSessionState(params: BuildSessionStateParams): SessionState {
     modeId,
     modelId,
     thinkingLevel,
+    defaultModelId,
+    defaultThinkingLevel,
     aiSettingsByAgent: params.metadata.aiSettingsByAgent
       ? { ...params.metadata.aiSettingsByAgent }
       : undefined,

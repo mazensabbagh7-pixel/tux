@@ -10,6 +10,8 @@ function makeState(overrides: Partial<SessionState> = {}): SessionState {
     modeId: overrides.modeId ?? "exec",
     modelId: overrides.modelId ?? "anthropic:claude-opus-4-6",
     thinkingLevel: overrides.thinkingLevel ?? "off",
+    defaultModelId: overrides.defaultModelId ?? "anthropic:claude-opus-4-6",
+    defaultThinkingLevel: overrides.defaultThinkingLevel ?? "off",
     activePromptAbort: overrides.activePromptAbort,
   };
 }

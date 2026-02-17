@@ -16,6 +16,15 @@ export interface SessionState {
   activePromptAbort?: AbortController;
 
   /**
+   * Workspace-level base AI defaults (from `metadata.aiSettings`) resolved at session
+   * creation time. Used as fallback in `applyPerModeAiDefaults` when no per-mode
+   * override exists in `aiSettingsByAgent`, so mode switches restore the user's
+   * configured baseline rather than hard-coded defaults.
+   */
+  defaultModelId: string;
+  defaultThinkingLevel: ThinkingLevel;
+
+  /**
    * Snapshot of per-agent AI settings from workspace metadata at session creation time.
    * Used to restore per-mode defaults when switching modes without an extra API call.
    */

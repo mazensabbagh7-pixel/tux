@@ -18,6 +18,8 @@ function makeSessionState(overrides: Partial<SessionState> = {}): SessionState {
     modeId: overrides.modeId ?? "exec",
     modelId: overrides.modelId ?? KNOWN_MODELS.OPUS.id,
     thinkingLevel: overrides.thinkingLevel ?? "off",
+    defaultModelId: overrides.defaultModelId ?? KNOWN_MODELS.OPUS.id,
+    defaultThinkingLevel: overrides.defaultThinkingLevel ?? "off",
     activePromptAbort: overrides.activePromptAbort,
   };
 }

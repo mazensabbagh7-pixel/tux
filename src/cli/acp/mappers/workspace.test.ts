@@ -211,6 +211,8 @@ describe("createWorkspaceBackedSession", () => {
       modeId: "plan",
       modelId: resolveModelAlias("sonnet"),
       thinkingLevel: "high",
+      defaultModelId: "openai:gpt-5.2",
+      defaultThinkingLevel: "low",
     });
   });
 
