@@ -692,7 +692,7 @@ export function TasksSection() {
   const renderAgentDefaults = (agent: AgentDefinitionDescriptor) => {
     const entry = agentAiDefaults[agent.id];
     const modelValue = entry?.modelString ?? INHERIT;
-    const thinkingValue = entry?.thinkingLevel ?? INHERIT;
+    const rawThinkingValue = entry?.thinkingLevel ?? INHERIT;
     const enabledOverride = entry?.enabled;
 
     const enablementLocked =
@@ -722,6 +722,13 @@ export function TasksSection() {
     // shows the correct thinking levels (e.g. "max" for Opus 4.6, not "xhigh").
     const effectiveModel = modelValue !== INHERIT ? modelValue : inheritedEffectiveModel;
     const allowedThinkingLevels = getThinkingPolicyForModel(effectiveModel);
+    // Defensive rendering: persisted defaults can contain legacy/unsupported
+    // values for a model. Clamp the displayed select value so Radix never
+    // receives an option-less value (which renders as an empty trigger).
+    const thinkingValue =
+      rawThinkingValue === INHERIT
+        ? INHERIT
+        : enforceThinkingPolicy(effectiveModel, rawThinkingValue);
 
     const agentDefinitionPath = getAgentDefinitionPath(agent);
     const scopeNode = agentDefinitionPath ? (
@@ -868,9 +875,13 @@ export function TasksSection() {
   const renderUnknownAgentDefaults = (agentId: string) => {
     const entry = agentAiDefaults[agentId];
     const modelValue = entry?.modelString ?? INHERIT;
-    const thinkingValue = entry?.thinkingLevel ?? INHERIT;
+    const rawThinkingValue = entry?.thinkingLevel ?? INHERIT;
     const effectiveModel = modelValue !== INHERIT ? modelValue : inheritedEffectiveModel;
     const allowedThinkingLevels = getThinkingPolicyForModel(effectiveModel);
+    const thinkingValue =
+      rawThinkingValue === INHERIT
+        ? INHERIT
+        : enforceThinkingPolicy(effectiveModel, rawThinkingValue);
 
     return (
       <div
