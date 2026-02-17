@@ -1997,6 +1997,14 @@ export class AgentSession {
       return false;
     }
 
+    // Prioritize explicit user input over autonomous actor-critic continuation.
+    // If the user queued a follow-up while streaming, flush that queue first
+    // instead of starting another auto-loop turn from the just-finished output.
+    if (!this.messageQueue.isEmpty()) {
+      this.clearCriticLoopState();
+      return false;
+    }
+
     const completedOptions = completedContext.options;
 
     if (completedOptions.isCriticTurn === true) {

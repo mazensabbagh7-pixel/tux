@@ -460,6 +460,66 @@ describe("Actor-Critic mode", () => {
     }
   }, 60_000);
 
+  test("queued user input flushes before critic auto-continuation", async () => {
+    const app = await createAppHarness({ branchPrefix: "critic-queue-priority" });
+    const collector = createStreamCollector(app.env.orpc, app.workspaceId);
+    collector.start();
+    await collector.waitForSubscription(5_000);
+
+    const actorRequests: MockAiRouterRequest[] = [];
+
+    const router = app.env.services.aiService.getMockRouter();
+    expect(router).not.toBeNull();
+    router?.prependHandlers([
+      {
+        match: (request) => request.isCriticTurn === true,
+        respond: () => ({ assistantText: "Critic feedback ".repeat(4_000) }),
+      },
+      {
+        match: (request) => request.isCriticTurn !== true,
+        respond: (request) => {
+          actorRequests.push(cloneRequest(request));
+          if (request.latestUserText.toLowerCase().includes("queued follow-up")) {
+            return { assistantText: "Queued follow-up processed." };
+          }
+          return { assistantText: "Actor baseline." };
+        },
+      },
+    ]);
+
+    try {
+      await app.chat.send("/critic");
+      await app.chat.send("Start critic loop");
+
+      await app.chat.expectTranscriptContains("Actor baseline.", 15_000);
+
+      const criticStreamStart = await collector.waitForEventN("stream-start", 2, 20_000);
+      expect(criticStreamStart).not.toBeNull();
+
+      // Queue a manual follow-up while critic is still streaming.
+      await app.chat.send("queued follow-up");
+
+      await waitFor(
+        () => {
+          expect(actorRequests.length).toBeGreaterThanOrEqual(2);
+        },
+        { timeout: 40_000 }
+      );
+
+      expect(actorRequests[1]?.latestUserText.toLowerCase()).toContain("queued follow-up");
+      await app.chat.expectTranscriptContains("Queued follow-up processed.", 40_000);
+
+      const interruptResult = await app.env.orpc.workspace.interruptStream({
+        workspaceId: app.workspaceId,
+      });
+      expect(interruptResult.success).toBe(true);
+      await app.chat.expectStreamComplete(10_000);
+    } finally {
+      collector.stop();
+      await app.dispose();
+    }
+  }, 120_000);
+
   test("interrupting during critic turn aborts cleanly", async () => {
     const app = await createAppHarness({ branchPrefix: "critic-interrupt" });
     const collector = createStreamCollector(app.env.orpc, app.workspaceId);
