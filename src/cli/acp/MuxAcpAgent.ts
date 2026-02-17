@@ -458,8 +458,9 @@ export class MuxAcpAgent implements AcpAgent {
         break;
       }
 
-      case CONFIG_ID_MODEL:
-        if (!this.knownModelIds().has(params.value)) {
+      case CONFIG_ID_MODEL: {
+        const isCurrentModel = session.model === params.value;
+        if (!isCurrentModel && !this.knownModelIds().has(params.value)) {
           throw this.deps.sdk.RequestError.invalidParams(
             undefined,
             `Unknown model option: ${params.value}`
@@ -468,6 +469,7 @@ export class MuxAcpAgent implements AcpAgent {
 
         this.sessionManager.updateConfig(params.sessionId, { model: params.value });
         break;
+      }
 
       case CONFIG_ID_THINKING_LEVEL:
         if (!isThinkingLevel(params.value)) {
@@ -946,7 +948,9 @@ export class MuxAcpAgent implements AcpAgent {
     }
 
     if (event.type === "stream-error") {
-      this.rejectPrompt(workspaceId, event.messageId, new Error(event.error));
+      this.rejectPrompt(workspaceId, event.messageId, new Error(event.error), {
+        forceIfUnbound: true,
+      });
     }
   }
 
@@ -970,7 +974,12 @@ export class MuxAcpAgent implements AcpAgent {
     promptResolver.resolve(response);
   }
 
-  private rejectPrompt(sessionId: string, messageId: string | undefined, error: Error): void {
+  private rejectPrompt(
+    sessionId: string,
+    messageId: string | undefined,
+    error: Error,
+    options?: { forceIfUnbound?: boolean }
+  ): void {
     const session = this.sessionManager.getSession(sessionId);
     const promptResolver = session?.promptResolver;
 
@@ -978,7 +987,12 @@ export class MuxAcpAgent implements AcpAgent {
       return;
     }
 
-    if (!this.matchesPromptMessage(promptResolver.messageId, messageId)) {
+    const isUnbound = promptResolver.messageId.length === 0;
+    if (isUnbound) {
+      if (!options?.forceIfUnbound) {
+        return;
+      }
+    } else if (!this.matchesPromptMessage(promptResolver.messageId, messageId)) {
       return;
     }
 
