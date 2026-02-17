@@ -487,7 +487,7 @@ function RegularWorkspaceListItemInner(props: WorkspaceListItemProps) {
     }
   };
 
-  const { canInterrupt, awaitingUserQuestion, isStarting, agentStatus } =
+  const { canInterrupt, awaitingUserQuestion, isStarting, agentStatus, skillLoadErrors } =
     useWorkspaceSidebarState(workspaceId);
 
   const fallbackModel = useWorkspaceFallbackModel(workspaceId);
@@ -528,7 +528,7 @@ function RegularWorkspaceListItemInner(props: WorkspaceListItemProps) {
 
   // Determine workspace status for colored dot
   const isSubAgent = (depth ?? 0) > 0;
-  const hasError = metadata.taskStatus === "reported" && metadata.incompatibleRuntime != null;
+  const hasError = metadata.incompatibleRuntime != null || (skillLoadErrors && skillLoadErrors.length > 0);
   const isAwaitingInput = awaitingUserQuestion;
   const isStoppedIncomplete = !isWorking && !isInitializing && !hasError && !isAwaitingInput && metadata.taskStatus === "running";
   const isCompleted = !isWorking && !isInitializing && !hasError && !isAwaitingInput && !isStoppedIncomplete;
@@ -629,7 +629,7 @@ function RegularWorkspaceListItemInner(props: WorkspaceListItemProps) {
           <span
             className="absolute bg-neutral-600"
             style={{
-              left: '15px',
+              left: '17px',
               top: 0,
               bottom: isLastChild ? 'calc(100% - 15px)' : 0,
               width: '1px',
@@ -638,7 +638,7 @@ function RegularWorkspaceListItemInner(props: WorkspaceListItemProps) {
           />
         )}
         {/* Status dot with solid background ring so line goes behind it */}
-        <div className="absolute z-10 flex shrink-0 items-start" style={{ left: '8px', top: '12px' }}>
+        <div className="absolute z-10 flex shrink-0 items-start" style={{ left: '10px', top: '12px' }}>
           <span className="inline-flex items-center justify-center rounded-full bg-sidebar" style={{ padding: '2px' }}>
             <span className={cn(
               "inline-block h-2.5 w-2.5 rounded-full shrink-0 border",
