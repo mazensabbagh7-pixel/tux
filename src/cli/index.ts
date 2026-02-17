@@ -61,6 +61,10 @@ if (subcommand === "run") {
   // The .mjs extension is critical for Node.js to treat it as ESM.
   // eslint-disable-next-line @typescript-eslint/no-implied-eval, @typescript-eslint/no-unsafe-call
   void new Function("return import('./api.mjs')")();
+} else if (subcommand === "acp") {
+  process.argv.splice(env.firstArgIndex, 1);
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  require("./acp");
 } else if (
   subcommand === "desktop" ||
   (env.isElectron && (subcommand === undefined || isElectronLaunchArg(subcommand, env)))
@@ -110,6 +114,7 @@ if (subcommand === "run") {
   }
   program.command("server").description("Start the HTTP/WebSocket ORPC server");
   program.command("api").description("Interact with the mux API via a running server");
+  program.command("acp").description("Run an ACP (Agent Client Protocol) stdio bridge");
   if (isCommandAvailable("desktop", env)) {
     program
       .command("desktop")
