@@ -42,6 +42,7 @@ import {
   normalizeTaskSettings,
 } from "@/common/types/tasks";
 import {
+  discoverAgentSkills,
   discoverAgentSkillsDiagnostics,
   type DiscoverAgentSkillsDiagnosticsResult,
   readAgentSkill,
@@ -845,14 +846,9 @@ export const router = (authToken?: string) => {
             await context.aiService.waitForInit(input.workspaceId);
           }
           const { runtime, discoveryPath } = await resolveAgentDiscoveryContext(context, input);
-          const cacheKey = getAgentSkillsDiscoveryCacheKey(input);
-          const diagnostics = await loadAgentSkillsDiagnosticsWithFallback({
-            cache: agentSkillsDiagnosticsCache,
-            cacheKey,
-            discover: () => discoverAgentSkillsDiagnostics(runtime, discoveryPath),
-          });
-
-          return diagnostics.skills;
+          // Keep list resilient on first-load transient SSH hiccups by using non-diagnostic
+          // discovery, which skips only the affected skill instead of failing the whole request.
+          return discoverAgentSkills(runtime, discoveryPath);
         }),
       listDiagnostics: t
         .input(schemas.agentSkills.listDiagnostics.input)
