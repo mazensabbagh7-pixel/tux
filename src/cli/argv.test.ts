@@ -211,6 +211,21 @@ describe("isCommandAvailable", () => {
     expect(isCommandAvailable("run", env)).toBe(false);
   });
 
+  test("acp is available in bun/node", () => {
+    const env = detectCliEnvironment({}, undefined);
+    expect(isCommandAvailable("acp", env)).toBe(true);
+  });
+
+  test("acp is NOT available in electron dev", () => {
+    const env = detectCliEnvironment({ electron: "33.0.0" }, true);
+    expect(isCommandAvailable("acp", env)).toBe(false);
+  });
+
+  test("acp is NOT available in packaged electron", () => {
+    const env = detectCliEnvironment({ electron: "33.0.0" }, undefined);
+    expect(isCommandAvailable("acp", env)).toBe(false);
+  });
+
   test("server is available everywhere", () => {
     expect(isCommandAvailable("server", detectCliEnvironment({}, undefined))).toBe(true);
     expect(isCommandAvailable("server", detectCliEnvironment({ electron: "33.0.0" }, true))).toBe(

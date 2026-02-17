@@ -109,15 +109,15 @@ export function isElectronLaunchArg(
 
 /**
  * Check if a command is available in the current environment.
- * - "run" requires bun/node - it's not bundled in Electron.
+ * - "run" and "acp" require bun/node - they are not bundled in Electron.
  * - "desktop" only works when running inside Electron runtime.
  */
 export function isCommandAvailable(
   command: string,
   env: CliEnvironment = detectCliEnvironment()
 ): boolean {
-  if (command === "run") {
-    // run.ts is only available in bun/node, not bundled in Electron (dev or packaged)
+  if (command === "run" || command === "acp") {
+    // CLI-only commands are available in bun/node, not bundled in Electron (dev or packaged).
     return !env.isElectron;
   }
   if (command === "desktop") {

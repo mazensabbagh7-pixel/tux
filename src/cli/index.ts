@@ -50,6 +50,15 @@ if (subcommand === "run") {
   process.argv.splice(env.firstArgIndex, 1); // Remove "run" since run.ts defines .name("mux run")
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   require("./run");
+} else if (subcommand === "acp") {
+  if (!isCommandAvailable("acp", env)) {
+    console.error("The 'acp' command is only available via the CLI (bun mux acp).");
+    console.error("It is not bundled in Electron.");
+    process.exit(1);
+  }
+  process.argv.splice(env.firstArgIndex, 1); // Remove "acp" since acp.ts defines .name("mux acp")
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  require("./acp");
 } else if (subcommand === "server") {
   process.argv.splice(env.firstArgIndex, 1);
   // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -104,9 +113,12 @@ if (subcommand === "run") {
   }
 
   // Register subcommand stubs for help display (actual implementations are above)
-  // `run` is only available via bun/node CLI, not bundled in Electron
+  // CLI-only commands (`run`, `acp`) are only available via bun/node CLI, not bundled in Electron
   if (isCommandAvailable("run", env)) {
     program.command("run").description("Run a one-off agent task");
+  }
+  if (isCommandAvailable("acp", env)) {
+    program.command("acp").description("Run the ACP stdio bridge");
   }
   program.command("server").description("Start the HTTP/WebSocket ORPC server");
   program.command("api").description("Interact with the mux API via a running server");
