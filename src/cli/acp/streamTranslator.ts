@@ -225,8 +225,10 @@ function toChunkUpdate(
   sessionUpdate: "user_message_chunk" | "agent_message_chunk" | "agent_thought_chunk",
   text: string
 ): AcpSessionUpdate[] {
-  const normalized = text.trim().length > 0 ? text : "";
-  if (normalized.length === 0) {
+  // Preserve whitespace-only chunks (e.g. "\n") — they are significant for
+  // streamed output formatting (markdown, code blocks, etc.). Only skip
+  // truly empty strings.
+  if (text.length === 0) {
     return [];
   }
 
@@ -235,7 +237,7 @@ function toChunkUpdate(
       sessionUpdate,
       content: {
         type: "text",
-        text: normalized,
+        text,
       },
     },
   ];

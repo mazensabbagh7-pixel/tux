@@ -22,6 +22,28 @@ function normalizeOptionalToken(token: string | undefined): string | undefined {
   return trimmed?.length ? trimmed : undefined;
 }
 
+const HEALTH_CHECK_TIMEOUT_MS = 3_000;
+
+/**
+ * Probe whether a Mux server is actually listening by fetching its health
+ * endpoint. Returns false on any network error or timeout so callers can
+ * fall through to alternative discovery strategies.
+ */
+async function isServerReachable(baseUrl: string): Promise<boolean> {
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), HEALTH_CHECK_TIMEOUT_MS);
+    try {
+      const res = await fetch(`${baseUrl}/health`, { signal: controller.signal });
+      return res.ok;
+    } finally {
+      clearTimeout(timer);
+    }
+  } catch {
+    return false;
+  }
+}
+
 export async function discoverOrSpawnServer(
   options: DiscoverServerOptions
 ): Promise<ServerConnection> {
@@ -45,16 +67,23 @@ export async function discoverOrSpawnServer(
     };
   }
 
-  // Priority 3: lockfile discovery
+  // Priority 3: lockfile discovery — verify the endpoint is reachable before
+  // committing to it, so stale lockfiles (e.g. after a crash) fall through to
+  // the in-process spawn path instead of leaving `mux acp` targeting a dead URL.
   try {
     const lockfile = new ServerLockfile(getMuxHome());
     const data = await lockfile.read();
     if (data) {
       assert(data.baseUrl.trim().length > 0, "Server lockfile baseUrl must not be empty");
-      return {
-        baseUrl: data.baseUrl,
-        authToken: normalizeOptionalToken(options.authToken ?? data.token),
-      };
+
+      const reachable = await isServerReachable(data.baseUrl);
+      if (reachable) {
+        return {
+          baseUrl: data.baseUrl,
+          authToken: normalizeOptionalToken(options.authToken ?? data.token),
+        };
+      }
+      // Server unreachable — fall through to in-process spawn.
     }
   } catch {
     // Ignore discovery errors and fallback to spawning.
