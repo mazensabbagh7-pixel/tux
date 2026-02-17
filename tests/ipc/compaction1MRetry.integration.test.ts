@@ -10,7 +10,7 @@
  */
 
 import { setupWorkspace, shouldRunIntegrationTests, validateApiKeys } from "./setup";
-import { createStreamCollector, resolveOrpcClient } from "./helpers";
+import { createStreamCollector, resolveOrpcClient, configureTestRetries } from "./helpers";
 import { HistoryService } from "../../src/node/services/historyService";
 import { createMuxMessage } from "../../src/common/types/message";
 import { KNOWN_MODELS } from "../../src/common/constants/knownModels";
@@ -41,6 +41,11 @@ function buildFillerText(charCount: number): string {
 }
 
 describeIntegration("compaction 1M context retry", () => {
+  // This test depends on a live Anthropic API call and can intermittently fail
+  // with transient provider overloads (HTTP 529). Retries in CI reduce noise
+  // while still validating the 1M retry behavior when capacity is available.
+  configureTestRetries(3);
+
   // Compaction with 1M retry can take a while — summarizing 250k+ tokens of content.
   // CI can exceed 2 minutes under provider load, so allow extra headroom to avoid
   // timing out before terminal stream events arrive.
