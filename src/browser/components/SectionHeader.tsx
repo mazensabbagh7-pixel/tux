@@ -74,8 +74,7 @@ export const SectionHeader: React.FC<SectionHeaderProps> = ({
     <div
       className="group relative flex items-center gap-1 border-t border-white/5 px-2 py-1.5"
       style={{
-        backgroundColor: `${sectionColor}10`,
-        borderLeftWidth: 3,
+        borderLeftWidth: 1,
         borderLeftColor: sectionColor,
       }}
       data-section-id={section.id}

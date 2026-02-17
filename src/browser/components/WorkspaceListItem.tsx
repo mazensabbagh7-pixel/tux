@@ -92,7 +92,7 @@ export interface DraftWorkspaceListItemProps extends WorkspaceListItemBaseProps 
 
 /** Container styles shared between workspace and draft items */
 const LIST_ITEM_BASE_CLASSES =
-  "py-1.5 pr-2 transition-all duration-150 text-[13px] relative flex gap-2";
+  "py-1.5 pr-2 transition-all duration-150 text-[13px] relative flex gap-1";
 
 /** Calculate left padding - always the same for dot alignment */
 function getItemPaddingLeft(_depth?: number): number {
@@ -112,7 +112,7 @@ function SelectionBar(props: { isSelected: boolean; showUnread?: boolean; isDraf
   const bar = (
     <span
       className={cn(
-        "absolute left-0 top-0 bottom-0 w-[3px] transition-colors duration-150",
+        "absolute left-0 top-0 bottom-0 w-px transition-colors duration-150",
         barColorClass,
         // Dashed border effect for drafts when selected
         props.isDraft && props.isSelected && "bg-[length:3px_6px] bg-repeat-y",
@@ -599,38 +599,41 @@ function RegularWorkspaceListItemInner(props: WorkspaceListItemProps) {
         {/* Section color left border */}
         {sectionColor && (
           <span
-            className="absolute left-0 top-0 bottom-0 w-[3px]"
+            className="absolute left-0 top-0 bottom-0 w-px"
             style={{ backgroundColor: sectionColor }}
             aria-hidden
           />
         )}
         {/* Vertical connector line for sub-agents */}
+        {/* Vertical connector line for sub-agents - runs full height behind the dot */}
         {isSubAgent && (
           <span
-            className="absolute bg-muted-dark"
+            className="absolute bg-neutral-600"
             style={{
               left: `${paddingLeft + 4}px`,
               top: 0,
-              bottom: '50%',
+              bottom: 0,
               width: '1px',
             }}
             aria-hidden
           />
         )}
-        {/* Status dot - all dots aligned at same position */}
-        <div className="mt-1.5 flex shrink-0 items-start">
-          <span className={cn(
-            "inline-block h-2.5 w-2.5 rounded-full shrink-0 border",
-            isWorking || isInitializing
-              ? "bg-green-500 border-green-700 animate-pulse"
-              : hasError
-                ? "bg-red-500 border-red-700"
-                : isCompleted && !isUnread
-                  ? "bg-muted-dark border-neutral-600"
-                  : isUnread
-                    ? "bg-gray-300 border-gray-500"
-                    : "bg-muted-dark border-neutral-600"
-          )} />
+        {/* Status dot with solid background ring so line goes behind it */}
+        <div className="relative z-10 mt-1.5 flex shrink-0 items-start">
+          <span className="inline-flex items-center justify-center rounded-full bg-sidebar" style={{ padding: '2px' }}>
+            <span className={cn(
+              "inline-block h-2.5 w-2.5 rounded-full shrink-0 border",
+              isWorking || isInitializing
+                ? "bg-green-500 border-green-700 animate-pulse shadow-[0_0_6px_rgba(34,197,94,0.5)]"
+                : hasError
+                  ? "bg-red-500 border-red-700"
+                  : isCompleted && !isUnread
+                    ? "bg-muted-dark border-neutral-600"
+                    : isUnread
+                      ? "bg-gray-300 border-gray-500"
+                      : "bg-muted-dark border-neutral-600"
+            )} />
+          </span>
         </div>
 
         {/* Action button: cancel/delete spinner for initializing workspaces, overflow menu otherwise */}

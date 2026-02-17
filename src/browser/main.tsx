@@ -47,19 +47,12 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
 );
 
 // Register service worker for PWA support
+// Service worker disabled for development
 if ("serviceWorker" in navigator) {
-  const isHttpProtocol =
-    window.location.protocol === "http:" || window.location.protocol === "https:";
-  if (isHttpProtocol) {
-    window.addEventListener("load", () => {
-      navigator.serviceWorker
-        .register("/service-worker.js")
-        .then((registration) => {
-          console.log("Service Worker registered:", registration);
-        })
-        .catch((error) => {
-          console.log("Service Worker registration failed:", error);
-        });
-    });
-  }
+  // Unregister any existing service workers
+  navigator.serviceWorker.getRegistrations().then((registrations) => {
+    for (const registration of registrations) {
+      registration.unregister();
+    }
+  });
 }
