@@ -165,6 +165,13 @@ export class SessionManager {
    *      filters out pre-existing in-flight streams from other producers.
    *   2. First-write-wins — once a messageId is bound, subsequent stream-starts
    *      don't overwrite it.
+   *
+   * Known limitation: when multiple producers (for example, editor + Mux UI)
+   * target the same workspace concurrently, another producer's stream-start can
+   * arrive first and steal the binding. A proper fix requires the server to
+   * return a request-scoped correlation token from sendMessage.
+   *
+   * @see MuxAcpAgent.prompt() TODO in src/cli/acp/MuxAcpAgent.ts
    */
   updatePromptMessageId(sessionId: string, messageId: string, historySequence: number): void {
     assert(sessionId.length > 0, "sessionId must be non-empty");

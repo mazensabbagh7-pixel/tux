@@ -462,6 +462,23 @@ export class MuxAcpAgent implements AcpAgent {
 
     this.sessionManager.updateConfig(params.sessionId, { agentId: params.modeId });
 
+    // Reload agent-scoped AI settings for the new mode so model/thinking
+    // match what the workspace has persisted for this agent.
+    try {
+      const info = await this.deps.orpcClient.workspace.getInfo({
+        workspaceId: session.workspaceId,
+      });
+      if (info) {
+        const aiSettings = info.aiSettingsByAgent?.[params.modeId] ?? info.aiSettings;
+        const model = normalizeNonEmptyString(aiSettings?.model) ?? this.defaultModel();
+        const thinkingLevel = this.resolveThinkingLevel(aiSettings?.thinkingLevel);
+        this.sessionManager.updateConfig(params.sessionId, { model, thinkingLevel });
+      }
+    } catch (error) {
+      // Best-effort: if loading settings fails, keep previous values.
+      this.deps.log("Failed to reload AI settings after mode change", error);
+    }
+
     await this.deps.conn.sessionUpdate({
       sessionId: session.workspaceId,
       update: {
