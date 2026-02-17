@@ -174,18 +174,25 @@ export class MuxAcpAgent implements Agent {
   }
 
   private async persistSessionAISettings(session: SessionState): Promise<void> {
+    const aiSettings = {
+      model: session.modelId,
+      thinkingLevel: session.thinkingLevel,
+    } as const;
+
     const updateResult = await this.orpcClient.workspace.updateAgentAISettings({
       workspaceId: session.workspaceId,
       agentId: session.modeId,
-      aiSettings: {
-        model: session.modelId,
-        thinkingLevel: session.thinkingLevel,
-      },
+      aiSettings,
     });
 
     if (!updateResult.success) {
       throw new Error(`workspace.updateAgentAISettings failed: ${updateResult.error}`);
     }
+
+    // Keep the local snapshot in sync so mode switches restore the latest
+    // user-chosen values rather than stale creation-time defaults.
+    session.aiSettingsByAgent ??= {};
+    (session.aiSettingsByAgent as Record<string, typeof aiSettings>)[session.modeId] = aiSettings;
   }
 
   /**

@@ -44,6 +44,11 @@ function setLogLevel(level: string | undefined): void {
 }
 
 async function main(): Promise<number> {
+  // ACP uses stdout exclusively for NDJSON protocol frames.
+  // Redirect console.log (used by the shared logger for info/debug) to stderr
+  // so log output never contaminates the transport.
+  console.log = console.error;
+
   setLogLevel(options.logLevel);
 
   if (!options.acpUnstable) {
