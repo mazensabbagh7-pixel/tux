@@ -436,22 +436,26 @@ export class MuxAcpAgent implements Agent {
   async prompt(params: schema.PromptRequest): Promise<schema.PromptResponse> {
     const session = this.sessions.require(params.sessionId);
 
-    if (session.activePromptAbort) {
-      // Interrupt the backend workspace stream before starting a new prompt.
-      // This ensures the previous stream fully stops and won't produce mixed events.
-      try {
-        const interruptResult = await this.orpcClient.workspace.interruptStream({
-          workspaceId: session.workspaceId,
-        });
-        if (!interruptResult.success) {
-          log.debug(
-            `[acp] workspace.interruptStream failed for ${session.workspaceId}: ${interruptResult.error ?? "unknown"}`
-          );
-        }
-      } catch {
-        // RPC transport error — backend may already be idle or unreachable.
-        log.debug(`[acp] workspace.interruptStream threw for ${session.workspaceId}`);
+    // Always interrupt the backend workspace stream before sending a new prompt.
+    // This handles both locally-tracked ACP prompts (via activePromptAbort) and
+    // externally-started streams (e.g., workspace loaded from another client/process).
+    // Without this, sendMessage may queue behind the existing stream and the pump
+    // could resolve on the old stream's terminal event instead of the new prompt's.
+    try {
+      const interruptResult = await this.orpcClient.workspace.interruptStream({
+        workspaceId: session.workspaceId,
+      });
+      if (!interruptResult.success) {
+        log.debug(
+          `[acp] workspace.interruptStream failed for ${session.workspaceId}: ${interruptResult.error ?? "unknown"}`
+        );
       }
+    } catch {
+      // RPC transport error — backend may already be idle or unreachable.
+      log.debug(`[acp] workspace.interruptStream threw for ${session.workspaceId}`);
+    }
+
+    if (session.activePromptAbort) {
       session.activePromptAbort.abort();
     }
 
@@ -499,14 +503,20 @@ export class MuxAcpAgent implements Agent {
 
     session.activePromptAbort?.abort();
 
-    const interruptResult = await this.orpcClient.workspace.interruptStream({
-      workspaceId: session.workspaceId,
-    });
+    // Best-effort interrupt — a transport error during cancel should not
+    // tear down the ACP connection (consistent with prompt preemption path).
+    try {
+      const interruptResult = await this.orpcClient.workspace.interruptStream({
+        workspaceId: session.workspaceId,
+      });
 
-    if (!interruptResult.success) {
-      console.error(
-        `[mux acp] workspace.interruptStream failed for ${session.workspaceId}: ${interruptResult.error}`
-      );
+      if (!interruptResult.success) {
+        log.debug(
+          `[acp] cancel: workspace.interruptStream failed for ${session.workspaceId}: ${interruptResult.error ?? "unknown"}`
+        );
+      }
+    } catch {
+      log.debug(`[acp] cancel: workspace.interruptStream threw for ${session.workspaceId}`);
     }
   }
 }
