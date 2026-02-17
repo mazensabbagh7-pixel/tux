@@ -5,6 +5,7 @@ import type {
   DisplayedMessage,
   CompactionRequestData,
   MuxFrontendMetadata,
+  MessageSource,
 } from "@/common/types/message";
 import { createMuxMessage, getCompactionFollowUpContent } from "@/common/types/message";
 
@@ -129,6 +130,9 @@ interface StreamingContext {
 
   /** Effective thinking level after model policy clamping */
   thinkingLevel?: string;
+
+  /** Source of the current streaming assistant response in actor-critic mode */
+  messageSource?: MessageSource;
 }
 
 /**
@@ -1425,6 +1429,7 @@ export class StreamingMessageAggregator {
       pendingToolStarts: new Map(),
       mode: data.mode,
       thinkingLevel: data.thinkingLevel,
+      messageSource: data.messageSource,
     };
 
     // For incremental replay: stream-start may be re-emitted to re-establish context.
@@ -1471,6 +1476,7 @@ export class StreamingMessageAggregator {
       routedThroughGateway: data.routedThroughGateway,
       mode: data.mode,
       thinkingLevel: data.thinkingLevel,
+      messageSource: data.messageSource,
     });
 
     this.messages.set(data.messageId, streamingMessage);
@@ -2026,6 +2032,14 @@ export class StreamingMessageAggregator {
       }
     }
 
+    const messageSource = data.messageSource ?? context?.messageSource;
+    if (messageSource) {
+      message.metadata = {
+        ...message.metadata,
+        messageSource,
+      };
+    }
+
     // Append each delta as a new part (merging happens at display time)
     message.parts.push({
       type: "reasoning",
@@ -2427,6 +2441,7 @@ export class StreamingMessageAggregator {
             isStreaming,
             isPartial,
             isLastPartOfMessage: isLastPart,
+            messageSource: message.metadata?.messageSource,
             timestamp: part.timestamp ?? baseTimestamp,
             streamPresentation: isStreaming
               ? { source: streamContext?.isReplay ? "replay" : "live" }
@@ -2451,6 +2466,7 @@ export class StreamingMessageAggregator {
             routedThroughGateway: message.metadata?.routedThroughGateway,
             mode: message.metadata?.mode,
             agentId: message.metadata?.agentId ?? message.metadata?.mode,
+            messageSource: message.metadata?.messageSource,
             timestamp: part.timestamp ?? baseTimestamp,
             streamPresentation: isStreaming
               ? { source: streamContext?.isReplay ? "replay" : "live" }

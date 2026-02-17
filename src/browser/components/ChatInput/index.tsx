@@ -40,6 +40,8 @@ import {
   getModelKey,
   getThinkingLevelKey,
   getWorkspaceAISettingsByAgentKey,
+  getCriticEnabledKey,
+  getCriticPromptKey,
   getInputKey,
   getInputAttachmentsKey,
   AGENT_AI_DEFAULTS_KEY,
@@ -175,6 +177,21 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
   const [thinkingLevel] = useThinkingLevel();
   const atMentionProjectPath = variant === "creation" ? props.projectPath : null;
   const workspaceId = variant === "workspace" ? props.workspaceId : null;
+
+  const criticEnabledStorageKey =
+    workspaceId !== null ? getCriticEnabledKey(workspaceId) : "__critic-enabled__:creation";
+  const criticPromptStorageKey =
+    workspaceId !== null ? getCriticPromptKey(workspaceId) : "__critic-prompt__:creation";
+  const [criticEnabled, setCriticEnabled] = usePersistedState<boolean>(
+    criticEnabledStorageKey,
+    false,
+    {
+      listener: true,
+    }
+  );
+  const [criticPrompt, setCriticPrompt] = usePersistedState<string>(criticPromptStorageKey, "", {
+    listener: true,
+  });
 
   // Extract workspace-specific props with defaults
   const disabled = props.disabled ?? false;
@@ -1569,6 +1586,12 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
       setToast,
       setPreferredModel,
       setVimEnabled,
+      criticEnabled: variant === "workspace" ? criticEnabled : undefined,
+      setCriticEnabled: variant === "workspace" ? setCriticEnabled : undefined,
+      isStreaming:
+        variant === "workspace"
+          ? Boolean((props.canInterrupt ?? false) || isStreamStarting)
+          : false,
       onTruncateHistory: variant === "workspace" ? props.onTruncateHistory : undefined,
       resetInputHeight: () => {
         if (inputRef.current) {
@@ -2460,6 +2483,26 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
           <ChatAttachments attachments={attachments} onRemove={handleRemoveAttachment} />
 
           <div className="flex flex-col gap-0.5" data-component="ChatModeToggles">
+            {variant === "workspace" && criticEnabled && (
+              <div className="flex items-center gap-2" data-component="CriticModeRow">
+                <div
+                  data-component="CriticBadge"
+                  className="text-exec-mode bg-exec-mode/10 inline-flex items-center rounded-sm px-1.5 py-0.5 text-[11px] font-medium"
+                >
+                  Critic mode active
+                </div>
+                <input
+                  type="text"
+                  value={criticPrompt}
+                  onChange={(event) => {
+                    setCriticPrompt(event.target.value);
+                  }}
+                  placeholder="Critic prompt (optional)"
+                  className="border-border bg-background/40 text-muted focus:text-foreground h-6 min-w-0 flex-1 rounded-sm border px-2 text-[11px]"
+                />
+              </div>
+            )}
+
             {/* Editing indicator - workspace only */}
             {variant === "workspace" && editingMessage && (
               <div className="text-edit-mode text-[11px] font-medium">
