@@ -32,6 +32,8 @@ export interface SessionState {
   isNewSession: boolean;
   /** Highest historySequence seen from any stream-start on this session */
   lastSeenHistorySequence: number;
+  /** Whether the session's onChat subscription has dropped/failed permanently */
+  subscriptionDead: boolean;
 }
 
 interface SessionStateInit {
@@ -67,6 +69,7 @@ export class SessionManager {
       firstPromptSent: false,
       isNewSession: state.isNewSession,
       lastSeenHistorySequence: -1,
+      subscriptionDead: false,
     };
 
     this.sessions.set(sessionId, nextState);
@@ -116,6 +119,17 @@ export class SessionManager {
     }
 
     session.promptResolver = undefined;
+  }
+
+  markSubscriptionDead(sessionId: string): void {
+    assert(sessionId.length > 0, "sessionId must be non-empty");
+
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      return;
+    }
+
+    session.subscriptionDead = true;
   }
 
   /**

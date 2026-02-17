@@ -213,6 +213,10 @@ export class MuxAcpAgent implements AcpAgent {
       throw this.deps.sdk.RequestError.resourceNotFound(params.sessionId);
     }
 
+    if (session.subscriptionDead) {
+      throw new Error("Session subscription lost — cannot accept prompts. Create a new session.");
+    }
+
     if (session.promptResolver) {
       throw this.deps.sdk.RequestError.invalidParams(
         undefined,
@@ -741,6 +745,7 @@ export class MuxAcpAgent implements AcpAgent {
         if (!session.abortController.signal.aborted && !this.deps.conn.signal.aborted) {
           // Subscription dropped — force-reject any pending prompt regardless
           // of message ID correlation (the entire stream is gone).
+          this.sessionManager.markSubscriptionDead(workspaceId);
           this.forceRejectActivePrompt(
             workspaceId,
             new Error(`workspace.onChat ended unexpectedly for ${workspaceId}`)
@@ -752,6 +757,7 @@ export class MuxAcpAgent implements AcpAgent {
         }
 
         this.deps.log("workspace.onChat subscription failed", workspaceId, error);
+        this.sessionManager.markSubscriptionDead(workspaceId);
         this.forceRejectActivePrompt(
           workspaceId,
           new Error(`workspace.onChat failed: ${this.describeUnknownError(error)}`)
@@ -780,10 +786,12 @@ export class MuxAcpAgent implements AcpAgent {
       this.sessionManager.updateLastSeenHistorySequence(workspaceId, event.historySequence);
     }
 
-    // Bind the prompt resolver to the first non-replay stream-start whose
-    // historySequence exceeds the snapshot taken when the prompt was created.
-    // This prevents mis-correlating with pre-existing in-flight streams.
-    if (event.type === "stream-start" && !event.replay) {
+    // Bind the prompt resolver to the first stream-start (replay or live)
+    // whose historySequence exceeds the snapshot taken when the prompt was
+    // created. Replayed stream-start events can arrive before live events after
+    // load/new session startup; historySequence + first-write-wins guards in
+    // updatePromptMessageId keep this correlation safe.
+    if (event.type === "stream-start") {
       this.sessionManager.updatePromptMessageId(
         workspaceId,
         event.messageId,
