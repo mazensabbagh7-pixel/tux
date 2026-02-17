@@ -15,7 +15,7 @@ import { getMemoryFilePathForProject } from "./memoryCommon";
 export interface MemoryWriteToolArgs {
   old_string: string;
   new_string: string;
-  replace_count?: number;
+  replace_count?: number | null;
 }
 
 export type MemoryWriteToolResult =
