@@ -304,7 +304,7 @@ const ProjectDragLayer: React.FC = () => {
             <ChevronRight size={12} />
           </span>
           <div className="flex min-w-0 flex-1 items-center pr-2">
-            <span className="text-foreground truncate text-sm font-medium">{basename}</span>
+            <span className="text-foreground truncate text-sm font-semibold">{basename}</span>
           </div>
         </div>
       </div>

@@ -760,7 +760,7 @@ function RegularWorkspaceListItemInner(props: WorkspaceListItemProps) {
                       <span className="flex items-center gap-2">
                         <Link2 className="h-3 w-3 shrink-0" />
                         Share transcript{" "}
-                        <span className="text-muted text-[10px]">
+                        <span className="text-muted text-xs">
                           ({formatKeybind(KEYBINDS.SHARE_TRANSCRIPT)})
                         </span>
                       </span>
@@ -779,7 +779,7 @@ function RegularWorkspaceListItemInner(props: WorkspaceListItemProps) {
                       <span className="flex items-center gap-2">
                         <ArchiveIcon className="h-3 w-3 shrink-0" />
                         Archive chat{" "}
-                        <span className="text-muted text-[10px]">
+                        <span className="text-muted text-xs">
                           ({formatKeybind(KEYBINDS.ARCHIVE_WORKSPACE)})
                         </span>
                       </span>
@@ -830,7 +830,7 @@ function RegularWorkspaceListItemInner(props: WorkspaceListItemProps) {
                   <span
                     className={cn(
                       "block truncate text-left text-[13px] transition-colors duration-200",
-                      isSubAgent ? "text-muted-foreground" : "text-foreground font-medium",
+                      isSubAgent ? "text-muted-foreground" : "text-foreground font-semibold",
                       !isDisabled && "cursor-pointer",
                       // selection pill is on the grid row, not individual text
                     )}
