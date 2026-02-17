@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import assert from "@/common/utils/assert";
 import { KNOWN_MODELS } from "@/common/constants/knownModels";
 import { THINKING_LEVELS } from "@/common/types/thinking";
 import type { SessionState } from "../sessionState";
@@ -56,7 +57,11 @@ describe("buildConfigOptions", () => {
       throw new Error("Expected model option to be a select option");
     }
 
-    expect(modelOption.options.some((option) => option.value === KNOWN_MODELS.GPT.id)).toBe(true);
+    expect(
+      modelOption.options.some(
+        (option) => "value" in option && option.value === KNOWN_MODELS.GPT.id
+      )
+    ).toBe(true);
 
     const thinkingOption = options.find((option) => option.id === THINKING_LEVEL_CONFIG_ID);
     expect(thinkingOption).toBeDefined();
@@ -66,7 +71,12 @@ describe("buildConfigOptions", () => {
       throw new Error("Expected thinking option to be a select option");
     }
 
-    expect(thinkingOption.options.map((option) => option.value)).toEqual([...THINKING_LEVELS]);
+    expect(
+      thinkingOption.options.map((option) => {
+        assert("value" in option, "Expected option to have value property");
+        return option.value;
+      })
+    ).toEqual([...THINKING_LEVELS]);
   });
 
   it("adds the current model to select options when it is custom", () => {
