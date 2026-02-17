@@ -22,6 +22,8 @@ export interface SessionState {
   caughtUp: boolean;
   /** Whether the first prompt has been sent (for name generation) */
   firstPromptSent: boolean;
+  /** Whether this session was created via newSession (true) or loadSession (false) */
+  isNewSession: boolean;
 }
 
 interface SessionStateInit {
@@ -30,6 +32,7 @@ interface SessionStateInit {
   agentId: string;
   model: string;
   thinkingLevel: ThinkingLevel;
+  isNewSession: boolean;
 }
 
 export class SessionManager {
@@ -54,6 +57,7 @@ export class SessionManager {
       abortController: new AbortController(),
       caughtUp: false,
       firstPromptSent: false,
+      isNewSession: state.isNewSession,
     };
 
     this.sessions.set(sessionId, nextState);

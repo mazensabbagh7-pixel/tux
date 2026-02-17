@@ -1,3 +1,12 @@
+// ACP transport uses stdout exclusively for NDJSON protocol frames.
+// The Mux backend logger writes info/debug output to process.stdout via
+// console.log (see src/node/services/log.ts), which would interleave
+// non-NDJSON lines into the ACP stream and cause editors to disconnect.
+// Redirect all console.log/info/debug to stderr before any other code loads.
+console.log = console.error;
+console.info = console.error;
+console.debug = console.error;
+
 import { Command } from "commander";
 import { Readable, Writable } from "node:stream";
 import assert from "@/common/utils/assert";

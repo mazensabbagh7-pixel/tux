@@ -154,6 +154,7 @@ export class MuxAcpAgent implements AcpAgent {
       agentId,
       model,
       thinkingLevel,
+      isNewSession: true,
     });
 
     this.subscribeToChat(workspaceId);
@@ -187,6 +188,7 @@ export class MuxAcpAgent implements AcpAgent {
       agentId,
       model,
       thinkingLevel,
+      isNewSession: false,
     });
 
     this.subscribeToChat(workspaceId);
@@ -270,7 +272,10 @@ export class MuxAcpAgent implements AcpAgent {
       );
     }
 
-    if (!session.firstPromptSent) {
+    // Only auto-generate a title for sessions created via newSession, not
+    // loadSession — reconnecting to an existing workspace should not overwrite
+    // its existing title.
+    if (!session.firstPromptSent && session.isNewSession) {
       session.firstPromptSent = true;
       this.maybeGenerateName(session, messageText).catch((error) => {
         this.deps.log("name generation failed", error);
@@ -502,6 +507,7 @@ export class MuxAcpAgent implements AcpAgent {
       agentId,
       model,
       thinkingLevel,
+      isNewSession: true,
     });
 
     this.subscribeToChat(workspaceId);
@@ -820,8 +826,17 @@ export class MuxAcpAgent implements AcpAgent {
     activeMessageId: string,
     eventMessageId: string | undefined
   ): boolean {
-    if (activeMessageId.length === 0 || eventMessageId == null || eventMessageId.length === 0) {
-      return true;
+    // Require a concrete message ID on both sides before matching.
+    // When the prompt resolver's messageId is still empty (stream-start has not
+    // yet arrived for *this* prompt), we must not let a prior stream's
+    // stream-end/stream-abort settle this prompt.  Once stream-start sets the
+    // resolver's messageId, subsequent events are matched strictly.
+    if (activeMessageId.length === 0) {
+      return false;
+    }
+
+    if (eventMessageId == null || eventMessageId.length === 0) {
+      return false;
     }
 
     return activeMessageId === eventMessageId;
