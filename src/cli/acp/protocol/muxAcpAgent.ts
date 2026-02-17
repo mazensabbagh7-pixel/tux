@@ -2,6 +2,7 @@ import { PROTOCOL_VERSION, type Agent, type AgentSideConnection } from "@agentcl
 import type * as schema from "@agentclientprotocol/sdk";
 import type { RouterClient } from "@orpc/server";
 import assert from "@/common/utils/assert";
+import { log } from "@/node/services/log";
 import { resolveModelAlias } from "@/common/utils/ai/models";
 import type { AppRouter } from "@/node/orpc/router";
 import { VERSION } from "@/version";
@@ -187,6 +188,19 @@ export class MuxAcpAgent implements Agent {
     }
   }
 
+  /**
+   * Restore per-mode AI defaults from the workspace metadata snapshot.
+   * Called on mode switch so that the session reflects the new mode's
+   * saved model/thinkingLevel rather than carrying over the previous mode's values.
+   */
+  private applyPerModeAiDefaults(session: SessionState): void {
+    const byAgent = session.aiSettingsByAgent?.[session.modeId];
+    if (byAgent) {
+      session.modelId = resolveModelAlias(byAgent.model);
+      session.thinkingLevel = byAgent.thinkingLevel;
+    }
+  }
+
   // eslint-disable-next-line @typescript-eslint/require-await -- Agent interface requires Promise return
   async initialize(_params: schema.InitializeRequest): Promise<schema.InitializeResponse> {
     const sessionCapabilities: schema.SessionCapabilities = {};
@@ -296,7 +310,9 @@ export class MuxAcpAgent implements Agent {
     }
 
     session.modeId = nextModeId;
-    // Mode switches should not overwrite per-mode AI defaults.
+    // Restore the new mode's persisted AI defaults so subsequent prompts use the
+    // correct model/thinking for this mode rather than the previous mode's settings.
+    this.applyPerModeAiDefaults(session);
     await this.emitModeAndConfigUpdates(session);
 
     return {};
@@ -359,7 +375,9 @@ export class MuxAcpAgent implements Agent {
         const nextModeId = parseModeId(params.value);
         if (session.modeId !== nextModeId) {
           session.modeId = nextModeId;
-          // Mode switches should not overwrite per-mode AI defaults.
+          // Restore the new mode's persisted AI defaults so subsequent prompts
+          // use the correct model/thinking rather than the previous mode's settings.
+          this.applyPerModeAiDefaults(session);
           emitModeUpdate = true;
         }
         break;
@@ -407,14 +425,21 @@ export class MuxAcpAgent implements Agent {
     const session = this.sessions.require(params.sessionId);
 
     if (session.activePromptAbort) {
-      // Interrupt the backend workspace stream first, then abort the local pump.
-      await this.orpcClient.workspace
-        .interruptStream({
+      // Interrupt the backend workspace stream before starting a new prompt.
+      // This ensures the previous stream fully stops and won't produce mixed events.
+      try {
+        const interruptResult = await this.orpcClient.workspace.interruptStream({
           workspaceId: session.workspaceId,
-        })
-        .catch(() => {
-          // Best-effort: backend may already be idle.
         });
+        if (!interruptResult.success) {
+          log.debug(
+            `[acp] workspace.interruptStream failed for ${session.workspaceId}: ${interruptResult.error ?? "unknown"}`
+          );
+        }
+      } catch {
+        // RPC transport error — backend may already be idle or unreachable.
+        log.debug(`[acp] workspace.interruptStream threw for ${session.workspaceId}`);
+      }
       session.activePromptAbort.abort();
     }
 

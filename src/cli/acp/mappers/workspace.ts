@@ -125,7 +125,7 @@ function createFallbackBranchName(): string {
   return `acp-${timestamp}-${randomSuffix}`.slice(0, 64);
 }
 
-function getWorkspaceAiSettings(
+export function getWorkspaceAiSettings(
   metadata: FrontendWorkspaceMetadataSchemaType,
   modeId: SessionState["modeId"]
 ): {
@@ -174,6 +174,9 @@ function buildSessionState(params: BuildSessionStateParams): SessionState {
     modeId,
     modelId,
     thinkingLevel,
+    aiSettingsByAgent: params.metadata.aiSettingsByAgent
+      ? { ...params.metadata.aiSettingsByAgent }
+      : undefined,
   };
 }
 

@@ -1,6 +1,10 @@
 import type { AgentMode } from "@/common/types/mode";
 import type { ThinkingLevel } from "@/common/types/thinking";
+import type { z } from "zod";
+import type { WorkspaceAISettingsSchema } from "@/common/orpc/schemas/workspaceAiSettings";
 import assert from "@/common/utils/assert";
+
+export type WorkspaceAISettings = z.infer<typeof WorkspaceAISettingsSchema>;
 
 export interface SessionState {
   sessionId: string;
@@ -10,6 +14,12 @@ export interface SessionState {
   modelId: string;
   thinkingLevel: ThinkingLevel;
   activePromptAbort?: AbortController;
+
+  /**
+   * Snapshot of per-agent AI settings from workspace metadata at session creation time.
+   * Used to restore per-mode defaults when switching modes without an extra API call.
+   */
+  aiSettingsByAgent?: Readonly<Record<string, WorkspaceAISettings>>;
 }
 
 export class SessionStateMap {
