@@ -229,8 +229,8 @@ describe("mapWorkspaceChatEventToAcp", () => {
       kind: "update",
       update: {
         sessionUpdate: "usage_update",
-        used: 18,
-        size: 18,
+        used: 17,
+        size: 17,
       },
     });
 

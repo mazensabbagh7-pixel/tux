@@ -194,7 +194,11 @@ function assertWorkspaceBelongsToCwd(
   cwd: string
 ): void {
   const expectedPath = ensureAbsolutePath(cwd);
-  if (metadata.projectPath !== expectedPath) {
+  // Accept both the project path and the named worktree path as valid cwd values.
+  // Clients may send either depending on whether they opened the project root
+  // or the specific workspace directory (named worktree).
+  const validPaths = [metadata.projectPath, metadata.namedWorkspacePath];
+  if (!validPaths.includes(expectedPath)) {
     throw new Error(
       `Workspace ${metadata.id} belongs to ${metadata.projectPath}, but ACP requested cwd ${expectedPath}`
     );
