@@ -1,6 +1,5 @@
 import "../dom";
 
-import { beforeAll, describe, expect, test } from "bun:test";
 import { act, waitFor } from "@testing-library/react";
 
 import { updatePersistedState } from "@/browser/hooks/usePersistedState";
