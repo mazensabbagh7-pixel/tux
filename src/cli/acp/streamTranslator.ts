@@ -178,6 +178,31 @@ function extractReplayParts(
         updates.push(...toChunkUpdate("agent_thought_chunk", part.text));
       } else if (part.type === "text" && part.text.length > 0) {
         updates.push(...toChunkUpdate("agent_message_chunk", part.text));
+      } else if (part.type === "dynamic-tool") {
+        // Emit a tool call for replayed history so reconnect/load preserves
+        // historical tool executions in ACP clients.
+        updates.push({
+          sessionUpdate: "tool_call",
+          toolCallId: part.toolCallId,
+          title: part.toolName,
+          rawInput: normalizeText(part.input),
+          status: "in_progress",
+        });
+
+        if (part.state === "output-available") {
+          updates.push({
+            sessionUpdate: "tool_call_update",
+            toolCallId: part.toolCallId,
+            rawOutput: normalizeText(part.output),
+            status: "completed",
+          });
+        } else if (part.state === "output-redacted") {
+          updates.push({
+            sessionUpdate: "tool_call_update",
+            toolCallId: part.toolCallId,
+            status: "completed",
+          });
+        }
       }
     }
   }

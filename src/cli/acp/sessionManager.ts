@@ -30,6 +30,8 @@ export interface SessionState {
   caughtUpPromise: Promise<void>;
   /** Call to resolve caughtUpPromise (set once in createSession) */
   resolveCaughtUp: () => void;
+  /** Call to reject caughtUpPromise when replay cannot complete */
+  rejectCaughtUp: (error: Error) => void;
   /** Whether the first prompt has been sent (for name generation) */
   firstPromptSent: boolean;
   /** Whether this session was created via newSession (true) or loadSession (false) */
@@ -67,10 +69,13 @@ export class SessionManager {
     this.removeSession(sessionId);
 
     let resolveCaughtUp: (() => void) | undefined;
-    const caughtUpPromise = new Promise<void>((resolve) => {
+    let rejectCaughtUp: ((error: Error) => void) | undefined;
+    const caughtUpPromise = new Promise<void>((resolve, reject) => {
       resolveCaughtUp = resolve;
+      rejectCaughtUp = reject;
     });
     assert(resolveCaughtUp != null, "caughtUpPromise resolver must be initialized");
+    assert(rejectCaughtUp != null, "caughtUpPromise rejecter must be initialized");
 
     const nextState: SessionState = {
       ...state,
@@ -78,6 +83,7 @@ export class SessionManager {
       caughtUp: false,
       caughtUpPromise,
       resolveCaughtUp,
+      rejectCaughtUp,
       firstPromptSent: false,
       isNewSession: state.isNewSession,
       lastSeenHistorySequence: -1,
@@ -142,6 +148,12 @@ export class SessionManager {
     }
 
     session.subscriptionDead = true;
+
+    // Reject replay waiters immediately when subscription dies so prompt()
+    // callers fail fast instead of waiting for the caught-up timeout.
+    if (!session.caughtUp) {
+      session.rejectCaughtUp(new Error("Chat subscription failed before replay completed"));
+    }
   }
 
   markCaughtUp(sessionId: string): void {

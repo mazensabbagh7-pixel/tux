@@ -353,6 +353,11 @@ export class MuxAcpAgent implements AcpAgent {
         options: { soft: true },
       });
 
+      if (!interruptResult.success) {
+        this.deps.log("workspace.interruptStream returned error", interruptResult.error);
+        return;
+      }
+
       // If the prompt was queued (stream-start never arrived to bind a
       // messageId), interruptStream restores the queued message to input but no
       // stream events fire. Force-resolve the unbound prompt so it doesn't hang
@@ -361,10 +366,6 @@ export class MuxAcpAgent implements AcpAgent {
       if (promptResolver?.messageId.length === 0) {
         this.sessionManager.clearPromptResolver(params.sessionId);
         promptResolver.resolve({ stopReason: "cancelled" });
-      }
-
-      if (!interruptResult.success) {
-        this.deps.log("workspace.interruptStream returned error", interruptResult.error);
       }
     } catch (error) {
       this.deps.log("workspace.interruptStream failed", error);
