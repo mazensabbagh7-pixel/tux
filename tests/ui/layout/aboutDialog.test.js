@@ -1,0 +1,288 @@
+import "../dom";
+import { fireEvent, waitFor, within } from "@testing-library/react";
+import { installDom } from "../dom";
+import { renderApp } from "../renderReviewPanel";
+import { cleanupView, setupWorkspaceView } from "../helpers";
+import { createTestEnvironment, cleanupTestEnvironment, } from "../../ipc/setup";
+import { cleanupTempGitRepo, createTempGitRepo, generateBranchName } from "../../ipc/helpers";
+import { detectDefaultTrunkBranch } from "@/node/git";
+function getUpdateService(env) {
+    return env.services.updateService;
+}
+function setDesktopApiEnabled() {
+    window.api = {
+        platform: process.platform,
+        versions: {},
+    };
+}
+function clearDesktopApi() {
+    delete window.api;
+}
+function setUpdateStatus(updateService, status) {
+    updateService.currentStatus = status;
+    updateService.notifySubscribers();
+}
+async function openAboutDialog(view) {
+    const trigger = await waitFor(() => {
+        const triggerButton = view.container.querySelector('button[aria-label="Open about dialog"]');
+        if (!triggerButton) {
+            throw new Error("About dialog trigger was not found in the title bar");
+        }
+        return triggerButton;
+    });
+    fireEvent.click(trigger);
+    const dialog = await waitFor(() => {
+        const dialogElement = view.container.ownerDocument.body.querySelector('[role="dialog"]');
+        if (!dialogElement) {
+            throw new Error("About dialog did not open");
+        }
+        return dialogElement;
+    });
+    return within(dialog);
+}
+describe("About dialog (UI)", () => {
+    let env;
+    let repoPath;
+    let workspaceId;
+    let workspaceMetadata;
+    let cleanupDom = null;
+    let view = null;
+    beforeAll(async () => {
+        env = await createTestEnvironment();
+        repoPath = await createTempGitRepo();
+        const trunkBranch = await detectDefaultTrunkBranch(repoPath);
+        const branchName = generateBranchName("about-dialog");
+        const createResult = await env.orpc.workspace.create({
+            projectPath: repoPath,
+            branchName,
+            trunkBranch,
+        });
+        if (!createResult.success) {
+            throw new Error(`Failed to create workspace: ${createResult.error}`);
+        }
+        workspaceId = createResult.metadata.id;
+        workspaceMetadata = createResult.metadata;
+    }, 60000);
+    beforeEach(async () => {
+        clearDesktopApi();
+        cleanupDom = installDom();
+        view = renderApp({ apiClient: env.orpc, metadata: workspaceMetadata });
+        await setupWorkspaceView(view, workspaceMetadata, workspaceId);
+    }, 60000);
+    afterEach(async () => {
+        clearDesktopApi();
+        setUpdateStatus(getUpdateService(env), { type: "idle" });
+        if (view && cleanupDom) {
+            await cleanupView(view, cleanupDom);
+        }
+        else {
+            cleanupDom?.();
+        }
+        view = null;
+        cleanupDom = null;
+    });
+    afterAll(async () => {
+        try {
+            const removeResult = await env.orpc.workspace.remove({
+                workspaceId,
+                options: { force: true },
+            });
+            if (!removeResult.success) {
+                console.warn("Failed to remove workspace during cleanup:", removeResult.error);
+            }
+        }
+        finally {
+            await cleanupTestEnvironment(env);
+            await cleanupTempGitRepo(repoPath);
+        }
+    }, 60000);
+    test("clicking the title bar version opens the About dialog", async () => {
+        if (!view) {
+            throw new Error("App was not rendered");
+        }
+        const dialog = await openAboutDialog(view);
+        expect(dialog.getByRole("heading", { name: "About" })).toBeTruthy();
+    });
+    test("opening About dialog does not trigger an automatic update check", async () => {
+        if (!view) {
+            throw new Error("App was not rendered");
+        }
+        const updateService = getUpdateService(env);
+        const originalCheck = updateService.check;
+        const checkSpy = jest.fn(async () => undefined);
+        updateService.check = checkSpy;
+        try {
+            setDesktopApiEnabled();
+            await openAboutDialog(view);
+            // The dialog should reflect already-streamed status and wait for explicit user intent
+            // before triggering a manual check.
+            expect(checkSpy).toHaveBeenCalledTimes(0);
+        }
+        finally {
+            updateService.check = originalCheck;
+        }
+    });
+    test("Check for Updates button calls api.update.check", async () => {
+        if (!view) {
+            throw new Error("App was not rendered");
+        }
+        const updateService = getUpdateService(env);
+        const originalCheck = updateService.check;
+        const checkSpy = jest.fn(async () => undefined);
+        updateService.check = checkSpy;
+        try {
+            setDesktopApiEnabled();
+            const dialog = await openAboutDialog(view);
+            fireEvent.click(dialog.getByRole("button", { name: "Check for Updates" }));
+            await waitFor(() => {
+                expect(checkSpy).toHaveBeenCalledTimes(1);
+            });
+            expect(checkSpy).toHaveBeenCalledWith({ source: "manual" });
+        }
+        finally {
+            updateService.check = originalCheck;
+        }
+    });
+    test("available update status shows Download button that calls api.update.download", async () => {
+        if (!view) {
+            throw new Error("App was not rendered");
+        }
+        const updateService = getUpdateService(env);
+        const originalDownload = updateService.download;
+        const downloadSpy = jest.fn(async () => undefined);
+        updateService.download = downloadSpy;
+        try {
+            setUpdateStatus(updateService, {
+                type: "available",
+                info: { version: "v9.9.9" },
+            });
+            setDesktopApiEnabled();
+            const dialog = await openAboutDialog(view);
+            const downloadButton = await waitFor(() => {
+                return dialog.getByRole("button", { name: "Download" });
+            });
+            fireEvent.click(downloadButton);
+            await waitFor(() => {
+                expect(downloadSpy).toHaveBeenCalledTimes(1);
+            });
+        }
+        finally {
+            updateService.download = originalDownload;
+        }
+    });
+    test("downloaded update status shows Install button that calls api.update.install", async () => {
+        if (!view) {
+            throw new Error("App was not rendered");
+        }
+        const updateService = getUpdateService(env);
+        const originalInstall = updateService.install;
+        const installSpy = jest.fn(() => undefined);
+        updateService.install = installSpy;
+        try {
+            setUpdateStatus(updateService, {
+                type: "downloaded",
+                info: { version: "v9.9.10" },
+            });
+            setDesktopApiEnabled();
+            const dialog = await openAboutDialog(view);
+            const installButton = await waitFor(() => {
+                return dialog.getByRole("button", { name: "Install & restart" });
+            });
+            fireEvent.click(installButton);
+            await waitFor(() => {
+                expect(installSpy).toHaveBeenCalledTimes(1);
+            });
+        }
+        finally {
+            updateService.install = originalInstall;
+        }
+    });
+    describe("error states", () => {
+        test("check phase error shows Update check failed message and Try again button", async () => {
+            if (!view) {
+                throw new Error("App was not rendered");
+            }
+            const updateService = getUpdateService(env);
+            setUpdateStatus(updateService, {
+                type: "error",
+                phase: "check",
+                message: "Network error",
+            });
+            setDesktopApiEnabled();
+            const dialog = await openAboutDialog(view);
+            await waitFor(() => {
+                expect(dialog.getByText("Update check failed: Network error")).toBeTruthy();
+            });
+            expect(dialog.getByRole("button", { name: "Try again" })).toBeTruthy();
+            expect(dialog.queryByRole("button", { name: "Retry download" })).toBeNull();
+            expect(dialog.queryByRole("button", { name: "Try install again" })).toBeNull();
+        });
+        test("download phase error shows Download failed message and retry buttons", async () => {
+            if (!view) {
+                throw new Error("App was not rendered");
+            }
+            const updateService = getUpdateService(env);
+            setUpdateStatus(updateService, {
+                type: "error",
+                phase: "download",
+                message: "Connection reset",
+            });
+            setDesktopApiEnabled();
+            const dialog = await openAboutDialog(view);
+            await waitFor(() => {
+                expect(dialog.getByText("Download failed: Connection reset")).toBeTruthy();
+            });
+            expect(dialog.getByRole("button", { name: "Retry download" })).toBeTruthy();
+            expect(dialog.getByRole("button", { name: "Check again" })).toBeTruthy();
+            expect(dialog.queryByRole("button", { name: "Try again" })).toBeNull();
+        });
+        test("install phase error shows Install failed message and retry buttons", async () => {
+            if (!view) {
+                throw new Error("App was not rendered");
+            }
+            const updateService = getUpdateService(env);
+            setUpdateStatus(updateService, {
+                type: "error",
+                phase: "install",
+                message: "Permission denied",
+            });
+            setDesktopApiEnabled();
+            const dialog = await openAboutDialog(view);
+            await waitFor(() => {
+                expect(dialog.getByText("Install failed: Permission denied")).toBeTruthy();
+            });
+            expect(dialog.getByRole("button", { name: "Try install again" })).toBeTruthy();
+            expect(dialog.getByRole("button", { name: "Check again" })).toBeTruthy();
+            expect(dialog.queryByRole("button", { name: "Try again" })).toBeNull();
+        });
+        test("install phase retry button calls api.update.install", async () => {
+            if (!view) {
+                throw new Error("App was not rendered");
+            }
+            const updateService = getUpdateService(env);
+            const originalInstall = updateService.install;
+            const installSpy = jest.fn(() => undefined);
+            updateService.install = installSpy;
+            try {
+                setUpdateStatus(updateService, {
+                    type: "error",
+                    phase: "install",
+                    message: "Permission denied",
+                });
+                setDesktopApiEnabled();
+                const dialog = await openAboutDialog(view);
+                const retryInstallButton = await waitFor(() => {
+                    return dialog.getByRole("button", { name: "Try install again" });
+                });
+                fireEvent.click(retryInstallButton);
+                await waitFor(() => {
+                    expect(installSpy).toHaveBeenCalledTimes(1);
+                });
+            }
+            finally {
+                updateService.install = originalInstall;
+            }
+        });
+    });
+});
+//# sourceMappingURL=aboutDialog.test.js.map

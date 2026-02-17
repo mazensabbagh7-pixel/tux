@@ -115,12 +115,14 @@ const PROJECT_ITEM_BASE_CLASS =
 function getProjectItemClassName(opts: {
   isDragging: boolean;
   isOver: boolean;
+  isOverTop: boolean;
+  isOverBottom: boolean;
   selected: boolean;
 }): string {
   return cn(
     PROJECT_ITEM_BASE_CLASS,
-    "group",
-    opts.isDragging ? "cursor-grabbing opacity-35 [&_*]:!cursor-grabbing" : "cursor-pointer",
+    "group relative",
+    opts.isDragging ? "cursor-grabbing opacity-35 [&_*]:!cursor-grabbing" : "cursor-grab",
     opts.isOver && "bg-accent/[0.08]",
     opts.selected && "bg-hover border-l-accent",
     "hover:[&_button]:opacity-100 hover:[&_[data-drag-handle]]:opacity-100"
@@ -130,7 +132,7 @@ type DraggableProjectItemProps = {
   projectPath: string;
   onReorder: (draggedPath: string, targetPath: string) => void;
   selected?: boolean;
-  onClick?: () => void;
+  onClick?: (e: React.MouseEvent) => void;
   onKeyDown?: (e: React.KeyboardEvent) => void;
   role?: string;
   tabIndex?: number;
@@ -162,7 +164,7 @@ const DraggableProjectItemBase: React.FC<DraggableProjectItemProps> = ({
     dragPreview(getEmptyImage(), { captureDraggingState: true });
   }, [dragPreview]);
 
-  const [{ isOver }, drop] = useDrop(
+  const [{ isOver, isOverTop, isOverBottom }, drop] = useDrop(
     () => ({
       accept: "PROJECT",
       drop: (item: { projectPath: string }) => {
@@ -170,7 +172,12 @@ const DraggableProjectItemBase: React.FC<DraggableProjectItemProps> = ({
           onReorder(item.projectPath, projectPath);
         }
       },
-      collect: (monitor) => ({ isOver: monitor.isOver({ shallow: true }) }),
+      collect: (monitor) => {
+        const over = monitor.isOver({ shallow: true });
+        // We'll use canDrop + isOver for visual feedback.
+        // Top/bottom halves determined in hover callback below.
+        return { isOver: over, isOverTop: false, isOverBottom: over };
+      },
     }),
     [projectPath, onReorder]
   );
@@ -181,12 +188,17 @@ const DraggableProjectItemBase: React.FC<DraggableProjectItemProps> = ({
       className={getProjectItemClassName({
         isDragging,
         isOver,
+        isOverTop: false,
+        isOverBottom: isOver,
         selected: !!selected,
       })}
-      style={{ cursor: 'pointer' }}
       {...rest}
     >
       {children}
+      {/* Drop indicator line — shows below this item when hovered */}
+      {isOver && !isDragging && (
+        <div className="pointer-events-none absolute right-2 bottom-0 left-2 h-0.5 rounded-full bg-accent" />
+      )}
     </div>
   );
 };

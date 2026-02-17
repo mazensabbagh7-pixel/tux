@@ -92,7 +92,7 @@ interface SettingsPageProps {
   onToggleLeftSidebarCollapsed: () => void;
 }
 
-export function SettingsPage(props: SettingsPageProps) {
+export function SettingsPage(_props: SettingsPageProps) {
   const { close, activeSection, setActiveSection } = useSettings();
   const system1Enabled = useExperimentValue(EXPERIMENT_IDS.SYSTEM_1);
   const governorEnabled = useExperimentValue(EXPERIMENT_IDS.MUX_GOVERNOR);
