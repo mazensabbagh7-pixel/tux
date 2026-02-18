@@ -9,7 +9,7 @@ import { MUX_HELP_CHAT_WORKSPACE_ID } from "@/common/constants/muxChat";
 import type { FrontendWorkspaceMetadata } from "@/common/types/workspace";
 import React, { useState, useEffect, useRef } from "react";
 import { useDrag } from "react-dnd";
-import { getEmptyImage } from "react-dnd-html5-backend";
+
 import { GitStatusIndicator } from "./GitStatusIndicator";
 
 import { WorkspaceHoverPreview } from "./WorkspaceHoverPreview";
@@ -502,7 +502,7 @@ function RegularWorkspaceListItemInner(props: WorkspaceListItemProps) {
   const paddingLeft = getItemPaddingLeft(depth);
 
   // Drag handle for moving workspace between sections
-  const [{ isDragging }, drag, dragPreview] = useDrag(
+  const [{ isDragging }, drag] = useDrag(
     () => ({
       type: WORKSPACE_DRAG_TYPE,
       item: (): WorkspaceDragItem & { displayTitle?: string; runtimeConfig?: unknown } => ({
@@ -522,10 +522,7 @@ function RegularWorkspaceListItemInner(props: WorkspaceListItemProps) {
     [workspaceId, projectPath, sectionId, isDisabled, displayTitle, metadata.runtimeConfig]
   );
 
-  // Hide native drag preview; we render a custom preview via WorkspaceDragLayer
-  useEffect(() => {
-    dragPreview(getEmptyImage(), { captureDraggingState: true });
-  }, [dragPreview]);
+  // Touch backend doesn't use native drag previews.
 
   // Determine workspace status for colored dot
   const isSubAgent = (depth ?? 0) > 0;

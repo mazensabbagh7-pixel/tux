@@ -1,6 +1,6 @@
-import React, { useEffect } from "react";
+import React from "react";
 import { useDrag, useDrop } from "react-dnd";
-import { getEmptyImage } from "react-dnd-html5-backend";
+
 import { cn } from "@/common/lib/utils";
 
 const SECTION_DRAG_TYPE = "SECTION_REORDER";
@@ -32,7 +32,7 @@ export const DraggableSection: React.FC<DraggableSectionProps> = ({
   onReorder,
   children,
 }) => {
-  const [{ isDragging }, drag, dragPreview] = useDrag(
+  const [{ isDragging }, drag] = useDrag(
     () => ({
       type: SECTION_DRAG_TYPE,
       item: {
@@ -48,10 +48,7 @@ export const DraggableSection: React.FC<DraggableSectionProps> = ({
     [sectionId, sectionName, projectPath]
   );
 
-  // Hide native drag preview
-  useEffect(() => {
-    dragPreview(getEmptyImage(), { captureDraggingState: true });
-  }, [dragPreview]);
+  // Touch backend doesn't use native drag previews.
 
   const [{ isOver, canDrop }, drop] = useDrop(
     () => ({

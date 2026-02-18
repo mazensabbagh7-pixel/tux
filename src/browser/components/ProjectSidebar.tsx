@@ -21,7 +21,7 @@ import {
 } from "@/common/constants/storage";
 import { getDisplayTitleFromPersistedState } from "@/browser/hooks/useWorkspaceName";
 import { DndProvider } from "react-dnd";
-import { HTML5Backend, getEmptyImage } from "react-dnd-html5-backend";
+import { TouchBackend } from "react-dnd-touch-backend";
 import { useDrag, useDrop, useDragLayer } from "react-dnd";
 import {
   sortProjectsByOrder,
@@ -152,7 +152,7 @@ const DraggableProjectItemBase: React.FC<DraggableProjectItemProps> = ({
   selected,
   ...rest
 }) => {
-  const [{ isDragging }, drag, dragPreview] = useDrag(
+  const [{ isDragging }, drag] = useDrag(
     () => ({
       type: "PROJECT",
       item: { type: "PROJECT" as const, projectPath },
@@ -170,10 +170,8 @@ const DraggableProjectItemBase: React.FC<DraggableProjectItemProps> = ({
     return () => { style.remove(); };
   }, [isDragging]);
 
-  // Hide native drag preview; we render a custom preview via DragLayer
-  useEffect(() => {
-    dragPreview(getEmptyImage(), { captureDraggingState: true });
-  }, [dragPreview]);
+  // Touch backend doesn't use native drag previews, so no need
+  // to hide one. Our custom ProjectDragLayer handles the visual.
 
   const [{ isOver, isOverTop, isOverBottom }, drop] = useDrop(
     () => ({
@@ -775,7 +773,7 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
 
   return (
     <RenameProvider onRenameWorkspace={onRenameWorkspace}>
-      <DndProvider backend={HTML5Backend}>
+      <DndProvider backend={TouchBackend} options={{ enableMouseEvents: true }}>
         <ProjectDragLayer />
         <WorkspaceDragLayer />
         <SectionDragLayer />
