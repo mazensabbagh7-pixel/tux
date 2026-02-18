@@ -8,7 +8,9 @@ import {
   createWorkspaceBackedSession,
   forkWorkspaceBackedSession,
   listWorkspaceBackedSessions,
+  loadWorkspaceBackedSession,
   parseMuxMeta,
+  resumeWorkspaceBackedSession,
 } from "./workspace";
 
 function makeWorkspaceMetadata(
@@ -265,6 +267,37 @@ describe("createWorkspaceBackedSession", () => {
   });
 });
 
+describe("workspace ownership checks", () => {
+  it("load/resume tolerate malformed namedWorkspacePath when projectPath matches cwd", async () => {
+    const getInfoMock = vi.fn().mockResolvedValue(
+      makeWorkspaceMetadata({
+        id: "workspace-source",
+        projectPath: "/repo",
+        namedWorkspacePath: "relative/corrupted-path",
+        agentId: "exec",
+      })
+    );
+
+    const client = makeClient({
+      getInfo: getInfoMock,
+    });
+
+    const loaded = await loadWorkspaceBackedSession(client, {
+      sessionId: "workspace-source",
+      cwd: "/repo",
+      mcpServers: [],
+    });
+    expect(loaded.workspaceId).toBe("workspace-source");
+
+    const resumed = await resumeWorkspaceBackedSession(client, {
+      sessionId: "workspace-source",
+      cwd: "/repo",
+      mcpServers: [],
+    });
+    expect(resumed.workspaceId).toBe("workspace-source");
+  });
+});
+
 describe("forkWorkspaceBackedSession", () => {
   it("canonicalizes cwd matching and normalizes fork branch names", async () => {
     const getInfoMock = vi.fn().mockResolvedValue(
@@ -310,6 +343,46 @@ describe("forkWorkspaceBackedSession", () => {
     expect(forkMock).toHaveBeenCalledWith({
       sourceWorkspaceId: "workspace-source",
       newName: "feature-acp",
+    });
+    expect(session.workspaceId).toBe("workspace-forked");
+  });
+  it("fork tolerates malformed namedWorkspacePath when projectPath matches cwd", async () => {
+    const getInfoMock = vi.fn().mockResolvedValue(
+      makeWorkspaceMetadata({
+        id: "workspace-source",
+        projectPath: "/repo",
+        namedWorkspacePath: "broken/relative/path",
+        agentId: "exec",
+      })
+    );
+
+    const forkMock = vi.fn().mockResolvedValue({
+      success: true,
+      metadata: makeWorkspaceMetadata({
+        id: "workspace-forked",
+        projectPath: "/repo",
+      }),
+      projectPath: "/repo",
+    });
+
+    const client = makeClient({
+      getInfo: getInfoMock,
+      fork: forkMock,
+    });
+
+    const session = await forkWorkspaceBackedSession(
+      client,
+      {
+        sessionId: "workspace-source",
+        cwd: "/repo",
+        mcpServers: [],
+      },
+      undefined
+    );
+
+    expect(forkMock).toHaveBeenCalledWith({
+      sourceWorkspaceId: "workspace-source",
+      newName: undefined,
     });
     expect(session.workspaceId).toBe("workspace-forked");
   });
@@ -420,6 +493,44 @@ describe("listWorkspaceBackedSessions", () => {
     expect(response.sessions[0]).toMatchObject({
       sessionId: "workspace-archived-recently",
       updatedAt: "2026-03-01T12:00:00.000Z",
+    });
+  });
+
+  it("ignores malformed workspace paths during cwd filtering", async () => {
+    const listMock = vi.fn().mockResolvedValue([
+      makeWorkspaceMetadata({
+        id: "workspace-valid-project-path",
+        projectPath: "/repo",
+        namedWorkspacePath: "relative/corrupted-path",
+      }),
+      makeWorkspaceMetadata({
+        id: "workspace-malformed",
+        projectPath: "relative/project/path",
+        namedWorkspacePath: "another/relative/path",
+      }),
+      makeWorkspaceMetadata({
+        id: "workspace-other-project",
+        projectPath: "/other",
+        namedWorkspacePath: "/other/.mux/workspace-other",
+      }),
+    ]);
+
+    const client = makeClient({ list: listMock });
+
+    const response = await listWorkspaceBackedSessions(client, {
+      cwd: "/repo",
+    });
+
+    expect(response).toEqual({
+      sessions: [
+        {
+          sessionId: "workspace-valid-project-path",
+          cwd: "/repo",
+          title: "feature/acp",
+          updatedAt: "2026-02-01T00:00:00.000Z",
+        },
+      ],
+      nextCursor: null,
     });
   });
 

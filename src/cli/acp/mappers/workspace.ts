@@ -127,6 +127,23 @@ function canonicalizeAbsolutePathForComparison(inputPath: string): string {
   return process.platform === "win32" ? normalizedPath.toLowerCase() : normalizedPath;
 }
 
+function tryCanonicalizeAbsolutePathForComparison(
+  inputPath: string | undefined
+): string | undefined {
+  if (typeof inputPath !== "string") {
+    return undefined;
+  }
+
+  try {
+    return canonicalizeAbsolutePathForComparison(inputPath);
+  } catch {
+    // Self-healing: persisted workspace metadata may contain malformed paths
+    // (legacy/corrupted namedWorkspacePath). Ignore invalid entries instead of
+    // failing the entire ACP ownership/list operation.
+    return undefined;
+  }
+}
+
 function createFallbackBranchName(): string {
   const timestamp = Date.now().toString(36);
   const randomSuffix = Math.random().toString(36).slice(2, 8);
@@ -229,10 +246,13 @@ function assertWorkspaceBelongsToCwd(
   const expectedPath = canonicalizeAbsolutePathForComparison(cwd);
   // Accept both the project path and the named worktree path as valid cwd values.
   // Clients may send either depending on whether they opened the project root
-  // or the specific workspace directory (named worktree).
-  const validPaths = [metadata.projectPath, metadata.namedWorkspacePath].map(
-    canonicalizeAbsolutePathForComparison
-  );
+  // or the specific workspace directory (named worktree). Ignore malformed
+  // persisted paths (e.g., corrupted legacy namedWorkspacePath) so valid
+  // metadata.projectPath can still satisfy the ownership check.
+  const validPaths = [
+    tryCanonicalizeAbsolutePathForComparison(metadata.projectPath),
+    tryCanonicalizeAbsolutePathForComparison(metadata.namedWorkspacePath),
+  ].filter((candidate): candidate is string => typeof candidate === "string");
 
   if (!validPaths.includes(expectedPath)) {
     throw new Error(
@@ -446,9 +466,11 @@ export async function listWorkspaceBackedSessions(
     ? (() => {
         const expectedCwd = canonicalizeAbsolutePathForComparison(params.cwd);
         return allWorkspaces.filter((workspace) => {
-          const workspacePaths = [workspace.projectPath, workspace.namedWorkspacePath].map(
-            canonicalizeAbsolutePathForComparison
-          );
+          const workspacePaths = [
+            tryCanonicalizeAbsolutePathForComparison(workspace.projectPath),
+            tryCanonicalizeAbsolutePathForComparison(workspace.namedWorkspacePath),
+          ];
+
           return workspacePaths.includes(expectedCwd);
         });
       })()
