@@ -1128,20 +1128,24 @@ export class MuxAcpAgent implements AcpAgent {
       thinkingLevel: ThinkingLevel;
     }
   ): acpSchema.SessionConfigOption[] {
-    const modeOptions = modeResult.options;
+    let modeOptions = modeResult.options;
     const modeValueIds = new Set(modeOptions.map((mode) => mode.id));
 
-    // If the session's agent isn't in the available modes (e.g. a hidden or
-    // non-uiSelectable agent loaded from workspace metadata), fall back to the
-    // first mode option and update session state so prompt() executes with the
-    // same agent the client sees in its UI.
+    // If the session's agent isn't in available modes, keep UI and prompt()
+    // execution in sync. During fallback mode discovery errors, show the current
+    // session agent in the list without persisting a potentially incorrect
+    // normalization.
     let normalizedAgentId = current.agentId;
     if (!modeValueIds.has(normalizedAgentId)) {
-      normalizedAgentId = modeOptions[0]?.id ?? DEFAULT_AGENT_ID;
-      // Only persist normalized agent IDs when discovery succeeded. Fallback
-      // mode lists come from transient agents.list failures and should not
-      // overwrite persisted session config.
-      if (!modeResult.isFallback) {
+      if (modeResult.isFallback) {
+        // Agent discovery failed: include the current session agent so clients
+        // can keep selecting/displaying the real prompt() agent without
+        // mutating persisted session config on transient errors.
+        modeOptions = [{ id: normalizedAgentId, name: normalizedAgentId }, ...modeOptions];
+      } else {
+        // Discovery succeeded and current agent is unavailable/hidden: normalize
+        // to a valid mode and persist so UI + prompt() stay aligned.
+        normalizedAgentId = modeOptions[0]?.id ?? DEFAULT_AGENT_ID;
         this.sessionManager.updateConfig(current.sessionId, { agentId: normalizedAgentId });
       }
     }
