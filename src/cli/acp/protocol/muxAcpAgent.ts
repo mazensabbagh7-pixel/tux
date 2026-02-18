@@ -1,5 +1,10 @@
 import * as path from "path";
-import { PROTOCOL_VERSION, type Agent, type AgentSideConnection } from "@agentclientprotocol/sdk";
+import {
+  PROTOCOL_VERSION,
+  RequestError,
+  type Agent,
+  type AgentSideConnection,
+} from "@agentclientprotocol/sdk";
 import type * as schema from "@agentclientprotocol/sdk";
 import type { RouterClient } from "@orpc/server";
 import assert from "@/common/utils/assert";
@@ -149,9 +154,9 @@ export class MuxAcpAgent implements Agent {
 
   private assertUnstableEnabled(methodName: string): void {
     if (!this.options.unstable) {
-      throw new Error(
-        `${methodName} requires unstable ACP methods. Restart with --acp-unstable to enable it.`
-      );
+      // Unstable methods must respond as method-not-found when disabled so ACP
+      // clients can probe capability support via JSON-RPC fallback behavior.
+      throw RequestError.methodNotFound(methodName);
     }
   }
 
@@ -480,24 +485,26 @@ export class MuxAcpAgent implements Agent {
       log.debug(`[acp] workspace.activity.list threw for ${session.workspaceId}`);
     }
 
-    try {
-      const interruptResult = await this.orpcClient.workspace.interruptStream({
-        workspaceId: session.workspaceId,
-        options: {
-          // Keep queued messages in durable flow when ACP preempts an in-flight stream.
-          // The default interrupt behavior restores queue items to UI input, but ACP
-          // does not consume restore-to-input events and would effectively drop them.
-          sendQueuedImmediately: true,
-        },
-      });
-      if (!interruptResult.success) {
-        log.debug(
-          `[acp] workspace.interruptStream failed for ${session.workspaceId}: ${interruptResult.error ?? "unknown"}`
-        );
+    if (hadPreexistingStream) {
+      try {
+        const interruptResult = await this.orpcClient.workspace.interruptStream({
+          workspaceId: session.workspaceId,
+          options: {
+            // Keep queued messages in durable flow when ACP preempts an in-flight stream.
+            // The default interrupt behavior restores queue items to UI input, but ACP
+            // does not consume restore-to-input events and would effectively drop them.
+            sendQueuedImmediately: true,
+          },
+        });
+        if (!interruptResult.success) {
+          log.debug(
+            `[acp] workspace.interruptStream failed for ${session.workspaceId}: ${interruptResult.error ?? "unknown"}`
+          );
+        }
+      } catch {
+        // RPC transport error — backend may already be idle or unreachable.
+        log.debug(`[acp] workspace.interruptStream threw for ${session.workspaceId}`);
       }
-    } catch {
-      // RPC transport error — backend may already be idle or unreachable.
-      log.debug(`[acp] workspace.interruptStream threw for ${session.workspaceId}`);
     }
 
     if (session.activePromptAbort) {
