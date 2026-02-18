@@ -338,6 +338,21 @@ function parseCursorOffset(cursor: string | null | undefined): number {
   return parsed;
 }
 
+function resolveWorkspaceUpdatedAt(
+  metadata: FrontendWorkspaceMetadataSchemaType
+): string | undefined {
+  return metadata.unarchivedAt ?? metadata.archivedAt ?? metadata.createdAt;
+}
+
+function parseWorkspaceTimestamp(value: string | undefined): number {
+  if (typeof value !== "string" || value.length === 0) {
+    return 0;
+  }
+
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
 function toSessionInfo(metadata: FrontendWorkspaceMetadataSchemaType): schema.SessionInfo {
   const info: schema.SessionInfo = {
     sessionId: metadata.id,
@@ -345,7 +360,7 @@ function toSessionInfo(metadata: FrontendWorkspaceMetadataSchemaType): schema.Se
     title: metadata.title ?? metadata.name,
   };
 
-  const updatedAt = metadata.unarchivedAt ?? metadata.archivedAt ?? metadata.createdAt;
+  const updatedAt = resolveWorkspaceUpdatedAt(metadata);
   if (updatedAt) {
     info.updatedAt = updatedAt;
   }
@@ -367,8 +382,8 @@ export async function listWorkspaceBackedSessions(
     : allWorkspaces;
 
   const sorted = [...filtered].sort((left, right) => {
-    const leftTime = Date.parse(left.createdAt ?? "") || 0;
-    const rightTime = Date.parse(right.createdAt ?? "") || 0;
+    const leftTime = parseWorkspaceTimestamp(resolveWorkspaceUpdatedAt(left));
+    const rightTime = parseWorkspaceTimestamp(resolveWorkspaceUpdatedAt(right));
     return rightTime - leftTime;
   });
 

@@ -301,6 +301,36 @@ describe("listWorkspaceBackedSessions", () => {
     });
   });
 
+  it("sorts sessions by updatedAt recency rather than createdAt", async () => {
+    const listMock = vi.fn().mockResolvedValue([
+      makeWorkspaceMetadata({
+        id: "workspace-restored",
+        name: "restored-branch",
+        projectPath: "/repo",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        unarchivedAt: "2026-03-01T12:00:00.000Z",
+      }),
+      makeWorkspaceMetadata({
+        id: "workspace-recent-created",
+        name: "recent-created",
+        projectPath: "/repo",
+        createdAt: "2026-02-15T00:00:00.000Z",
+      }),
+    ]);
+
+    const client = makeClient({ list: listMock });
+
+    const response = await listWorkspaceBackedSessions(client, {
+      cwd: "/repo",
+    });
+
+    expect(response.sessions.map((session) => session.sessionId)).toEqual([
+      "workspace-restored",
+      "workspace-recent-created",
+    ]);
+    expect(response.sessions[0]?.updatedAt).toBe("2026-03-01T12:00:00.000Z");
+  });
+
   it("paginates with cursor offsets", async () => {
     const workspaces = Array.from({ length: 101 }, (_, index) =>
       makeWorkspaceMetadata({

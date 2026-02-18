@@ -89,12 +89,16 @@ function streamAbortEvent(
   };
 }
 
-function streamErrorEvent(messageId = MESSAGE_ID, error = "stream failure"): WorkspaceChatMessage {
+function streamErrorEvent(
+  messageId = MESSAGE_ID,
+  error = "stream failure",
+  errorType: "unknown" | "aborted" = "unknown"
+): WorkspaceChatMessage {
   return {
     type: "stream-error",
     messageId,
     error,
-    errorType: "unknown",
+    errorType,
   };
 }
 
@@ -311,6 +315,19 @@ describe("mapWorkspaceChatEventToAcp", () => {
       kind: "error",
       error: new Error("startup failed"),
     });
+    expect(state.activeMessageId).toBeNull();
+  });
+
+  it("ignores stale aborted stream-error before stream-start when activeMessageId is null", () => {
+    const state = createUpdateMappingState();
+
+    const mapped = mapWorkspaceChatEventToAcp(
+      streamErrorEvent(STALE_MESSAGE_ID, "stale abort", "aborted"),
+      state,
+      false
+    );
+
+    expect(mapped).toEqual({ kind: "ignore" });
     expect(state.activeMessageId).toBeNull();
   });
 

@@ -325,6 +325,12 @@ export function mapWorkspaceChatEventToAcp(
     const match = ensureMessageId(state, event.messageId, event.type);
     if (!match.ok) {
       if (state.activeMessageId == null) {
+        // Interrupted prior streams can flush a stale aborted stream-error before
+        // the new prompt's stream-start arrives; ignore that specific stale case.
+        if (event.errorType === "aborted") {
+          return { kind: "ignore" };
+        }
+
         return {
           kind: "error",
           error: new Error(event.error),
