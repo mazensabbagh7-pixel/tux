@@ -42,6 +42,12 @@ interface ModeOption {
   description?: string;
 }
 
+interface ModeOptionsResult {
+  options: ModeOption[];
+  /** True when the options are a fallback due to agent discovery failure */
+  isFallback: boolean;
+}
+
 type OrpcClient = ReturnType<typeof createOrpcWsClient>["client"];
 type AgentDescriptor = Awaited<ReturnType<OrpcClient["agents"]["list"]>>[number];
 
@@ -167,17 +173,17 @@ export class MuxAcpAgent implements AcpAgent {
 
     this.subscribeToChat(workspaceId);
 
-    const modeOptions = await this.getModeOptions(projectPath, workspaceId);
+    const modeResult = await this.getModeOptions(projectPath, workspaceId);
 
     return {
       sessionId: workspaceId,
-      configOptions: this.buildConfigOptions(modeOptions, {
+      configOptions: this.buildConfigOptions(modeResult, {
         sessionId: workspaceId,
         agentId,
         model,
         thinkingLevel,
       }),
-      modes: this.buildModes(modeOptions, agentId),
+      modes: this.buildModes(modeResult.options, agentId),
     };
   }
 
@@ -207,16 +213,16 @@ export class MuxAcpAgent implements AcpAgent {
 
     this.subscribeToChat(workspaceId);
 
-    const modeOptions = await this.getModeOptions(info.projectPath, workspaceId);
+    const modeResult = await this.getModeOptions(info.projectPath, workspaceId);
 
     return {
-      configOptions: this.buildConfigOptions(modeOptions, {
+      configOptions: this.buildConfigOptions(modeResult, {
         sessionId: workspaceId,
         agentId,
         model,
         thinkingLevel,
       }),
-      modes: this.buildModes(modeOptions, agentId),
+      modes: this.buildModes(modeResult.options, agentId),
     };
   }
 
@@ -432,8 +438,8 @@ export class MuxAcpAgent implements AcpAgent {
 
     switch (params.configId) {
       case CONFIG_ID_AGENT_ID: {
-        const modeOptions = await this.getModeOptions(session.projectPath, session.workspaceId);
-        if (!modeOptions.some((option) => option.id === params.value)) {
+        const modeResult = await this.getModeOptions(session.projectPath, session.workspaceId);
+        if (!modeResult.options.some((option) => option.id === params.value)) {
           throw this.deps.sdk.RequestError.invalidParams(
             undefined,
             `Unknown agent option: ${params.value}`
@@ -505,10 +511,10 @@ export class MuxAcpAgent implements AcpAgent {
       );
     }
 
-    const modeOptions = await this.getModeOptions(updated.projectPath, updated.workspaceId);
+    const modeResult = await this.getModeOptions(updated.projectPath, updated.workspaceId);
 
     return {
-      configOptions: this.buildConfigOptions(modeOptions, {
+      configOptions: this.buildConfigOptions(modeResult, {
         sessionId: params.sessionId,
         agentId: updated.agentId,
         model: updated.model,
@@ -525,8 +531,8 @@ export class MuxAcpAgent implements AcpAgent {
       throw this.deps.sdk.RequestError.resourceNotFound(params.sessionId);
     }
 
-    const modeOptions = await this.getModeOptions(session.projectPath, session.workspaceId);
-    if (!modeOptions.some((option) => option.id === params.modeId)) {
+    const modeResult = await this.getModeOptions(session.projectPath, session.workspaceId);
+    if (!modeResult.options.some((option) => option.id === params.modeId)) {
       throw this.deps.sdk.RequestError.invalidParams(undefined, `Unknown mode: ${params.modeId}`);
     }
 
@@ -664,17 +670,17 @@ export class MuxAcpAgent implements AcpAgent {
 
     this.subscribeToChat(workspaceId);
 
-    const modeOptions = await this.getModeOptions(forkResult.metadata.projectPath, workspaceId);
+    const modeResult = await this.getModeOptions(forkResult.metadata.projectPath, workspaceId);
 
     return {
       sessionId: workspaceId,
-      configOptions: this.buildConfigOptions(modeOptions, {
+      configOptions: this.buildConfigOptions(modeResult, {
         sessionId: workspaceId,
         agentId,
         model,
         thinkingLevel,
       }),
-      modes: this.buildModes(modeOptions, agentId),
+      modes: this.buildModes(modeResult.options, agentId),
     };
   }
 
@@ -952,9 +958,7 @@ export class MuxAcpAgent implements AcpAgent {
     }
 
     if (event.type === "stream-error") {
-      this.rejectPrompt(workspaceId, event.messageId, new Error(event.error), {
-        forceIfUnbound: true,
-      });
+      this.rejectPrompt(workspaceId, event.messageId, new Error(event.error));
     }
   }
 
@@ -978,12 +982,7 @@ export class MuxAcpAgent implements AcpAgent {
     promptResolver.resolve(response);
   }
 
-  private rejectPrompt(
-    sessionId: string,
-    messageId: string | undefined,
-    error: Error,
-    options?: { forceIfUnbound?: boolean }
-  ): void {
+  private rejectPrompt(sessionId: string, messageId: string | undefined, error: Error): void {
     const session = this.sessionManager.getSession(sessionId);
     const promptResolver = session?.promptResolver;
 
@@ -991,12 +990,7 @@ export class MuxAcpAgent implements AcpAgent {
       return;
     }
 
-    const isUnbound = promptResolver.messageId.length === 0;
-    if (isUnbound) {
-      if (!options?.forceIfUnbound) {
-        return;
-      }
-    } else if (!this.matchesPromptMessage(promptResolver.messageId, messageId)) {
+    if (!this.matchesPromptMessage(promptResolver.messageId, messageId)) {
       return;
     }
 
@@ -1041,7 +1035,10 @@ export class MuxAcpAgent implements AcpAgent {
     return activeMessageId === eventMessageId;
   }
 
-  private async getModeOptions(projectPath: string, workspaceId?: string): Promise<ModeOption[]> {
+  private async getModeOptions(
+    projectPath: string,
+    workspaceId?: string
+  ): Promise<ModeOptionsResult> {
     assert(projectPath.length > 0, "projectPath must be non-empty");
 
     let descriptors: AgentDescriptor[] = [];
@@ -1051,13 +1048,16 @@ export class MuxAcpAgent implements AcpAgent {
         : await this.deps.orpcClient.agents.list({ projectPath });
     } catch (error) {
       this.deps.log("agents.list failed; falling back to default mode list", error);
-      return [
-        {
-          id: DEFAULT_AGENT_ID,
-          name: "Exec",
-          description: "Default Mux execution agent",
-        },
-      ];
+      return {
+        options: [
+          {
+            id: DEFAULT_AGENT_ID,
+            name: "Exec",
+            description: "Default Mux execution agent",
+          },
+        ],
+        isFallback: true,
+      };
     }
 
     const selectable = descriptors.filter((descriptor) => descriptor.uiSelectable);
@@ -1078,16 +1078,22 @@ export class MuxAcpAgent implements AcpAgent {
     }
 
     if (options.length === 0) {
-      return [
-        {
-          id: DEFAULT_AGENT_ID,
-          name: "Exec",
-          description: "Default Mux execution agent",
-        },
-      ];
+      return {
+        options: [
+          {
+            id: DEFAULT_AGENT_ID,
+            name: "Exec",
+            description: "Default Mux execution agent",
+          },
+        ],
+        isFallback: false,
+      };
     }
 
-    return options;
+    return {
+      options,
+      isFallback: false,
+    };
   }
 
   private buildModes(
@@ -1114,7 +1120,7 @@ export class MuxAcpAgent implements AcpAgent {
   }
 
   private buildConfigOptions(
-    modeOptions: ModeOption[],
+    modeResult: ModeOptionsResult,
     current: {
       sessionId: string;
       agentId: string;
@@ -1122,6 +1128,7 @@ export class MuxAcpAgent implements AcpAgent {
       thinkingLevel: ThinkingLevel;
     }
   ): acpSchema.SessionConfigOption[] {
+    const modeOptions = modeResult.options;
     const modeValueIds = new Set(modeOptions.map((mode) => mode.id));
 
     // If the session's agent isn't in the available modes (e.g. a hidden or
@@ -1131,7 +1138,12 @@ export class MuxAcpAgent implements AcpAgent {
     let normalizedAgentId = current.agentId;
     if (!modeValueIds.has(normalizedAgentId)) {
       normalizedAgentId = modeOptions[0]?.id ?? DEFAULT_AGENT_ID;
-      this.sessionManager.updateConfig(current.sessionId, { agentId: normalizedAgentId });
+      // Only persist normalized agent IDs when discovery succeeded. Fallback
+      // mode lists come from transient agents.list failures and should not
+      // overwrite persisted session config.
+      if (!modeResult.isFallback) {
+        this.sessionManager.updateConfig(current.sessionId, { agentId: normalizedAgentId });
+      }
     }
 
     const modelOptions = this.getModelOptions(current.model);
