@@ -522,18 +522,17 @@ function validateScript(script: string, config: ToolConfiguration): BashToolResu
   return null; // Valid
 }
 
+// Patterns for commands that are inherently validation (tests, typecheck, lint).
+// `run_and_report` is a generic wrapper (`run_and_report <step> <cmd...>`), so we
+// match it only when the wrapped command itself is a validation command.
+const VALIDATION_COMMAND_RE =
+  /(?:make\s+(?:test|typecheck|lint|static-check|fmt-check)|bun\s+(?:test|run\s+(?:test|typecheck|lint))|npm\s+(?:test|run\s+(?:test|typecheck|lint))|pnpm\s+(?:test|run\s+(?:test|typecheck|lint))|yarn\s+(?:test|run\s+(?:test|typecheck|lint))|tsc|eslint|vitest|pytest|cargo\s+(?:test|check|clippy))\b/;
+
 const VALIDATION_PATTERNS: RegExp[] = [
-  /(^|\n)\s*run_and_report\b/,
-  /(^|\n)\s*make\s+(test|typecheck|lint|static-check|fmt-check)\b/,
-  /(^|\n)\s*bun\s+(test|run\s+test|run\s+typecheck|run\s+lint)\b/,
-  /(^|\n)\s*npm\s+(test|run\s+(test|typecheck|lint))\b/,
-  /(^|\n)\s*pnpm\s+(test|run\s+(test|typecheck|lint))\b/,
-  /(^|\n)\s*yarn\s+(test|run\s+(test|typecheck|lint))\b/,
-  /(^|\n)\s*tsc\b/,
-  /(^|\n)\s*eslint\b/,
-  /(^|\n)\s*vitest\b/,
-  /(^|\n)\s*pytest\b/,
-  /(^|\n)\s*cargo\s+(test|check|clippy)\b/,
+  // run_and_report <step_name> <validation_command...>
+  new RegExp(`(^|\\n)\\s*run_and_report\\s+\\S+\\s+${VALIDATION_COMMAND_RE.source}`),
+  // Standalone validation commands at the start of a line
+  new RegExp(`(^|\\n)\\s*${VALIDATION_COMMAND_RE.source}`),
 ];
 
 export function looksLikeValidationCommand(script: string): boolean {

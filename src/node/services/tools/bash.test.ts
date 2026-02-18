@@ -59,6 +59,8 @@ describe("looksLikeValidationCommand", () => {
     expect(looksLikeValidationCommand("bun install")).toBe(false);
     expect(looksLikeValidationCommand("echo test")).toBe(false);
     expect(looksLikeValidationCommand("cargo build")).toBe(false);
+    // run_and_report wrapping a non-validation command should NOT trigger
+    expect(looksLikeValidationCommand("run_and_report install bun install")).toBe(false);
   });
 });
 
