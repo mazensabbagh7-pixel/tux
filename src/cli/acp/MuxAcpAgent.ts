@@ -195,15 +195,10 @@ export class MuxAcpAgent implements AcpAgent {
       throw this.deps.sdk.RequestError.resourceNotFound(workspaceId);
     }
 
-    // Prefer agentId, then legacy agentType, then infer from aiSettingsByAgent
-    // (e.g., forked workspaces where agentId was persisted via updateAgentAISettings
-    // but the workspace metadata itself has no explicit agent field).
-    const explicitAgent = info.agentId ?? info.agentType;
-    const inferredAgent =
-      !explicitAgent && info.aiSettingsByAgent
-        ? Object.keys(info.aiSettingsByAgent).find((k) => k !== DEFAULT_AGENT_ID)
-        : undefined;
-    const agentId = this.resolveAgentId(explicitAgent ?? inferredAgent);
+    // Prefer agentId, then legacy agentType. When neither is set, fall back to
+    // the default agent rather than guessing from aiSettingsByAgent keys (which
+    // may contain multiple historical agents in non-deterministic order).
+    const agentId = this.resolveAgentId(info.agentId ?? info.agentType);
     const aiSettings = info.aiSettingsByAgent?.[agentId] ?? info.aiSettings;
     const model = normalizeNonEmptyString(aiSettings?.model) ?? this.defaultModel();
     const thinkingLevel = this.resolveThinkingLevel(aiSettings?.thinkingLevel);
@@ -689,19 +684,15 @@ export class MuxAcpAgent implements AcpAgent {
     const workspaceId = forkResult.metadata.id;
     assert(workspaceId.length > 0, "workspace.fork must return a non-empty workspace ID");
 
-    // Prefer agentId, then legacy agentType, then infer from aiSettingsByAgent
-    // (same fallback chain as loadSession for upgrade/downgrade compatibility).
-    const explicitForkAgent =
+    // Prefer agentId, then legacy agentType. Fall back to the default agent
+    // rather than guessing from aiSettingsByAgent keys (which may contain
+    // multiple historical agents in non-deterministic order).
+    const agentId = this.resolveAgentId(
       forkResult.metadata.agentId ??
-      forkResult.metadata.agentType ??
-      sourceInfo.agentId ??
-      sourceInfo.agentType;
-    const inferredForkAgent = !explicitForkAgent
-      ? (Object.keys(forkResult.metadata.aiSettingsByAgent ?? {}).find(
-          (k) => k !== DEFAULT_AGENT_ID
-        ) ?? Object.keys(sourceInfo.aiSettingsByAgent ?? {}).find((k) => k !== DEFAULT_AGENT_ID))
-      : undefined;
-    const agentId = this.resolveAgentId(explicitForkAgent ?? inferredForkAgent);
+        forkResult.metadata.agentType ??
+        sourceInfo.agentId ??
+        sourceInfo.agentType
+    );
     const sourceAiSettings = sourceInfo.aiSettingsByAgent?.[agentId] ?? sourceInfo.aiSettings;
     const forkedAiSettings =
       forkResult.metadata.aiSettingsByAgent?.[agentId] ?? forkResult.metadata.aiSettings;
