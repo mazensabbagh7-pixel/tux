@@ -1489,7 +1489,6 @@ export function getAvailableTools(
     "switch_agent",
     "memory_read",
     "memory_write",
-    "no_new_memories",
     "system1_keep_ranges",
     "todo_write",
     "todo_read",
