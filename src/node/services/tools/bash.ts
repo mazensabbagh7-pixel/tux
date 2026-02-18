@@ -536,6 +536,10 @@ const VALIDATION_PATTERNS: RegExp[] = [
   // run_and_report <step_name> <validation_command> — only when the actual command
   // (third word) is a validation command. Chained commands like
   // `run_and_report unit cd app && bun test` are caught by the standalone pattern below.
+  // NOTE: This is a heuristic. Environment prefixes like `env CI=1 bun test` or
+  // `bash -c "make test"` won't match the run_and_report rule, but may be caught by
+  // the standalone pattern if chained with &&/;. The agent_report escape hatch (second
+  // attempt always passes) covers any remaining false negatives.
   new RegExp(`${CMD_PREFIX}run_and_report\\s+\\S+\\s+${VALIDATION_COMMAND_RE.source}`),
   // Validation commands at line start or after shell operators
   new RegExp(`${CMD_PREFIX}${VALIDATION_COMMAND_RE.source}`),
