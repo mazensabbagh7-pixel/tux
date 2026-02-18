@@ -177,13 +177,12 @@ export class MuxAcpAgent implements AcpAgent {
 
     return {
       sessionId: workspaceId,
-      configOptions: this.buildConfigOptions(modeResult, {
+      ...this.buildSessionState(modeResult, {
         sessionId: workspaceId,
         agentId,
         model,
         thinkingLevel,
       }),
-      modes: this.buildModes(modeResult, agentId),
     };
   }
 
@@ -223,15 +222,12 @@ export class MuxAcpAgent implements AcpAgent {
 
     const modeResult = await this.getModeOptions(info.projectPath, workspaceId);
 
-    return {
-      configOptions: this.buildConfigOptions(modeResult, {
-        sessionId: workspaceId,
-        agentId,
-        model,
-        thinkingLevel,
-      }),
-      modes: this.buildModes(modeResult, agentId),
-    };
+    return this.buildSessionState(modeResult, {
+      sessionId: workspaceId,
+      agentId,
+      model,
+      thinkingLevel,
+    });
   }
 
   async prompt(params: acpSchema.PromptRequest): Promise<acpSchema.PromptResponse> {
@@ -553,14 +549,13 @@ export class MuxAcpAgent implements AcpAgent {
 
     const modeResult = await this.getModeOptions(updated.projectPath, updated.workspaceId);
 
-    return {
-      configOptions: this.buildConfigOptions(modeResult, {
-        sessionId: params.sessionId,
-        agentId: updated.agentId,
-        model: updated.model,
-        thinkingLevel: updated.thinkingLevel,
-      }),
-    };
+    const { configOptions } = this.buildSessionState(modeResult, {
+      sessionId: params.sessionId,
+      agentId: updated.agentId,
+      model: updated.model,
+      thinkingLevel: updated.thinkingLevel,
+    });
+    return { configOptions };
   }
 
   async setSessionMode(params: acpSchema.SetSessionModeRequest): Promise<void> {
@@ -726,13 +721,12 @@ export class MuxAcpAgent implements AcpAgent {
 
     return {
       sessionId: workspaceId,
-      configOptions: this.buildConfigOptions(modeResult, {
+      ...this.buildSessionState(modeResult, {
         sessionId: workspaceId,
         agentId,
         model,
         thinkingLevel,
       }),
-      modes: this.buildModes(modeResult, agentId),
     };
   }
 
@@ -1148,33 +1142,12 @@ export class MuxAcpAgent implements AcpAgent {
     };
   }
 
-  private buildModes(
-    modeResult: ModeOptionsResult,
-    currentAgentId: string
-  ): acpSchema.SessionModeState {
-    let modeOptions = modeResult.options;
-    assert(modeOptions.length > 0, "buildModes requires at least one mode option");
-
-    // Mirror the injection logic from buildConfigOptions: when the session's
-    // agent is absent from the available modes (e.g., fallback after agent
-    // discovery failure), add it so currentModeId stays aligned with prompt().
-    if (!modeOptions.some((option) => option.id === currentAgentId)) {
-      modeOptions = [{ id: currentAgentId, name: currentAgentId }, ...modeOptions];
-    }
-
-    const availableModes = modeOptions.map((option) => ({
-      id: option.id,
-      name: option.name,
-      ...(option.description ? { description: option.description } : {}),
-    }));
-
-    return {
-      availableModes,
-      currentModeId: currentAgentId,
-    };
-  }
-
-  private buildConfigOptions(
+  /**
+   * Build both configOptions and modes from the same normalized mode list.
+   * This ensures buildModes uses the same normalizedAgentId as configOptions
+   * (e.g., when a stale/hidden agent is normalized to a valid mode).
+   */
+  private buildSessionState(
     modeResult: ModeOptionsResult,
     current: {
       sessionId: string;
@@ -1182,8 +1155,12 @@ export class MuxAcpAgent implements AcpAgent {
       model: string;
       thinkingLevel: ThinkingLevel;
     }
-  ): acpSchema.SessionConfigOption[] {
+  ): {
+    configOptions: acpSchema.SessionConfigOption[];
+    modes: acpSchema.SessionModeState;
+  } {
     let modeOptions = modeResult.options;
+    assert(modeOptions.length > 0, "buildSessionState requires at least one mode option");
     const modeValueIds = new Set(modeOptions.map((mode) => mode.id));
 
     // If the session's agent isn't in available modes, keep UI and prompt()
@@ -1207,7 +1184,7 @@ export class MuxAcpAgent implements AcpAgent {
 
     const modelOptions = this.getModelOptions(current.model);
 
-    return [
+    const configOptions: acpSchema.SessionConfigOption[] = [
       {
         type: "select",
         id: CONFIG_ID_AGENT_ID,
@@ -1240,6 +1217,17 @@ export class MuxAcpAgent implements AcpAgent {
         })),
       },
     ];
+
+    const modes: acpSchema.SessionModeState = {
+      availableModes: modeOptions.map((option) => ({
+        id: option.id,
+        name: option.name,
+        ...(option.description ? { description: option.description } : {}),
+      })),
+      currentModeId: normalizedAgentId,
+    };
+
+    return { configOptions, modes };
   }
 
   private getModelOptions(currentModel: string): {
