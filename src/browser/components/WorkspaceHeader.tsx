@@ -304,6 +304,7 @@ export const WorkspaceHeader: React.FC<WorkspaceHeaderProps> = ({
           />
         )}
         <span className="min-w-0 truncate font-mono text-xs">{isMuxHelpChat ? 'Chat with Mux' : projectName}</span>
+        {!isMuxHelpChat && (
         <div className="flex items-center gap-1">
           <BranchSelector workspaceId={workspaceId} workspaceName={workspaceName} />
           <GitStatusIndicator
@@ -314,6 +315,7 @@ export const WorkspaceHeader: React.FC<WorkspaceHeaderProps> = ({
             isWorking={isWorking}
           />
         </div>
+        )}
       </div>
       <div className={cn("flex items-center gap-2", isDesktop && "titlebar-no-drag")}>
         <WorkspaceLinks workspaceId={workspaceId} />

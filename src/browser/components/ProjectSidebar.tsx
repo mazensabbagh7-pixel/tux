@@ -831,7 +831,7 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
                 <button
                   type="button"
                   onClick={openAboutDialog}
-                  className="text-[10px] text-muted-foreground mt-1 tracking-wide cursor-pointer bg-transparent border-0 p-0 hover:opacity-70 transition-opacity"
+                  className="text-[10px] text-muted-foreground mt-1 tracking-wide cursor-pointer bg-transparent border-0 p-0 text-left self-start hover:opacity-70 transition-opacity"
                 >
                   {VERSION.git_describe ?? "(dev)"}
                 </button>
