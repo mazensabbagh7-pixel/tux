@@ -1823,17 +1823,21 @@ export class AIService extends EventEmitter {
             })()
           : tools;
 
-      this.memoryWriterContextsByMessageId.set(assistantMessageId, {
-        workspaceId,
-        messageId: assistantMessageId,
-        workspaceName: metadata.name,
-        projectPath: metadata.projectPath,
-        runtimeConfig: metadata.runtimeConfig,
-        parentWorkspaceId: metadata.parentWorkspaceId,
-        modelString,
-        muxProviderOptions: effectiveMuxProviderOptions,
-        system1Enabled: experiments?.system1 === true,
-      });
+      // mux-help is a non-project system workspace; it must never schedule
+      // project memory-writer runs or write to ~/.mux/memories.
+      if (workspaceId !== MUX_HELP_CHAT_WORKSPACE_ID) {
+        this.memoryWriterContextsByMessageId.set(assistantMessageId, {
+          workspaceId,
+          messageId: assistantMessageId,
+          workspaceName: metadata.name,
+          projectPath: metadata.projectPath,
+          runtimeConfig: metadata.runtimeConfig,
+          parentWorkspaceId: metadata.parentWorkspaceId,
+          modelString,
+          muxProviderOptions: effectiveMuxProviderOptions,
+          system1Enabled: experiments?.system1 === true,
+        });
+      }
 
       const streamResult = await this.streamManager.startStream(
         workspaceId,
