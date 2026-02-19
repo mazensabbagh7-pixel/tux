@@ -728,4 +728,58 @@ describeIntegration("Actor-Critic mode", () => {
       await app.dispose();
     }
   }, 45_000);
+
+  test("critic loop starts from scratch on empty history (seeds user message, actor goes first)", async () => {
+    // Fresh workspace — no messages have been sent. startCriticLoop should NOT reject
+    // with "Send a message first". Instead it seeds the critic prompt as a user message,
+    // starts an actor turn, then the critic evaluates after the actor finishes.
+    const app = await createAppHarness({ branchPrefix: "critic-empty" });
+    const collector = createStreamCollector(app.env.orpc, app.workspaceId);
+    collector.start();
+    await collector.waitForSubscription(5_000);
+
+    const requestKinds: Array<"actor" | "critic"> = [];
+    const router = app.env.services.aiService.getMockRouter();
+    expect(router).not.toBeNull();
+    router?.prependHandlers([
+      {
+        match: (request) => request.isCriticTurn === true,
+        respond: () => {
+          requestKinds.push("critic");
+          return { assistantText: "/done" };
+        },
+      },
+      {
+        match: (request) => request.isCriticTurn !== true,
+        respond: () => {
+          requestKinds.push("actor");
+          return { assistantText: "Actor implemented the feature from scratch." };
+        },
+      },
+    ]);
+
+    try {
+      // Start critic loop directly — no prior messages, no enableCriticMode needed
+      // (the IPC call carries criticEnabled: true in options)
+      await setCriticPromptAndStart(app, "Build a REST API with proper error handling");
+
+      // Actor should respond first (using critic prompt as task)
+      await app.chat.expectTranscriptContains(
+        "Actor implemented the feature from scratch.",
+        15_000
+      );
+
+      // Then critic evaluates and says /done
+      await app.chat.expectStreamComplete(20_000);
+
+      // Verify ordering: actor first, then critic
+      expect(requestKinds).toEqual(["actor", "critic"]);
+
+      // The seeded user message should be visible in the transcript
+      await app.chat.expectTranscriptContains("Build a REST API with proper error handling");
+    } finally {
+      collector.stop();
+      await app.dispose();
+    }
+  }, 45_000);
 });
