@@ -126,7 +126,7 @@ describe("SigningService", () => {
           const capabilities = await service.getCapabilities();
           const durationMs = Date.now() - startedAt;
 
-          expect(durationMs).toBeLessThan(6_000);
+          expect(durationMs).toBeLessThan(9_000);
           expect(capabilities.publicKey).toStartWith("ssh-ed25519 ");
           expect(capabilities.error?.message).toBe("GitHub CLI check timed out");
         } finally {

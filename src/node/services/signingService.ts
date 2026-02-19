@@ -102,7 +102,8 @@ async function isSshAgentModuleAvailable(): Promise<boolean> {
   return sshAgentModuleAvailable;
 }
 
-const GH_AUTH_STATUS_TIMEOUT_MS = 2_000;
+const GH_AUTH_TIMEOUT_ERROR_MESSAGE = "GitHub CLI check timed out";
+const GH_AUTH_STATUS_TIMEOUT_MS = 4_000;
 
 async function withTimeout<T>(
   promise: Promise<T>,
@@ -548,10 +549,16 @@ export class SigningService {
     if (this.identityPromise) return this.identityPromise;
 
     this.identityPromise = this.doDetectIdentity();
-    this.identityCache = await this.identityPromise;
+    const detectedIdentity = await this.identityPromise;
     this.identityPromise = null;
 
-    return this.identityCache;
+    // Timeout errors are often transient on busy machines. Avoid caching them so
+    // a later call can retry and recover without restarting the app.
+    if (detectedIdentity.error !== GH_AUTH_TIMEOUT_ERROR_MESSAGE) {
+      this.identityCache = detectedIdentity;
+    }
+
+    return detectedIdentity;
   }
 
   private async doDetectIdentity(): Promise<IdentityStatus> {
@@ -584,7 +591,7 @@ export class SigningService {
         error = "GitHub CLI not installed (brew install gh)";
       } else if (message.includes("timed out")) {
         log.info("[SigningService] gh auth status timed out");
-        error = "GitHub CLI check timed out";
+        error = GH_AUTH_TIMEOUT_ERROR_MESSAGE;
       } else {
         log.info("[SigningService] gh auth status failed:", message);
         error = "GitHub CLI error";
