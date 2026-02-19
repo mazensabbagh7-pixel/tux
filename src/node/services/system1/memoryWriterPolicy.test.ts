@@ -330,6 +330,44 @@ describe("MemoryWriterPolicy", () => {
     });
   });
 
+  it("respects agentAiDefaults.system1_memory_writer.enabled=false", async () => {
+    await withTempSessionsDir(async (sessionsDir) => {
+      let getHistoryCalls = 0;
+      let resolveModelCalls = 0;
+
+      const policy = new MemoryWriterPolicy(
+        createTestConfig({
+          sessionsDir,
+          interval: 1,
+          configOverrides: {
+            agentAiDefaults: {
+              system1_memory_writer: {
+                enabled: false,
+              },
+            },
+          },
+        }),
+        {
+          getHistoryFromLatestBoundary: (): Promise<
+            { success: true; data: MuxMessage[] } | { success: false; error: string }
+          > => {
+            getHistoryCalls += 1;
+            return Promise.resolve({ success: true, data: [] });
+          },
+        },
+        () => {
+          resolveModelCalls += 1;
+          return Promise.resolve(undefined);
+        }
+      );
+
+      await policy.onAssistantStreamEnd(createContext({ messageId: "msg_1" }));
+
+      expect(getHistoryCalls).toBe(0);
+      expect(resolveModelCalls).toBe(0);
+    });
+  });
+
   it("uses agentAiDefaults.system1_memory_writer model overrides", async () => {
     await withTempSessionsDir(async (sessionsDir) => {
       let lastModelString: string | undefined;

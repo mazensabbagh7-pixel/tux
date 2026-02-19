@@ -336,6 +336,16 @@ export class MemoryWriterPolicy {
     });
 
     try {
+      const cfg = this.config.loadConfigOrDefault();
+      const system1Defaults = cfg.agentAiDefaults?.[SYSTEM1_MEMORY_WRITER_AGENT_ID];
+
+      if (system1Defaults?.enabled === false) {
+        workspaceLog.debug(
+          "[system1][memory] Skipping memory writer (disabled via agent defaults)"
+        );
+        return;
+      }
+
       const historyResult = await this.historyService.getHistoryFromLatestBoundary(ctx.workspaceId);
       if (!historyResult.success) {
         workspaceLog.warn("[system1][memory] Failed to read history", {
@@ -344,9 +354,6 @@ export class MemoryWriterPolicy {
         return;
       }
 
-      const cfg = this.config.loadConfigOrDefault();
-
-      const system1Defaults = cfg.agentAiDefaults?.[SYSTEM1_MEMORY_WRITER_AGENT_ID];
       const system1ModelOverride =
         typeof system1Defaults?.modelString === "string" ? system1Defaults.modelString.trim() : "";
       const system1ModelCandidate = system1ModelOverride || ctx.modelString;
