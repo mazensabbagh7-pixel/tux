@@ -49,19 +49,22 @@ describe("resumeStream critic turn continuity", () => {
 
     const requestKinds: Array<"actor" | "critic"> = [];
     const actorRequests: MockAiRouterRequest[] = [];
+    const criticRequests: MockAiRouterRequest[] = [];
     let criticCalls = 0;
     const requiredToolPolicy: MockAiRouterRequest["toolPolicy"] = [
       { regex_match: "bash", action: "require" },
     ];
     const actorInstructions = "Preserve actor loop settings";
+    const criticPrompt = "Check for edge cases in the implementation.";
 
     const router = env.services.aiService.getMockRouter();
     expect(router).not.toBeNull();
     router?.prependHandlers([
       {
         match: (request) => request.isCriticTurn === true,
-        respond: () => {
+        respond: (request) => {
           requestKinds.push("critic");
+          criticRequests.push(structuredClone(request));
           criticCalls += 1;
 
           if (criticCalls === 1) {
@@ -100,6 +103,7 @@ describe("resumeStream critic turn continuity", () => {
         HAIKU_MODEL,
         {
           criticEnabled: true,
+          criticPrompt,
           toolPolicy: requiredToolPolicy,
           additionalSystemInstructions: actorInstructions,
         }
@@ -167,6 +171,15 @@ describe("resumeStream critic turn continuity", () => {
       // the original actor options instead of inheriting critic-only settings.
       expect(resumedActorRequest.toolPolicy).toEqual(requiredToolPolicy);
       expect(resumedActorRequest.additionalSystemInstructions).toBe(actorInstructions);
+
+      // The resumed critic turn must reapply critic guardrails (tool policy disabled,
+      // critic system instructions with /done contract and user critic prompt), even though
+      // the frontend resume only sets isCriticTurn: true without these options.
+      const resumedCriticRequest = criticRequests[1];
+      expect(resumedCriticRequest).toBeDefined();
+      expect(resumedCriticRequest?.toolPolicy).toEqual([{ regex_match: ".*", action: "disable" }]);
+      expect(resumedCriticRequest?.additionalSystemInstructions).toContain("exactly /done");
+      expect(resumedCriticRequest?.additionalSystemInstructions).toContain(criticPrompt);
 
       const criticLoopSettled = await waitFor(() => criticCalls >= 3, 20000);
       if (!criticLoopSettled) {

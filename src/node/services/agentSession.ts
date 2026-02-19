@@ -1275,6 +1275,30 @@ export class AgentSession {
       }
     }
 
+    // Ensure critic guardrails (tool policy + system instructions) are applied on
+    // resumed critic turns. The frontend resume path only sets isCriticTurn/criticEnabled
+    // but doesn't include the critic-specific tool policy or system instructions.
+    // The automatic loop path (maybeContinueActorCriticLoop → buildCriticTurnOptions)
+    // already sets these, so this is idempotent for that path.
+    if (effectiveOptions?.isCriticTurn === true) {
+      // Recover actor-era options from criticLoopState (preserved across aborts).
+      // The frontend resume only sends isCriticTurn/criticEnabled, so we need
+      // criticLoopState for the original actor instructions and critic prompt.
+      const sourceActorOptions = this.criticLoopState?.actorOptions;
+      effectiveOptions = {
+        ...effectiveOptions,
+        toolPolicy: CRITIC_TOOL_POLICY,
+        additionalSystemInstructions: buildCriticAdditionalInstructions({
+          actorAdditionalInstructions: sourceActorOptions?.additionalSystemInstructions,
+          criticPrompt: effectiveOptions.criticPrompt ?? sourceActorOptions?.criticPrompt,
+        }),
+      };
+
+      if (this.activeStreamContext) {
+        this.activeStreamContext.options = this.cloneSendMessageOptions(effectiveOptions);
+      }
+    }
+
     let requestHistory = historyResult.data;
     if (effectiveOptions?.isCriticTurn === true) {
       requestHistory = buildCriticRequestHistory(historyResult.data);
