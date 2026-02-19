@@ -2003,6 +2003,10 @@ export class AgentSession {
       return undefined;
     }
 
+    // Fallback when criticLoopState is unavailable (e.g., app restart during critic turn).
+    // We don't have the original actor-era options, so clear critic-specific overrides
+    // (disabled-all tool policy, critic system instructions) and fall back to defaults.
+    // This is lossy but safe — actor-era toolPolicy/instructions are not recoverable here.
     return {
       ...this.cloneSendMessageOptions(currentCriticOptions),
       isCriticTurn: false,
