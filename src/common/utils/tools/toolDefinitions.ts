@@ -1487,8 +1487,7 @@ export function getAvailableTools(
     "task_list",
     ...(enableAgentReport ? ["agent_report"] : []),
     "switch_agent",
-    "memory_read",
-    "memory_write",
+    // memory_* tools are internal-only and are injected directly by the System 1 memory writer.
     "system1_keep_ranges",
     "todo_write",
     "todo_read",

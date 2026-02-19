@@ -1,4 +1,4 @@
-import { TaskToolArgsSchema, TOOL_DEFINITIONS } from "./toolDefinitions";
+import { TaskToolArgsSchema, TOOL_DEFINITIONS, getAvailableTools } from "./toolDefinitions";
 
 describe("TOOL_DEFINITIONS", () => {
   it("accepts custom subagent_type IDs (deprecated alias)", () => {
@@ -197,5 +197,12 @@ describe("TOOL_DEFINITIONS", () => {
   it("discourages repeating plan contents or plan file location after propose_plan", () => {
     expect(TOOL_DEFINITIONS.propose_plan.description).toContain("do not paste the plan contents");
     expect(TOOL_DEFINITIONS.propose_plan.description).toContain("plan file path");
+  });
+
+  it("does not expose internal memory mutation tools through model allowlists", () => {
+    const tools = getAvailableTools("anthropic:claude-sonnet-4-5");
+
+    expect(tools).not.toContain("memory_read");
+    expect(tools).not.toContain("memory_write");
   });
 });
