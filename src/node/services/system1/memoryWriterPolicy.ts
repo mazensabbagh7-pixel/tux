@@ -239,12 +239,14 @@ export class MemoryWriterPolicy {
   ): Promise<{ runPromise?: Promise<void> }> {
     const state = await this.getOrLoadState(ctx.workspaceId);
 
+    const inFlight = this.inFlightByWorkspace.get(ctx.workspaceId);
+
     const hasIncompleteRun =
       typeof state.lastRunStartedAt === "number" &&
       (typeof state.lastRunCompletedAt !== "number" ||
         state.lastRunCompletedAt < state.lastRunStartedAt);
 
-    if (hasIncompleteRun) {
+    if (!inFlight && hasIncompleteRun) {
       // Restart-safe: if the last run started but never recorded completion,
       // assume we crashed mid-run and make the next message trigger a run.
       state.turnsSinceLastRun = Math.max(state.turnsSinceLastRun, interval - 1);
@@ -252,7 +254,6 @@ export class MemoryWriterPolicy {
 
     state.turnsSinceLastRun += 1;
 
-    const inFlight = this.inFlightByWorkspace.get(ctx.workspaceId);
     if (inFlight) {
       await this.persistState(ctx.workspaceId, state);
       return {};

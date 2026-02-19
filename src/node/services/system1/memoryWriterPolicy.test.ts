@@ -224,6 +224,61 @@ describe("MemoryWriterPolicy", () => {
     });
   });
 
+  it("does not collapse large intervals when messages arrive during an in-flight run", async () => {
+    await withTempSessionsDir(async (sessionsDir) => {
+      let resolveHistory!: () => void;
+      const historyBarrier = new Promise<void>((resolve) => {
+        resolveHistory = () => resolve();
+      });
+
+      let resolveHistoryCalled!: () => void;
+      const historyCalled = new Promise<void>((resolve) => {
+        resolveHistoryCalled = () => resolve();
+      });
+
+      let getHistoryCalls = 0;
+
+      const policy = new MemoryWriterPolicy(
+        createTestConfig({ sessionsDir, interval: 5 }),
+        {
+          getHistoryFromLatestBoundary: async (): Promise<
+            { success: true; data: MuxMessage[] } | { success: false; error: string }
+          > => {
+            getHistoryCalls += 1;
+            if (getHistoryCalls === 1) {
+              resolveHistoryCalled();
+              await historyBarrier;
+            }
+            return { success: true, data: [] };
+          },
+        },
+        () => Promise.resolve(undefined)
+      );
+
+      await policy.onAssistantStreamEnd(createContext({ messageId: "msg_1" }));
+      await policy.onAssistantStreamEnd(createContext({ messageId: "msg_2" }));
+      await policy.onAssistantStreamEnd(createContext({ messageId: "msg_3" }));
+      await policy.onAssistantStreamEnd(createContext({ messageId: "msg_4" }));
+
+      const fifth = policy.onAssistantStreamEnd(createContext({ messageId: "msg_5" }));
+      await historyCalled;
+      expect(getHistoryCalls).toBe(1);
+
+      await policy.onAssistantStreamEnd(createContext({ messageId: "msg_6" }));
+
+      resolveHistory();
+      await fifth;
+
+      await policy.onAssistantStreamEnd(createContext({ messageId: "msg_7" }));
+      expect(getHistoryCalls).toBe(1);
+
+      await policy.onAssistantStreamEnd(createContext({ messageId: "msg_8" }));
+      await policy.onAssistantStreamEnd(createContext({ messageId: "msg_9" }));
+      await policy.onAssistantStreamEnd(createContext({ messageId: "msg_10" }));
+      expect(getHistoryCalls).toBe(2);
+    });
+  });
+
   it("does not start deferred runs after System1 is disabled mid-flight", async () => {
     await withTempSessionsDir(async (sessionsDir) => {
       let resolveHistory!: () => void;
