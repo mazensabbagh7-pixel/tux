@@ -1860,6 +1860,8 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
         });
 
         if (!result.success) {
+          // Restore the user's prompt so they don't have to re-type it
+          setInput(messageText);
           const errorDetail =
             "raw" in result.error
               ? result.error.raw

@@ -2029,7 +2029,10 @@ export class AgentSession {
     }
 
     const historyCheck = await this.historyService.getHistoryFromLatestBoundary(this.workspaceId);
-    const isEmptyHistory = !historyCheck.success || historyCheck.data.length === 0;
+    if (!historyCheck.success) {
+      return Err(createUnknownSendMessageError(historyCheck.error));
+    }
+    const isEmptyHistory = historyCheck.data.length === 0;
 
     // Build actor-equivalent options (the "baseline" the loop will use for actor turns)
     const actorOptions = this.cloneSendMessageOptions({
