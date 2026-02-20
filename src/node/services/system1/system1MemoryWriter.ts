@@ -234,17 +234,36 @@ function clampNewestEventToCharBudget(
 }
 
 function trimToCharBudget(events: MemoryWriterEvent[], maxChars: number): MemoryWriterEvent[] {
-  assert(Number.isInteger(maxChars) && maxChars > 0, "maxChars must be a positive integer");
+  const emptyArraySerializedLength = JSON.stringify([]).length;
+  assert(
+    Number.isInteger(maxChars) && maxChars >= emptyArraySerializedLength,
+    "maxChars must be an integer large enough to hold []"
+  );
 
-  // Drop oldest events until the compact JSON fits.
-  let startIndex = 0;
-  while (startIndex < events.length) {
-    const candidate = events.slice(startIndex);
-    const serialized = JSON.stringify(candidate);
-    if (serialized.length <= maxChars) {
-      return candidate;
+  // Build the newest contiguous suffix incrementally. This keeps preprocessing
+  // linear in event count instead of repeatedly slicing+serializing candidates.
+  let startIndex = events.length;
+  let serializedLength = emptyArraySerializedLength;
+
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const eventSerializedLength = JSON.stringify(events[index]).length;
+    const commaLength = startIndex < events.length ? 1 : 0;
+    const nextSerializedLength = serializedLength + commaLength + eventSerializedLength;
+    if (nextSerializedLength > maxChars) {
+      break;
     }
-    startIndex += 1;
+
+    startIndex = index;
+    serializedLength = nextSerializedLength;
+  }
+
+  if (startIndex < events.length) {
+    const trimmed = events.slice(startIndex);
+    assert(
+      JSON.stringify(trimmed).length === serializedLength,
+      "incremental event length accounting should match JSON serialization"
+    );
+    return trimmed;
   }
 
   const newestEvent = events[events.length - 1];
