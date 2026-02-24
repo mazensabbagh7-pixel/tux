@@ -252,7 +252,7 @@
     "LICENSE"
   ],
   "build": {
-    "appId": "com.mux.app",
+    "appId": "com.coder.mux",
     "productName": "mux",
     "protocols": [
       {
