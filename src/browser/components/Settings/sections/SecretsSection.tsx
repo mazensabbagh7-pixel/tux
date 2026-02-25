@@ -1,8 +1,9 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Loader2, Trash2 } from "lucide-react";
 import type { Secret } from "@/common/types/secrets";
 import { useAPI } from "@/browser/contexts/API";
 import { useProjectContext } from "@/browser/contexts/ProjectContext";
+import { useSettings } from "@/browser/contexts/SettingsContext";
 import { Button } from "@/browser/components/ui/button";
 import { ToggleGroup, ToggleGroupItem } from "@/browser/components/ui/toggle-group";
 import {
@@ -101,11 +102,17 @@ function secretsEqual(a: Secret[], b: Secret[]): boolean {
 
 export const SecretsSection: React.FC = () => {
   const { api } = useAPI();
-  const { projects } = useProjectContext();
-  const projectList = Array.from(projects.keys());
+  const { userProjects } = useProjectContext();
+  const { secretsProjectPath, setSecretsProjectPath } = useSettings();
+  const projectList = Array.from(userProjects.keys());
 
-  const [scope, setScope] = useState<SecretsScope>("global");
-  const [selectedProject, setSelectedProject] = useState<string>("");
+  // Consume one-shot project scope hint from the sidebar secrets button.
+  const initialScope: SecretsScope =
+    secretsProjectPath && userProjects.has(secretsProjectPath) ? "project" : "global";
+  const initialProject = initialScope === "project" ? secretsProjectPath! : "";
+
+  const [scope, setScope] = useState<SecretsScope>(initialScope);
+  const [selectedProject, setSelectedProject] = useState<string>(initialProject);
 
   const [loadedSecrets, setLoadedSecrets] = useState<Secret[]>([]);
   const [secrets, setSecrets] = useState<Secret[]>([]);
@@ -113,11 +120,27 @@ export const SecretsSection: React.FC = () => {
 
   const [globalSecretKeys, setGlobalSecretKeys] = useState<string[]>([]);
 
+  // Track the last plaintext value per row index so toggling Source back to
+  // "Value" restores the user's input instead of clearing it.
+  const lastLiteralValuesRef = useRef<Map<number, string>>(new Map());
+
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const scopeLabel = scope === "global" ? "Global" : "Project";
+
+  // When re-opened with a new project hint (e.g., clicking the secrets button again
+  // for a different project), sync the scope and clear the one-shot hint.
+  // Only clear the hint once the project is actually found in the project list;
+  // projects load asynchronously, so we must keep the hint alive until then.
+  useEffect(() => {
+    if (!secretsProjectPath) return;
+    if (!userProjects.has(secretsProjectPath)) return;
+    setScope("project");
+    setSelectedProject(secretsProjectPath);
+    setSecretsProjectPath(null);
+  }, [secretsProjectPath, userProjects, setSecretsProjectPath]);
 
   // Default to the first project when switching into Project scope.
   useEffect(() => {
@@ -167,11 +190,13 @@ export const SecretsSection: React.FC = () => {
       setLoadedSecrets(nextSecrets);
       setSecrets(nextSecrets);
       setVisibleSecrets(new Set());
+      lastLiteralValuesRef.current = new Map();
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to load secrets";
       setLoadedSecrets([]);
       setSecrets([]);
       setVisibleSecrets(new Set());
+      lastLiteralValuesRef.current = new Map();
       setError(message);
     } finally {
       setLoading(false);
@@ -228,6 +253,16 @@ export const SecretsSection: React.FC = () => {
       }
       return next;
     });
+
+    // Shift cached literal values the same way so the right value is restored
+    // if the user toggles the source back on a shifted row.
+    const cache = lastLiteralValuesRef.current;
+    const shifted = new Map<number, string>();
+    for (const [i, val] of cache) {
+      if (i === index) continue;
+      shifted.set(i > index ? i - 1 : i, val);
+    }
+    lastLiteralValuesRef.current = shifted;
   }, []);
 
   const updateSecretKey = useCallback((index: number, value: string) => {
@@ -255,17 +290,25 @@ export const SecretsSection: React.FC = () => {
       setSecrets((prev) => {
         const next = [...prev];
         const existing = next[index] ?? { key: "", value: "" };
+        const cache = lastLiteralValuesRef.current;
 
         if (kind === "literal") {
+          // Restore the last plaintext value the user typed, if any.
+          const restored = cache.get(index) ?? "";
           next[index] = {
             ...existing,
-            value: typeof existing.value === "string" ? existing.value : "",
+            value: typeof existing.value === "string" ? existing.value : restored,
           };
           return next;
         }
 
         if (isSecretReferenceValue(existing.value)) {
           return next;
+        }
+
+        // Stash the current plaintext value before switching to a global ref.
+        if (typeof existing.value === "string") {
+          cache.set(index, existing.value);
         }
 
         const defaultKey = globalSecretKeys[0] ?? "";
@@ -294,6 +337,7 @@ export const SecretsSection: React.FC = () => {
   const handleReset = useCallback(() => {
     setSecrets(loadedSecrets);
     setVisibleSecrets(new Set());
+    lastLiteralValuesRef.current = new Map();
     setError(null);
   }, [loadedSecrets]);
 
@@ -332,6 +376,9 @@ export const SecretsSection: React.FC = () => {
         setGlobalSecretKeys(validSecrets.map((s) => s.key));
       }
       setVisibleSecrets(new Set());
+      // Save compacts rows (filters out empty entries), which shifts indices.
+      // Clear the cached literal values so stale entries can't be misattributed.
+      lastLiteralValuesRef.current = new Map();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save secrets");
     } finally {
@@ -432,7 +479,7 @@ export const SecretsSection: React.FC = () => {
           } items-end gap-1 [&>label]:mb-0.5 [&>label]:text-[11px]`}
         >
           <label>Key</label>
-          {scope === "project" && <label>Type</label>}
+          {scope === "project" && <label>Source</label>}
           <label>Value</label>
           <div />
           <div />
@@ -460,8 +507,7 @@ export const SecretsSection: React.FC = () => {
                 />
 
                 {scope === "project" && (
-                  <ToggleGroup
-                    type="single"
+                  <Select
                     value={kind}
                     onValueChange={(value) => {
                       if (value !== "literal" && value !== "global") {
@@ -469,26 +515,21 @@ export const SecretsSection: React.FC = () => {
                       }
                       updateSecretValueKind(index, value);
                     }}
-                    size="sm"
-                    className="h-[34px]"
                     disabled={saving}
                   >
-                    <ToggleGroupItem
-                      value="literal"
-                      size="sm"
-                      className="h-[26px] px-3 text-[13px]"
+                    <SelectTrigger
+                      className="border-border-medium bg-modal-bg hover:bg-hover h-[34px] w-[100px] px-2.5 text-[13px]"
+                      aria-label="Secret source"
                     >
-                      Value
-                    </ToggleGroupItem>
-                    <ToggleGroupItem
-                      value="global"
-                      size="sm"
-                      className="h-[26px] px-3 text-[13px]"
-                      disabled={availableKeys.length === 0}
-                    >
-                      Global
-                    </ToggleGroupItem>
-                  </ToggleGroup>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="literal">Value</SelectItem>
+                      <SelectItem value="global" disabled={availableKeys.length === 0}>
+                        Global
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
                 )}
 
                 {isReference ? (

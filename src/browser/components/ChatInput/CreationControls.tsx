@@ -20,7 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../ui/select";
-import { Cog, GitBranch, Loader2, Wand2, X } from "lucide-react";
+import { Blocks, Cog, GitBranch, Loader2, Wand2, X } from "lucide-react";
 import { PlatformPaths } from "@/common/utils/paths";
 import { useProjectContext } from "@/browser/contexts/ProjectContext";
 import { useSettings } from "@/browser/contexts/SettingsContext";
@@ -37,6 +37,7 @@ import {
   type RuntimeChoice,
   type RuntimeIconProps,
 } from "@/browser/utils/runtimeUi";
+
 import type { WorkspaceNameState, WorkspaceNameUIError } from "@/browser/hooks/useWorkspaceName";
 import type { CoderInfo } from "@/common/orpc/schemas/coder";
 import type { SectionConfig } from "@/common/types/project";
@@ -47,7 +48,7 @@ import {
   resolveCoderAvailability,
   type CoderAvailabilityState,
   type CoderControlsProps,
-} from "./CoderControls";
+} from "../runtime/CoderControls";
 
 /**
  * Shared styling for inline form controls in the creation UI.
@@ -627,7 +628,7 @@ function RuntimeButtonGroup(props: RuntimeButtonGroupProps) {
  * Displays project name as header, workspace name with magic wand, and runtime/branch selectors.
  */
 export function CreationControls(props: CreationControlsProps) {
-  const { projects } = useProjectContext();
+  const { userProjects } = useProjectContext();
   const settings = useSettings();
   const { beginWorkspaceCreation } = useWorkspaceContext();
   const { nameState, runtimeAvailabilityState } = props;
@@ -839,7 +840,7 @@ export function CreationControls(props: CreationControlsProps) {
         className={cn("flex gap-y-2", nameState.error ? "items-start" : "items-center")}
         data-component="WorkspaceNameGroup"
       >
-        {projects.size > 1 ? (
+        {userProjects.size > 1 ? (
           <RadixSelect
             value={props.projectPath}
             onValueChange={(path) => beginWorkspaceCreation(path)}
@@ -857,7 +858,7 @@ export function CreationControls(props: CreationControlsProps) {
               <TooltipContent align="start">{props.projectPath}</TooltipContent>
             </Tooltip>
             <SelectContent>
-              {Array.from(projects.keys()).map((path) => (
+              {Array.from(userProjects.keys()).map((path) => (
                 <SelectItem key={path} value={path}>
                   {PlatformPaths.basename(path)}
                 </SelectItem>
@@ -955,10 +956,13 @@ export function CreationControls(props: CreationControlsProps) {
 
       {/* Runtime and source branch controls */}
       <div className="flex flex-col gap-1.5" data-component="RuntimeTypeGroup">
-        <div className="flex flex-wrap items-end gap-3">
+        <div className="flex flex-wrap items-end gap-x-3 gap-y-2">
           <div className="flex min-w-0 flex-col gap-1.5">
             <div className="flex items-center gap-1.5">
-              <label className="text-muted-foreground text-xs font-medium">Workspace Type</label>
+              <label className="text-muted-foreground flex items-center gap-1 text-xs font-medium">
+                <Blocks className="h-3.5 w-3.5" />
+                Workspace Type
+              </label>
               {/* Keep this compact while preserving quick access to project runtime defaults. */}
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -1089,10 +1093,8 @@ export function CreationControls(props: CreationControlsProps) {
               <Skeleton className="h-7 w-[140px] rounded" />
             )}
           </div>
-        </div>
 
-        <div className="flex flex-col gap-2">
-          {/* SSH Host Input - hidden when Coder runtime is selected */}
+          {/* SSH Host Input - shown in the same row when SSH (non-Coder) is selected */}
           {selectedRuntime.mode === "ssh" &&
             !isCoderSelected &&
             (props.allowSshHost ?? true) &&
@@ -1101,21 +1103,20 @@ export function CreationControls(props: CreationControlsProps) {
             !(props.coderProps?.coderInfo === null && props.coderProps?.coderConfig) && (
               <RuntimeConfigInput
                 id="ssh-host"
-                label={RUNTIME_OPTION_FIELDS.ssh.label}
+                fieldSpec={RUNTIME_OPTION_FIELDS.ssh}
                 value={selectedRuntime.host}
                 onChange={(value) => onSelectedRuntimeChange({ mode: "ssh", host: value })}
-                placeholder={RUNTIME_OPTION_FIELDS.ssh.placeholder}
                 disabled={props.disabled}
                 hasError={props.runtimeFieldError === "ssh"}
                 inputClassName={INLINE_CONTROL_CLASSES}
+                stacked
               />
             )}
 
-          {/* Runtime-specific config inputs */}
-
+          {/* Docker Image Input - shown in the same row when Docker is selected */}
           {selectedRuntime.mode === "docker" && (
             <RuntimeConfigInput
-              label={RUNTIME_OPTION_FIELDS.docker.label}
+              fieldSpec={RUNTIME_OPTION_FIELDS.docker}
               value={selectedRuntime.image}
               onChange={(value) =>
                 onSelectedRuntimeChange({
@@ -1124,12 +1125,12 @@ export function CreationControls(props: CreationControlsProps) {
                   shareCredentials: selectedRuntime.shareCredentials,
                 })
               }
-              placeholder={RUNTIME_OPTION_FIELDS.docker.placeholder}
               disabled={props.disabled}
               hasError={props.runtimeFieldError === "docker"}
               id="docker-image"
               ariaLabel="Docker image"
               inputClassName={INLINE_CONTROL_CLASSES}
+              stacked
             />
           )}
         </div>

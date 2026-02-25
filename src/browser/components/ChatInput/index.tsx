@@ -115,8 +115,9 @@ import type { FilePart, SendMessageOptions } from "@/common/orpc/types";
 
 import { CreationCenterContent } from "./CreationCenterContent";
 import { cn } from "@/common/lib/utils";
-import type { ChatInputProps, ChatInputAPI } from "./types";
+import type { ChatInputProps, ChatInputAPI, QueueDispatchMode } from "./types";
 import { CreationControls } from "./CreationControls";
+import { SendModeDropdown } from "./SendModeDropdown";
 import { CodexOauthWarningBanner } from "./CodexOauthWarningBanner";
 import { useCreationWorkspace } from "./useCreationWorkspace";
 import { useCoderWorkspace } from "@/browser/hooks/useCoderWorkspace";
@@ -186,6 +187,7 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
   const editingMessage = variant === "workspace" ? props.editingMessage : undefined;
   const isStreamStarting = variant === "workspace" ? (props.isStreamStarting ?? false) : false;
   const isCompacting = variant === "workspace" ? (props.isCompacting ?? false) : false;
+  const canInterrupt = variant === "workspace" ? (props.canInterrupt ?? false) : false;
   const [isMobileTouch, setIsMobileTouch] = useState(
     () =>
       typeof window !== "undefined" &&
@@ -444,7 +446,15 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
   const { open } = useSettings();
   const { selectedWorkspace, beginWorkspaceCreation, updateWorkspaceDraftSection } =
     useWorkspaceContext();
-  const { agentId, currentAgent } = useAgent();
+  const { agentId, currentAgent, agents } = useAgent();
+
+  // Keep auto-mode checks aligned with AgentModePicker behavior.
+  const normalizedAgentId =
+    typeof agentId === "string" && agentId.trim().length > 0
+      ? agentId.trim().toLowerCase()
+      : WORKSPACE_DEFAULTS.agentId;
+  const autoAvailable = agents.some((entry) => entry.uiSelectable && entry.id === "auto");
+  const isAutoAgent = normalizedAgentId === "auto" && autoAvailable;
 
   // Use current agent's uiColor, or neutral border until agents load
   const focusBorderColor = currentAgent?.uiColor ?? "var(--color-border-light)";
@@ -658,9 +668,9 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
     modelSelectorRef.current?.open();
   }, []);
   // Section selection state for creation variant (must be before useCreationWorkspace)
-  const { projects } = useProjectContext();
+  const { userProjects } = useProjectContext();
   const pendingSectionId = variant === "creation" ? (props.pendingSectionId ?? null) : null;
-  const creationProject = variant === "creation" ? projects.get(props.projectPath) : undefined;
+  const creationProject = variant === "creation" ? userProjects.get(props.projectPath) : undefined;
   const hasCreationRuntimeOverrides =
     creationProject?.runtimeOverridesEnabled === true ||
     Boolean(creationProject?.runtimeEnablement) ||
@@ -880,6 +890,9 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
     !sendInFlightBlocksInput &&
     !coderPresetsLoading &&
     !policyBlocksCreateSend;
+  // Dispatch-mode choice (send-after-step vs send-after-turn) should track actual
+  // sendability — not just typed text. canSend already covers text, attachments, and reviews.
+  const canChooseDispatchMode = canInterrupt && canSend;
 
   // User request: this sync effect runs on mount and when defaults/config change.
   // Only treat *real* agent changes as explicit (origin "agent"); everything else is "sync".
@@ -1577,7 +1590,7 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
   const executeParsedCommand = async (
     parsed: ParsedCommand | null,
     restoreInput: string,
-    options?: { skipConfirmation?: boolean }
+    options?: { skipConfirmation?: boolean; queueDispatchMode?: QueueDispatchMode }
   ): Promise<boolean> => {
     if (!parsed) {
       return false;
@@ -1607,6 +1620,12 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
     }
 
     const reviewsData = reviewData;
+    const dispatchMode = options?.queueDispatchMode ?? "tool-end";
+    // Thread dispatch mode into send options so queued command sends stay in sync with normal sends.
+    const commandSendMessageOptions: SendMessageOptions = {
+      ...sendMessageOptions,
+      ...(dispatchMode === "tool-end" ? {} : { queueDispatchMode: dispatchMode }),
+    };
     // Prepare file parts for commands that need to send messages with attachments
     const commandFileParts = chatAttachmentsToFileParts(attachments, { validate: true });
     const commandContext: SlashCommandContext = {
@@ -1615,7 +1634,7 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
       workspaceId: commandWorkspaceId,
       projectPath: commandProjectPath,
       openSettings: open,
-      sendMessageOptions,
+      sendMessageOptions: commandSendMessageOptions,
       setInput,
       setAttachments,
       setSendingState: (increment: boolean) => setSendingCount((c) => c + (increment ? 1 : -1)),
@@ -1647,7 +1666,7 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
         if (reviewIdsForCheck.length > 0) {
           props.onCheckReviews?.(reviewIdsForCheck);
         }
-        props.onMessageSent?.();
+        props.onMessageSent?.(dispatchMode);
       }
     }
 
@@ -1762,7 +1781,7 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
     [setInput]
   );
 
-  const handleSend = async () => {
+  const handleSend = async (overrides?: { queueDispatchMode?: QueueDispatchMode }) => {
     if (!canSend) {
       return;
     }
@@ -1852,7 +1871,11 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
 
     try {
       const modelOneShot = parsed?.type === "model-oneshot" ? parsed : null;
-      const commandHandled = modelOneShot ? false : await executeParsedCommand(parsed, input);
+      const commandHandled = modelOneShot
+        ? false
+        : await executeParsedCommand(parsed, input, {
+            queueDispatchMode: overrides?.queueDispatchMode,
+          });
       if (commandHandled) {
         return;
       }
@@ -2033,6 +2056,9 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
           ...(modelOverride ? { model: modelOverride } : {}),
           ...(thinkingOverride ? { thinkingLevel: thinkingOverride } : {}),
           ...(modelOneShot ? { skipAiSettingsPersistence: true } : {}),
+          ...(overrides?.queueDispatchMode
+            ? { queueDispatchMode: overrides.queueDispatchMode }
+            : {}),
           additionalSystemInstructions,
           editMessageId: editingMessage?.id,
           fileParts: sendFileParts,
@@ -2083,7 +2109,7 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
           if (editingMessage && props.onCancelEdit) {
             props.onCancelEdit();
           }
-          props.onMessageSent?.();
+          props.onMessageSent?.(overrides?.queueDispatchMode ?? "tool-end");
         }
       } catch (error) {
         // Handle unexpected errors
@@ -2202,6 +2228,12 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
     }
 
     // Handle send message (Shift+Enter for newline is default behavior)
+    if (matchesKeybind(e, KEYBINDS.SEND_MESSAGE_AFTER_TURN)) {
+      e.preventDefault();
+      void handleSend({ queueDispatchMode: "turn-end" });
+      return;
+    }
+
     if (matchesKeybind(e, KEYBINDS.SEND_MESSAGE)) {
       // Mobile keyboards should keep Enter for newlines; sending remains button-driven.
       if (isMobileTouch) {
@@ -2406,10 +2438,12 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
                       <span className="font-mono">{formatKeybind(KEYBINDS.CYCLE_MODEL)}</span>
                       <span> - change model</span>
                     </span>
-                    <span>
-                      <span className="font-mono">{formatKeybind(KEYBINDS.CYCLE_AGENT)}</span>
-                      <span> - change agent</span>
-                    </span>
+                    {!isAutoAgent && (
+                      <span>
+                        <span className="font-mono">{formatKeybind(KEYBINDS.CYCLE_AGENT)}</span>
+                        <span> - change agent</span>
+                      </span>
+                    )}
                   </div>
                 )}
 
@@ -2522,34 +2556,45 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
                   />
                 </div>
 
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      type="button"
-                      onClick={() => void handleSend()}
-                      disabled={!canSend}
-                      aria-label="Send message"
-                      size="xs"
-                      variant="ghost"
-                      className={cn(
-                        "text-muted hover:text-foreground hover:bg-hover inline-flex items-center justify-center rounded-sm px-1.5 py-0.5 font-medium transition-colors duration-200 disabled:opacity-50",
-                        // Touch: wider tap target, keep icon centered.
-                        "[@media(hover:none)_and_(pointer:coarse)]:h-9 [@media(hover:none)_and_(pointer:coarse)]:w-11 [@media(hover:none)_and_(pointer:coarse)]:px-0 [@media(hover:none)_and_(pointer:coarse)]:py-0 [@media(hover:none)_and_(pointer:coarse)]:text-sm"
-                      )}
-                    >
-                      <SendHorizontal
-                        className="h-3.5 w-3.5 [@media(hover:none)_and_(pointer:coarse)]:h-4 [@media(hover:none)_and_(pointer:coarse)]:w-4"
-                        strokeWidth={2.5}
-                      />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent align="center">
-                    Send message{" "}
-                    <span className="mobile-hide-shortcut-hints">
-                      ({formatKeybind(KEYBINDS.SEND_MESSAGE)})
-                    </span>
-                  </TooltipContent>
-                </Tooltip>
+                <div className="inline-flex items-center gap-0">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        type="button"
+                        onClick={() => void handleSend()}
+                        disabled={!canSend}
+                        aria-label="Send message"
+                        size="xs"
+                        variant="ghost"
+                        className={cn(
+                          "text-muted hover:text-foreground hover:bg-hover inline-flex items-center justify-center rounded-sm px-1.5 py-0.5 font-medium transition-colors duration-200 disabled:opacity-50",
+                          // Touch: wider tap target, keep icon centered.
+                          "[@media(hover:none)_and_(pointer:coarse)]:h-9 [@media(hover:none)_and_(pointer:coarse)]:w-11 [@media(hover:none)_and_(pointer:coarse)]:px-0 [@media(hover:none)_and_(pointer:coarse)]:py-0 [@media(hover:none)_and_(pointer:coarse)]:text-sm"
+                        )}
+                      >
+                        <SendHorizontal
+                          className="h-3.5 w-3.5 [@media(hover:none)_and_(pointer:coarse)]:h-4 [@media(hover:none)_and_(pointer:coarse)]:w-4"
+                          strokeWidth={2.5}
+                        />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent align="center">
+                      <span>Send message ({formatKeybind(KEYBINDS.SEND_MESSAGE)})</span>
+                    </TooltipContent>
+                  </Tooltip>
+
+                  {variant === "workspace" && (
+                    <SendModeDropdown
+                      disabled={!canChooseDispatchMode}
+                      triggerClassName="-ml-1 px-0"
+                      onSelect={(mode) => {
+                        void handleSend(
+                          mode === "tool-end" ? undefined : { queueDispatchMode: mode }
+                        );
+                      }}
+                    />
+                  )}
+                </div>
               </div>
             </div>
           </div>

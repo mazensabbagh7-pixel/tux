@@ -58,8 +58,9 @@ import { getModelStats } from "@/common/utils/tokens/modelStats";
 import { resolveModelForMetadata } from "@/common/utils/providers/modelEntries";
 import { getErrorMessage } from "@/common/utils/errors";
 import { classify429Capacity } from "@/common/utils/errors/classify429Capacity";
+import { normalizeLiteralRequiredToolPattern } from "@/common/utils/agentTools";
 
-// Disable AI SDK warning logging (e.g., "setting `toolChoice` to `none` is not supported")
+// Disable noisy AI SDK warning logging.
 globalThis.AI_SDK_LOG_WARNINGS = false;
 
 // Type definitions for stream parts with extended properties
@@ -90,8 +91,6 @@ type StreamToken = string & { __brand: "StreamToken" };
 
 // Stream request config for start/retry
 
-type StreamToolChoice = { type: "tool"; toolName: string } | "required" | undefined;
-
 interface StepMessageTracker {
   latestMessages?: ModelMessage[];
 }
@@ -100,13 +99,16 @@ interface StreamRequestConfig {
   messages: ModelMessage[];
   system?: string;
   tools?: Record<string, Tool>;
-  toolChoice?: StreamToolChoice;
   providerOptions?: Record<string, unknown>;
   /** Per-request HTTP headers (e.g., anthropic-beta for 1M context). */
   headers?: Record<string, string | undefined>;
   maxOutputTokens?: number;
   hasQueuedMessage?: () => boolean;
-  stopAfterSuccessfulProposePlan?: boolean;
+  toolPolicy?: ToolPolicy;
+  // Belt-and-suspenders for top-level agents: force the model to call the
+  // required tool immediately (for example, switch_agent in auto mode).
+  // Sub-agents rely on taskService.ts post-stream recovery instead.
+  toolChoice?: { type: "tool"; toolName: string };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -1018,56 +1020,18 @@ export class StreamManager extends EventEmitter {
   private buildStreamRequestConfig(
     model: LanguageModel,
     modelString: string,
-    _metadataModel: string,
     messages: ModelMessage[],
     system: string,
     tools?: Record<string, Tool>,
     providerOptions?: Record<string, unknown>,
     maxOutputTokens?: number,
     toolPolicy?: ToolPolicy,
+    forceToolChoice?: boolean,
     hasQueuedMessage?: () => boolean,
     headers?: Record<string, string | undefined>,
-    anthropicCacheTtlOverride?: AnthropicCacheTtl,
-    stopAfterSuccessfulProposePlan?: boolean
+    anthropicCacheTtlOverride?: AnthropicCacheTtl
   ): StreamRequestConfig {
-    // Determine toolChoice based on toolPolicy.
-    //
-    // If a tool is required (tools object has exactly one tool after applyToolPolicy),
-    // force the model to use it using the AI SDK tool choice shape.
-    let toolChoice: StreamToolChoice;
-    if (tools && toolPolicy) {
-      const hasRequireAction = toolPolicy.some((filter) => filter.action === "require");
-      if (hasRequireAction && Object.keys(tools).length === 1) {
-        const requiredToolName = Object.keys(tools)[0];
-        toolChoice = { type: "tool", toolName: requiredToolName };
-        log.debug("Setting toolChoice to tool", { toolName: requiredToolName });
-      }
-    }
-
-    // Anthropic Extended Thinking is incompatible with forced tool choice.
-    // If a tool is forced, disable thinking for this request to avoid API errors.
     let finalProviderOptions = providerOptions;
-    const [provider] = normalizeGatewayModel(modelString).split(":", 2);
-    if (
-      toolChoice &&
-      provider === "anthropic" &&
-      providerOptions &&
-      typeof providerOptions === "object" &&
-      "anthropic" in providerOptions
-    ) {
-      const anthropicOptions = (providerOptions as { anthropic?: unknown }).anthropic;
-      if (
-        anthropicOptions &&
-        typeof anthropicOptions === "object" &&
-        "thinking" in anthropicOptions
-      ) {
-        const { thinking: _thinking, ...rest } = anthropicOptions as Record<string, unknown>;
-        finalProviderOptions = {
-          ...providerOptions,
-          anthropic: rest,
-        };
-      }
-    }
 
     // Apply cache control for Anthropic models
     let finalMessages = messages;
@@ -1099,98 +1063,118 @@ export class StreamManager extends EventEmitter {
     const runtimeModelStats = getModelStats(modelString);
     const effectiveMaxOutputTokens = maxOutputTokens ?? runtimeModelStats?.max_output_tokens;
 
+    let toolChoice: StreamRequestConfig["toolChoice"] | undefined;
+    if (forceToolChoice && toolPolicy && finalTools) {
+      // Only force toolChoice for routing tools that need immediate execution
+      // (e.g., switch_agent in auto mode). Investigation-then-complete tools
+      // (propose_plan, agent_report) must NOT be forced — those agents need to
+      // read files, run commands, etc. before calling the completion tool.
+      // Sub-agents rely on taskService.ts post-stream recovery instead of forcing.
+      // Scan all require entries for switch_agent — it may not be the first
+      // required tool if the agent inherits other require rules.
+      const hasSwitchAgentRequire = toolPolicy.some(
+        (filter) =>
+          filter.action === "require" &&
+          normalizeLiteralRequiredToolPattern(filter.regex_match) === "switch_agent"
+      );
+      if (hasSwitchAgentRequire && "switch_agent" in finalTools) {
+        toolChoice = { type: "tool", toolName: "switch_agent" };
+      }
+    }
+
+    // Anthropic Extended Thinking is incompatible with forced tool choice.
+    // If a tool is forced, disable thinking for this request to avoid API errors.
+    if (toolChoice) {
+      const [provider] = normalizeGatewayModel(modelString).split(":", 2);
+      if (
+        provider === "anthropic" &&
+        providerOptions &&
+        typeof providerOptions === "object" &&
+        "anthropic" in providerOptions
+      ) {
+        const anthropicOptions = (providerOptions as { anthropic?: unknown }).anthropic;
+        if (
+          anthropicOptions &&
+          typeof anthropicOptions === "object" &&
+          "thinking" in anthropicOptions
+        ) {
+          const { thinking: _thinking, ...rest } = anthropicOptions as Record<string, unknown>;
+          finalProviderOptions = {
+            ...providerOptions,
+            anthropic: rest,
+          };
+        }
+      }
+    }
+
     return {
       model,
       messages: finalMessages,
       system: finalSystem,
       tools: finalTools,
-      toolChoice,
       providerOptions: finalProviderOptions,
       headers,
       maxOutputTokens: effectiveMaxOutputTokens,
       hasQueuedMessage,
-      stopAfterSuccessfulProposePlan,
+      toolPolicy,
+      toolChoice,
     };
   }
 
   private createStopWhenCondition(
-    request: Pick<
-      StreamRequestConfig,
-      "toolChoice" | "hasQueuedMessage" | "stopAfterSuccessfulProposePlan"
-    >
-  ): ReturnType<typeof stepCountIs> | Array<ReturnType<typeof stepCountIs>> {
-    if (request.toolChoice) {
-      // Required tool calls must stop after a single step to avoid recursive loops.
-      return stepCountIs(1);
-    }
-
-    // For autonomous loops: cap steps, check for queued messages, and stop after
-    // successful agent control tools so streams end naturally (preserving usage accounting)
-    // without executing unrelated tools after handoff/report completion.
-    const isSuccessfulAgentReportOutput = (value: unknown): boolean => {
-      return (
-        typeof value === "object" &&
-        value !== null &&
-        "success" in value &&
-        (value as { success?: unknown }).success === true
-      );
+    request: Pick<StreamRequestConfig, "hasQueuedMessage" | "toolPolicy">
+  ): Array<ReturnType<typeof stepCountIs>> {
+    // Completion-tool stop check: completion/routing tools use explicit
+    // success/ok markers (agent_report, propose_plan, switch_agent).
+    // When a marker is present, respect it — success:false means the tool
+    // should be retried, so don't stop. When no marker is present (e.g.,
+    // MCP tools, arbitrary required tools), treat non-null object results
+    // as successful completion unless the result is error-shaped.
+    const isSuccessfulOutput = (output: unknown): boolean => {
+      if (typeof output !== "object" || output === null) {
+        return false;
+      }
+      const parsedOutput = output as Record<string, unknown>;
+      if ("success" in parsedOutput) {
+        return parsedOutput.success === true;
+      }
+      if ("ok" in parsedOutput) {
+        return parsedOutput.ok === true;
+      }
+      if (parsedOutput.error != null || parsedOutput.isError === true) {
+        return false;
+      }
+      return true;
     };
 
-    const isOkSwitchAgentOutput = (value: unknown): boolean => {
-      return (
-        typeof value === "object" &&
-        value !== null &&
-        "ok" in value &&
-        (value as { ok?: unknown }).ok === true
-      );
-    };
+    const requiredPatterns = (request.toolPolicy ?? [])
+      .filter((filter) => filter.action === "require")
+      .map((filter) => {
+        // Strip existing anchors to avoid double-anchoring recovery policies
+        // (e.g. "^agent_report$" would otherwise become "^^agent_report$$").
+        const rawPattern = filter.regex_match.replace(/^\^/, "").replace(/\$$/, "");
+        return new RegExp(`^${rawPattern}$`);
+      });
 
-    const hasSuccessfulAgentReportResult: ReturnType<typeof stepCountIs> = ({ steps }) => {
+    const hasSuccessfulRequiredToolResult: ReturnType<typeof stepCountIs> = ({ steps }) => {
+      if (requiredPatterns.length === 0) {
+        return false;
+      }
       const lastStep = steps[steps.length - 1];
       return (
         lastStep?.toolResults?.some(
           (toolResult) =>
-            toolResult.toolName === "agent_report" &&
-            isSuccessfulAgentReportOutput(toolResult.output)
+            requiredPatterns.some((pattern) => pattern.test(toolResult.toolName)) &&
+            isSuccessfulOutput(toolResult.output)
         ) ?? false
       );
     };
 
-    const hasSuccessfulSwitchAgentResult: ReturnType<typeof stepCountIs> = ({ steps }) => {
-      const lastStep = steps[steps.length - 1];
-      return (
-        lastStep?.toolResults?.some(
-          (toolResult) =>
-            toolResult.toolName === "switch_agent" && isOkSwitchAgentOutput(toolResult.output)
-        ) ?? false
-      );
-    };
-
-    const hasSuccessfulProposePlanResult: ReturnType<typeof stepCountIs> = ({ steps }) => {
-      const lastStep = steps[steps.length - 1];
-      return (
-        lastStep?.toolResults?.some(
-          (toolResult) =>
-            toolResult.toolName === "propose_plan" &&
-            typeof toolResult.output === "object" &&
-            toolResult.output !== null &&
-            (toolResult.output as { success?: unknown }).success === true
-        ) ?? false
-      );
-    };
-
-    const stopConditions: Array<ReturnType<typeof stepCountIs>> = [
+    return [
       stepCountIs(100000),
       () => request.hasQueuedMessage?.() ?? false,
-      hasSuccessfulAgentReportResult,
-      hasSuccessfulSwitchAgentResult,
+      hasSuccessfulRequiredToolResult,
     ];
-
-    if (request.stopAfterSuccessfulProposePlan) {
-      stopConditions.push(hasSuccessfulProposePlanResult);
-    }
-
-    return stopConditions;
   }
 
   private createStreamResult(
@@ -1215,10 +1199,9 @@ export class StreamManager extends EventEmitter {
         return { messages: rewritten };
       },
       tools: request.tools,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment
-      toolChoice: request.toolChoice as any, // Force tool use when required by policy
-      // Explicit stopWhen configuration keeps continuation policy visible for both
-      // required-tool and autonomous tool-loop flows.
+      // When set (top-level agents), force the model to call the required tool.
+      // stopWhen still runs and ends the stream once a successful result appears.
+      toolChoice: request.toolChoice,
       stopWhen: this.createStopWhenCondition(request),
       // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment
       providerOptions: request.providerOptions as any, // Pass provider-specific options (thinking/reasoning config)
@@ -1247,12 +1230,12 @@ export class StreamManager extends EventEmitter {
     providerOptions?: Record<string, unknown>,
     maxOutputTokens?: number,
     toolPolicy?: ToolPolicy,
+    forceToolChoice?: boolean,
     hasQueuedMessage?: () => boolean,
     workspaceName?: string,
     thinkingLevel?: string,
     headers?: Record<string, string | undefined>,
-    anthropicCacheTtlOverride?: AnthropicCacheTtl,
-    stopAfterSuccessfulProposePlan?: boolean
+    anthropicCacheTtlOverride?: AnthropicCacheTtl
   ): WorkspaceStreamInfo {
     // abortController is created and linked to the caller-provided abortSignal in startStream().
 
@@ -1261,17 +1244,16 @@ export class StreamManager extends EventEmitter {
     const request = this.buildStreamRequestConfig(
       model,
       modelString,
-      metadataModel,
       messages,
       system,
       tools,
       providerOptions,
       maxOutputTokens,
       toolPolicy,
+      forceToolChoice,
       hasQueuedMessage,
       headers,
-      anthropicCacheTtlOverride,
-      stopAfterSuccessfulProposePlan
+      anthropicCacheTtlOverride
     );
 
     // Start streaming - this can throw immediately if API key is missing
@@ -2660,7 +2642,7 @@ export class StreamManager extends EventEmitter {
     thinkingLevel?: string,
     headers?: Record<string, string | undefined>,
     anthropicCacheTtlOverride?: AnthropicCacheTtl,
-    stopAfterSuccessfulProposePlan?: boolean
+    forceToolChoice?: boolean
   ): Promise<Result<StreamToken, SendMessageError>> {
     const typedWorkspaceId = workspaceId as WorkspaceId;
 
@@ -2733,12 +2715,12 @@ export class StreamManager extends EventEmitter {
           providerOptions,
           maxOutputTokens,
           toolPolicy,
+          forceToolChoice,
           hasQueuedMessage,
           workspaceName,
           thinkingLevel,
           headers,
-          anthropicCacheTtlOverride,
-          stopAfterSuccessfulProposePlan
+          anthropicCacheTtlOverride
         );
 
         // Guard against a narrow race:

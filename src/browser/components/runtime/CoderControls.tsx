@@ -138,6 +138,7 @@ export type CoderWorkspaceFormProps = Omit<
 > & {
   username?: string;
   deploymentUrl?: string;
+  className?: string;
 };
 
 export function CoderWorkspaceForm(props: CoderWorkspaceFormProps) {
@@ -157,6 +158,7 @@ export function CoderWorkspaceForm(props: CoderWorkspaceFormProps) {
     hasError,
     username,
     deploymentUrl,
+    className,
   } = props;
 
   const mode: CoderMode = coderConfig?.existingWorkspace ? "existing" : "new";
@@ -267,7 +269,8 @@ export function CoderWorkspaceForm(props: CoderWorkspaceFormProps) {
   return (
     <div
       className={cn(
-        "flex w-[22rem] flex-col rounded-md border",
+        "flex flex-col rounded-md border",
+        className ?? "w-[22rem]",
         formHasError ? "border-red-500" : "border-border-medium"
       )}
       data-testid="coder-controls-inner"

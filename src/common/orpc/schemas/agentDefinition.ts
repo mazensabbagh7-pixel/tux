@@ -59,14 +59,19 @@ const AgentDefinitionPromptSchema = z
   })
   .strip();
 
-// Tool configuration: add/remove patterns (regex).
+// Tool configuration:
+// - add/remove are regex patterns
+// - require is a concrete tool name (single-tool require semantics)
 // Layers are processed in order during inheritance (base first, then child).
 const AgentDefinitionToolsSchema = z
   .object({
-    // Patterns to add (enable). Processed before remove.
+    // Patterns to add (enable). Processed before remove and require.
     add: z.array(z.string().min(1)).optional(),
     // Patterns to remove (disable). Processed after add.
     remove: z.array(z.string().min(1)).optional(),
+    // Tool names to require (last entry wins). Processed after add/remove so agents
+    // can force a single concrete tool for this turn.
+    require: z.array(z.string().min(1)).optional(),
   })
   .strip();
 
@@ -96,7 +101,7 @@ export const AgentDefinitionFrontmatterSchema = z
 
     ai: AgentDefinitionAiDefaultsSchema.optional(),
 
-    // Tool configuration: add/remove patterns (regex).
+    // Tool configuration: add/remove/require patterns (regex).
     // If omitted and no base, no tools are available.
     tools: AgentDefinitionToolsSchema.optional(),
   })

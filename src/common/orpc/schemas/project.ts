@@ -70,10 +70,6 @@ export const WorkspaceConfigSchema = z.object({
     description:
       'If set, selects an agent definition for this workspace (e.g., "explore" or "exec").',
   }),
-  agentSwitchingEnabled: z.boolean().optional().meta({
-    description:
-      "When true, switch_agent tool is enabled for this workspace (set when session starts from Auto agent).",
-  }),
   taskStatus: z
     .enum(["queued", "running", "awaiting_report", "interrupted", "reported"])
     .optional()
@@ -146,5 +142,9 @@ export const ProjectConfigSchema = z.object({
   }),
   defaultRuntime: RuntimeEnablementIdSchema.optional().meta({
     description: "Default runtime override for new workspaces in this project",
+  }),
+  projectKind: z.enum(["user", "system"]).optional().meta({
+    description:
+      "Project classification. System projects are hidden from user-facing project lists unless explicitly requested.",
   }),
 });

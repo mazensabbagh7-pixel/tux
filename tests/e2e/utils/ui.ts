@@ -153,20 +153,34 @@ export function createWorkspaceUI(page: Page, context: DemoProjectConfig): Works
 
     async setMode(mode: ChatMode): Promise<void> {
       const normalizedMode = sanitizeMode(mode);
+      const agentId = normalizedMode.toLowerCase(); // "plan" | "exec"
 
-      // AgentModePicker is now a dropdown. Click the trigger to open, then select the mode.
+      // AgentModePicker trigger has aria-label="Select agent"
       const agentPickerTrigger = page.getByRole("button", { name: "Select agent" }).first();
       await expect(agentPickerTrigger).toBeVisible();
 
-      // If the dropdown doesn't show the requested mode in the trigger, we need to open it
+      // If the trigger already shows the requested mode, nothing to do
       const currentMode = await agentPickerTrigger.textContent();
       if (!currentMode?.includes(normalizedMode)) {
         await agentPickerTrigger.click();
 
-        // Wait for dropdown to open and click the mode option
-        const dropdown = page.locator('[role="button"]').filter({ hasText: normalizedMode });
-        await expect(dropdown.first()).toBeVisible();
-        await dropdown.first().click();
+        // When auto-select is active, the agent list has pointer-events-none.
+        // Disable auto first by clicking the switch, which closes the picker,
+        // then reopen and select the desired agent.
+        const autoSwitch = page.locator('[aria-label="Auto-select agent"]');
+        if (await autoSwitch.isVisible()) {
+          const isChecked = await autoSwitch.getAttribute("aria-checked");
+          if (isChecked === "true") {
+            await autoSwitch.click();
+            // Picker closes after toggle — reopen it
+            await agentPickerTrigger.click();
+          }
+        }
+
+        // Each agent row in the dropdown has data-agent-id="plan"|"exec"|etc.
+        const agentRow = page.locator(`[data-agent-id="${agentId}"]`);
+        await expect(agentRow).toBeVisible();
+        await agentRow.click();
       }
 
       // Verify the trigger now shows the selected mode

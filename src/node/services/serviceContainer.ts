@@ -261,11 +261,15 @@ export class ServiceContainer {
 
       const workspaceLookup = this.config.findWorkspace(data.workspaceId);
       const sessionDir = this.config.getSessionDir(data.workspaceId);
+      // Newly created sub-agent workspaces are ingested here before a full rebuild,
+      // so keep workspaceName + parentWorkspaceId to avoid NULL analytics attribution.
       this.analyticsService.ingestWorkspace(data.workspaceId, sessionDir, {
         projectPath: workspaceLookup?.projectPath,
         projectName: workspaceLookup?.projectPath
           ? path.basename(workspaceLookup.projectPath)
           : undefined,
+        workspaceName: workspaceLookup?.workspaceName,
+        parentWorkspaceId: workspaceLookup?.parentWorkspaceId,
       });
     });
     // WorkspaceService emits metadata:null after successful remove().
@@ -304,10 +308,10 @@ export class ServiceContainer {
     // Start idle compaction checker
     this.idleCompactionService.start();
 
-    // Refresh Coder SSH config in background (handles binary path changes on restart)
+    // Refresh mux-owned Coder SSH config in background (handles binary path changes on restart)
     // Skip getCoderInfo() to avoid caching "unavailable" if coder isn't installed yet
-    void this.coderService.ensureSSHConfig().catch(() => {
-      // Ignore errors - coder may not be installed
+    void this.coderService.ensureMuxCoderSSHConfig().catch((error: unknown) => {
+      log.warn("Background mux SSH config setup failed", { error });
     });
 
     // Ensure the built-in Chat with Mux system workspace exists.
@@ -375,6 +379,9 @@ export class ServiceContainer {
         projectConfig = { workspaces: [] };
         config.projects.set(projectPath, projectConfig);
       }
+
+      // Foundational invariant: built-in project is always marked system.
+      projectConfig.projectKind = "system";
 
       const existing = projectConfig.workspaces.find((w) => w.id === MUX_HELP_CHAT_WORKSPACE_ID);
 

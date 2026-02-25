@@ -61,6 +61,8 @@ description: Agent instructions for AI assistants working on the Mux codebase
 - In Orchestrator mode, delegate implementation/verification commands to `exec` or `explore` sub-agents and integrate their patches; do not bypass delegation with direct local edits.
 - In Orchestrator mode, route higher-complexity implementation tasks to `plan` sub-agents so they can research and produce a precise plan before auto-handoff to implementation.
 
+- **PR creation gate:** Do **not** open/create a pull request unless the user explicitly asks (e.g., "open a PR", "create PR", "submit this"). By default, complete local validation, commit/push branch updates as requested, and let the user review before deciding whether to open a PR.
+
 > PR readiness is mandatory. You MUST keep iterating until the PR is fully ready.
 > A PR is fully ready only when: (1) Codex confirms approval (thumbs-up reaction on the PR description or an approval comment like "Didn't find any major issues"), (2) all Codex review threads are resolved, and (3) all required CI checks pass.
 > You MUST NOT report success or stop the loop before these conditions are met.
@@ -85,6 +87,14 @@ HistoryService is pure local disk I/O with a single dependency (`getSessionDir`)
 - For error injection: use real instance + `spyOn(historyService, "method").mockRejectedValueOnce(...)`
 - For call tracking: `spyOn(historyService, "method")` without `mockImplementation` — real impl runs, calls are recorded
 - For assertions: read history back with `getHistoryFromLatestBoundary()` or `getLastMessages()` instead of checking mock calls
+
+## Mobile Testing
+
+Mobile app tests live in `mobile/src/**/*.test.ts` and use Bun's built-in test runner (`bun test`).
+
+- Run mobile tests: `make test-mobile` or `bun run test:mobile`.
+- The environment currently lacks native mobile testing tools (ADB, iOS Simulator), so focus on unit and integration tests that can run in a Node/Bun environment.
+- Mobile components do not yet have automated UI tests.
 
 ## Refactoring & Runtime Etiquette
 

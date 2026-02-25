@@ -299,7 +299,7 @@ type MockMcpTestResult = { success: true; tools: string[] } | { success: false; 
  */
 export function createMockORPCClient(options: MockORPCClientOptions = {}): APIClient {
   const {
-    projects = new Map<string, ProjectConfig>(),
+    projects: providedProjects = new Map<string, ProjectConfig>(),
     workspaces: inputWorkspaces = [],
     onChat,
     executeBash,
@@ -369,13 +369,14 @@ export function createMockORPCClient(options: MockORPCClientOptions = {}): APICl
 
   // App now boots into the built-in mux-chat workspace by default.
   // Ensure Storybook mocks always include it so stories don't render "Workspace not found".
+  const muxChatProjectPath = "/Users/dev/.mux/system/chat-with-mux";
   const muxChatWorkspace: FrontendWorkspaceMetadata = {
     id: MUX_HELP_CHAT_WORKSPACE_ID,
     name: MUX_HELP_CHAT_WORKSPACE_NAME,
     title: MUX_HELP_CHAT_WORKSPACE_TITLE,
     projectName: "Mux",
-    projectPath: "/Users/dev/.mux/system/chat-with-mux",
-    namedWorkspacePath: "/Users/dev/.mux/system/chat-with-mux",
+    projectPath: muxChatProjectPath,
+    namedWorkspacePath: muxChatProjectPath,
     runtimeConfig: { type: "local" },
     agentId: MUX_HELP_CHAT_AGENT_ID,
   };
@@ -383,6 +384,16 @@ export function createMockORPCClient(options: MockORPCClientOptions = {}): APICl
   const workspaces = inputWorkspaces.some((w) => w.id === MUX_HELP_CHAT_WORKSPACE_ID)
     ? inputWorkspaces
     : [muxChatWorkspace, ...inputWorkspaces];
+
+  // Keep Storybook aligned with app behavior: the built-in Mux chat workspace belongs to a
+  // system project so user-facing project lists can hide it while still rendering sidebar affordances.
+  const projects = new Map(providedProjects);
+  const muxChatProject = projects.get(muxChatProjectPath);
+  if (muxChatProject) {
+    projects.set(muxChatProjectPath, { ...muxChatProject, projectKind: "system" });
+  } else {
+    projects.set(muxChatProjectPath, { workspaces: [], projectKind: "system" });
+  }
 
   // Keep Storybook's built-in mux-help workspace behavior deterministic:
   // if stories haven't seeded a read baseline, treat it as "known but never read"
@@ -434,6 +445,26 @@ export function createMockORPCClient(options: MockORPCClientOptions = {}): APICl
     initialAgentDefinitions ??
     ([
       {
+        id: "auto",
+        scope: "built-in",
+        name: "Auto",
+        description: "Intelligently switch agent types to provide the best results.",
+        uiSelectable: true,
+        subagentRunnable: false,
+        base: "exec",
+        uiColor: "var(--color-auto-mode)",
+      },
+      {
+        id: "ask",
+        scope: "built-in",
+        name: "Ask",
+        description: "Delegate questions to Explore sub-agents and synthesize an answer.",
+        uiSelectable: true,
+        subagentRunnable: false,
+        base: "exec",
+        uiColor: "var(--color-ask-mode)",
+      },
+      {
         id: "plan",
         scope: "built-in",
         name: "Plan",
@@ -450,6 +481,16 @@ export function createMockORPCClient(options: MockORPCClientOptions = {}): APICl
         description: "Implement changes in the repository",
         uiSelectable: true,
         subagentRunnable: true,
+        uiColor: "var(--color-exec-mode)",
+      },
+      {
+        id: "orchestrator",
+        scope: "built-in",
+        name: "Orchestrator",
+        description: "Coordinate multiple sub-agents to solve complex tasks in parallel.",
+        uiSelectable: true,
+        subagentRunnable: false,
+        base: "exec",
         uiColor: "var(--color-exec-mode)",
       },
       {

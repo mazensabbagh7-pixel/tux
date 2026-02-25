@@ -1,5 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, FolderX, Loader2, RefreshCw } from "lucide-react";
+import {
+  Bot,
+  ChevronDown,
+  MessageCircleQuestionMark,
+  Route,
+  Sparkles,
+  SquareCode,
+  Workflow,
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 
 import { useAgent } from "@/browser/contexts/AgentContext";
 import { CUSTOM_EVENTS } from "@/common/constants/events";
@@ -13,6 +22,7 @@ import {
   TooltipTrigger,
 } from "@/browser/components/ui/tooltip";
 import { Button } from "@/browser/components/ui/button";
+import { Switch } from "@/browser/components/ui/switch";
 import {
   formatKeybind,
   formatNumberedKeybind,
@@ -20,6 +30,7 @@ import {
   matchNumberedKeybind,
 } from "@/browser/utils/ui/keybinds";
 import { sortAgentsStable } from "@/browser/utils/agents";
+import { stopKeyboardPropagation } from "@/browser/utils/events";
 
 interface AgentModePickerProps {
   className?: string;
@@ -45,6 +56,20 @@ interface AgentOption {
   subagentRunnable: boolean;
 }
 
+/** Maps well-known agent IDs to lucide icons for the dropdown */
+const AGENT_ICONS: Record<string, LucideIcon> = {
+  ask: MessageCircleQuestionMark,
+  plan: Route,
+  exec: SquareCode,
+  orchestrator: Workflow,
+  auto: Sparkles,
+};
+const DEFAULT_AGENT_ICON: LucideIcon = Bot;
+
+function getAgentIcon(agentId: string): LucideIcon {
+  return AGENT_ICONS[agentId] ?? DEFAULT_AGENT_ICON;
+}
+
 export function formatAgentIdLabel(agentId: string): string {
   if (!agentId) {
     return "Agent";
@@ -65,88 +90,7 @@ function normalizeAgentId(value: unknown): string {
   return typeof value === "string" && value.trim().length > 0 ? value.trim().toLowerCase() : "";
 }
 
-function formatScope(scope: AgentOption["scope"]): string {
-  switch (scope) {
-    case "built-in":
-      return "Built-in";
-    case "project":
-      return "Project";
-    case "global":
-      return "Global";
-  }
-}
-
-/** Renders the rich tooltip content for an agent option */
-const AgentTooltipContent: React.FC<{ opt: AgentOption }> = ({ opt }) => {
-  const hasAdd = (opt.tools?.add?.length ?? 0) > 0;
-  const hasRemove = (opt.tools?.remove?.length ?? 0) > 0;
-  const hasToolsOverrides = hasAdd || hasRemove;
-  const hasAiDefaults = Boolean(opt.aiDefaults?.model ?? opt.aiDefaults?.thinkingLevel);
-
-  return (
-    <div className="space-y-1.5 text-[10px]">
-      {opt.description && <div className="text-light">{opt.description}</div>}
-
-      <div className="text-muted">
-        <span className="text-muted-light">Source:</span> {formatScope(opt.scope)}
-      </div>
-
-      {opt.base && (
-        <div className="text-muted">
-          <span className="text-muted-light">Base:</span> {opt.base}
-        </div>
-      )}
-
-      {hasAiDefaults && (
-        <div className="text-muted">
-          <span className="text-muted-light">AI:</span>{" "}
-          {[opt.aiDefaults?.model, opt.aiDefaults?.thinkingLevel].filter(Boolean).join(", ")}
-        </div>
-      )}
-
-      {(hasToolsOverrides || opt.base) && (
-        <div className="text-muted space-y-0.5">
-          <span className="text-muted-light">Tools:</span>
-          {hasAdd &&
-            opt.tools!.add!.map((pattern) => (
-              <div key={pattern} className="ml-2">
-                <span className="text-green-500">+</span> {pattern}
-              </div>
-            ))}
-          {hasRemove &&
-            opt.tools!.remove!.map((pattern) => (
-              <div key={pattern} className="ml-2">
-                <span className="text-red-500">−</span> {pattern}
-              </div>
-            ))}
-          {!hasToolsOverrides && opt.base && (
-            <div className="text-muted-light ml-2">inherited from base</div>
-          )}
-        </div>
-      )}
-
-      {opt.subagentRunnable && (
-        <div className="text-muted">
-          <span className="text-muted-light">Subagent:</span> runnable
-        </div>
-      )}
-    </div>
-  );
-};
-
-/** Returns true if an agent has any tooltip-worthy content */
-function hasTooltipContent(opt: AgentOption): boolean {
-  if (opt.description) return true;
-  if (opt.base) return true;
-  if (opt.aiDefaults?.model) return true;
-  if (opt.aiDefaults?.thinkingLevel) return true;
-  if ((opt.tools?.add?.length ?? 0) > 0) return true;
-  if ((opt.tools?.remove?.length ?? 0) > 0) return true;
-  if (opt.subagentRunnable) return true;
-  return false;
-}
-
-const AgentHelpTooltip: React.FC = () => (
+const AgentHelpTooltip: React.FC<{ isAuto: boolean }> = (props) => (
   <Tooltip>
     <TooltipTrigger asChild>
       <HelpIndicator>?</HelpIndicator>
@@ -157,8 +101,12 @@ const AgentHelpTooltip: React.FC = () => (
       <br />
       Open picker: {formatKeybind(KEYBINDS.TOGGLE_AGENT)}
       <br />
-      Cycle agents: {formatKeybind(KEYBINDS.CYCLE_AGENT)}
-      <br />
+      {!props.isAuto && (
+        <>
+          Cycle agents: {formatKeybind(KEYBINDS.CYCLE_AGENT)}
+          <br />
+        </>
+      )}
       Quick select: {formatNumberedKeybind(0).replace("1", "1-9")} (when open)
       <br />
       <br />
@@ -172,30 +120,31 @@ function resolveAgentOptions(agents: AgentDefinitionDescriptor[]): AgentOption[]
 }
 
 export const AgentModePicker: React.FC<AgentModePickerProps> = (props) => {
-  const {
-    agentId,
-    setAgentId,
-    agents,
-    loaded,
-    refresh,
-    refreshing,
-    disableWorkspaceAgents,
-    setDisableWorkspaceAgents,
-  } = useAgent();
+  const { agentId, setAgentId, agents, loaded } = useAgent();
 
   const onComplete = props.onComplete;
 
   const [isPickerOpen, setIsPickerOpen] = useState(false);
-  const [filter, setFilter] = useState("");
   const [highlightedIndex, setHighlightedIndex] = useState<number>(-1);
 
   const containerRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
   const dropdownItemRefs = useRef<Array<HTMLDivElement | null>>([]);
 
   const normalizedAgentId = useMemo(() => normalizeAgentId(agentId), [agentId]);
 
   const options = useMemo(() => resolveAgentOptions(agents), [agents]);
+
+  // Non-auto options shown as selectable items in the dropdown
+  const selectableOptions = useMemo(() => options.filter((opt) => opt.id !== "auto"), [options]);
+
+  // Auto is only available when the backend discovers it in the agent list
+  const autoAvailable = useMemo(() => options.some((opt) => opt.id === "auto"), [options]);
+
+  // Only lock the list when auto is both selected AND available — if auto was
+  // persisted but later removed from the agent list, users must still be able
+  // to pick a different agent from the dropdown.
+  const isAuto = normalizedAgentId === "auto" && autoAvailable;
 
   const activeOption = useMemo(() => {
     if (!normalizedAgentId) {
@@ -204,7 +153,7 @@ export const AgentModePicker: React.FC<AgentModePickerProps> = (props) => {
 
     const descriptor = agents.find((entry) => entry.id === normalizedAgentId);
     if (!descriptor) {
-      // Unknown agent (not in discovery) - show a fallback option
+      // Unknown agent (not in discovery) — show a fallback option
       return {
         id: normalizedAgentId,
         name: formatAgentIdLabel(normalizedAgentId),
@@ -227,40 +176,25 @@ export const AgentModePicker: React.FC<AgentModePickerProps> = (props) => {
     } satisfies AgentOption;
   }, [agents, normalizedAgentId]);
 
-  const filteredOptions = useMemo(() => {
-    const query = filter.trim().toLowerCase();
-    if (query.length === 0) {
-      return options;
-    }
-
-    return options.filter((opt) => {
-      if (opt.id.toLowerCase().includes(query)) return true;
-      if (opt.name.toLowerCase().includes(query)) return true;
-      return false;
-    });
-  }, [filter, options]);
-
   const openPicker = useCallback(
     (opts?: { highlightAgentId?: string }) => {
       setIsPickerOpen(true);
-      setFilter("");
 
       // Pre-select the current agent (or specified) in the list.
       const targetId = opts?.highlightAgentId ?? normalizedAgentId;
-      const currentIndex = options.findIndex((opt) => opt.id === targetId);
+      const currentIndex = selectableOptions.findIndex((opt) => opt.id === targetId);
       setHighlightedIndex(currentIndex >= 0 ? currentIndex : 0);
 
-      // Focus the search input after the dropdown renders.
+      // Focus the dropdown container for keyboard navigation.
       requestAnimationFrame(() => {
-        inputRef.current?.focus();
+        dropdownRef.current?.focus();
       });
     },
-    [normalizedAgentId, options]
+    [normalizedAgentId, selectableOptions]
   );
 
   const closePicker = useCallback(() => {
     setIsPickerOpen(false);
-    setFilter("");
     setHighlightedIndex(-1);
     onComplete?.();
   }, [onComplete]);
@@ -306,17 +240,6 @@ export const AgentModePicker: React.FC<AgentModePickerProps> = (props) => {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [closePicker, isPickerOpen]);
 
-  // Keep highlight in-bounds when the filtered list changes.
-  useEffect(() => {
-    if (filteredOptions.length === 0) {
-      setHighlightedIndex(-1);
-      return;
-    }
-    if (highlightedIndex >= filteredOptions.length) {
-      setHighlightedIndex(filteredOptions.length - 1);
-    }
-  }, [filteredOptions.length, highlightedIndex]);
-
   // Scroll highlighted item into view.
   useEffect(() => {
     if (highlightedIndex < 0) {
@@ -351,9 +274,12 @@ export const AgentModePicker: React.FC<AgentModePickerProps> = (props) => {
       e.preventDefault();
       e.stopPropagation();
 
-      // Use options (not filteredOptions) for consistent keybinds
-      if (index < options.length) {
-        const picked = options[index];
+      // Don't allow numbered shortcuts to bypass Auto lock
+      if (isAuto) return;
+
+      // Use selectableOptions so keybinds match the visible dropdown items
+      if (index < selectableOptions.length) {
+        const picked = selectableOptions[index];
         if (picked) {
           handleSelectAgent(picked.id);
         }
@@ -363,46 +289,50 @@ export const AgentModePicker: React.FC<AgentModePickerProps> = (props) => {
     // Use capture phase to intercept before other handlers
     window.addEventListener("keydown", handleGlobalKeyDown, true);
     return () => window.removeEventListener("keydown", handleGlobalKeyDown, true);
-  }, [isPickerOpen, options, handleSelectAgent]);
+  }, [isPickerOpen, isAuto, selectableOptions, handleSelectAgent]);
 
-  const handlePickerKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+  const handleDropdownKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     if (e.key === "Escape") {
       e.preventDefault();
+      // Block capture-phase listeners (e.g. ImmersiveReviewView) from
+      // consuming Escape before the picker closes
+      stopKeyboardPropagation(e);
       closePicker();
       return;
     }
 
+    // Don't navigate agents list when auto is active
+    if (isAuto) return;
+
     if (e.key === "Enter") {
+      // Only handle Enter for agent rows — don't intercept when focus is on
+      // the auto-select Switch (which has role="switch")
+      const target = e.target as HTMLElement;
+      if (target.getAttribute("role") === "switch") return;
+
       e.preventDefault();
-      if (filteredOptions.length === 0) {
-        return;
-      }
+      if (selectableOptions.length === 0) return;
 
       const selectedIndex = highlightedIndex >= 0 ? highlightedIndex : 0;
-      const picked = filteredOptions[selectedIndex];
-      if (!picked) {
-        return;
+      const picked = selectableOptions[selectedIndex];
+      if (picked) {
+        handleSelectAgent(picked.id);
       }
-
-      handleSelectAgent(picked.id);
       return;
     }
 
     if (e.key === "ArrowDown") {
       e.preventDefault();
-      setHighlightedIndex((prev) => Math.min(prev + 1, filteredOptions.length - 1));
+      setHighlightedIndex((prev) => Math.min(prev + 1, selectableOptions.length - 1));
       return;
     }
 
     if (e.key === "ArrowUp") {
       e.preventDefault();
-      // When we're already at the top (or nothing is highlighted), treat ArrowUp
-      // as a close/cancel action.
       if (highlightedIndex <= 0) {
         closePicker();
         return;
       }
-
       setHighlightedIndex((prev) => Math.max(prev - 1, 0));
       return;
     }
@@ -410,15 +340,15 @@ export const AgentModePicker: React.FC<AgentModePickerProps> = (props) => {
 
   // Resolve display properties for the trigger pill
   const activeDisplayName = activeOption?.name ?? formatAgentIdLabel(normalizedAgentId);
-  // Use subtle border with agent color, but keep text/caret colors matching ModelSelector
   const activeStyle: React.CSSProperties | undefined = activeOption?.uiColor
     ? { borderColor: activeOption.uiColor }
     : undefined;
   const activeClassName = activeOption?.uiColor ? "" : "border-exec-mode";
+  const TriggerIcon = getAgentIcon(normalizedAgentId);
 
   return (
     <div ref={containerRef} className={cn("relative flex items-center gap-1.5", props.className)}>
-      {/* Dropdown trigger - styled to match ModelSelector */}
+      {/* Dropdown trigger */}
       <Tooltip>
         <TooltipTrigger asChild>
           <Button
@@ -436,10 +366,14 @@ export const AgentModePicker: React.FC<AgentModePickerProps> = (props) => {
             }}
             style={activeStyle}
             className={cn(
-              "text-foreground hover:bg-hover flex items-center gap-1 rounded-sm border px-1.5 py-0.5 text-[11px] font-medium transition-all duration-150",
+              "text-foreground hover:bg-hover flex items-center gap-1.5 rounded-sm border-[0.5px] px-1.5 py-0.5 text-[11px] font-medium transition-[background-color] duration-150",
               activeClassName
             )}
           >
+            <TriggerIcon
+              className="h-3 w-3 shrink-0"
+              style={activeOption?.uiColor ? { color: activeOption.uiColor } : undefined}
+            />
             <span className="max-w-[clamp(4.5rem,30vw,130px)] truncate">{activeDisplayName}</span>
             <ChevronDown
               className={cn(
@@ -459,104 +393,35 @@ export const AgentModePicker: React.FC<AgentModePickerProps> = (props) => {
 
       {/* Tooltip is hover-only; hide it on touch + narrow layouts to avoid overlap. */}
       <div className="hidden [@container(min-width:420px)]:[@media(hover:hover)_and_(pointer:fine)]:block">
-        <AgentHelpTooltip />
+        <AgentHelpTooltip isAuto={isAuto} />
       </div>
 
       {isPickerOpen && (
-        <div className="bg-separator border-border-light absolute right-0 bottom-full z-[1020] mb-1 max-w-[420px] min-w-72 overflow-hidden rounded border shadow-[0_4px_12px_rgba(0,0,0,0.3)]">
-          <div className="border-border-light flex items-center gap-1.5 border-b p-1.5">
-            <input
-              ref={inputRef}
-              value={filter}
-              onChange={(e) => {
-                const value = e.target.value;
-                setFilter(value);
-
-                // Auto-highlight first result.
-                const query = value.trim().toLowerCase();
-                const next =
-                  query.length === 0
-                    ? options
-                    : options.filter((opt) => {
-                        if (opt.id.toLowerCase().includes(query)) return true;
-                        if (opt.name.toLowerCase().includes(query)) return true;
-                        return false;
-                      });
-
-                setHighlightedIndex(next.length > 0 ? 0 : -1);
-              }}
-              onKeyDown={handlePickerKeyDown}
-              placeholder="Search agents…"
-              className="text-light bg-dark border-border-light focus:border-exec-mode min-w-0 flex-1 rounded-sm border px-1 py-0.5 text-[10px] leading-[11px] outline-none"
-            />
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  type="button"
-                  aria-label={
-                    disableWorkspaceAgents
-                      ? "Workspace agents disabled (click to enable)"
-                      : "Workspace agents enabled (click to disable)"
-                  }
-                  onClick={() => setDisableWorkspaceAgents((prev) => !prev)}
-                  className={cn(
-                    "flex-shrink-0 p-0.5 transition-colors",
-                    disableWorkspaceAgents
-                      ? "text-red-500 hover:text-red-400"
-                      : "text-muted hover:text-foreground"
-                  )}
-                >
-                  <FolderX className="h-3 w-3" />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent side="bottom" align="end" className="max-w-56">
-                {disableWorkspaceAgents ? (
-                  <span className="text-red-400">
-                    Workspace agents disabled — using built-in/global only. Click to re-enable.
-                  </span>
-                ) : (
-                  "Disable workspace agents (use built-in/global only)"
-                )}
-              </TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  type="button"
-                  aria-label="Reload agents"
-                  onClick={() => void refresh()}
-                  className={cn(
-                    "text-muted hover:text-foreground flex-shrink-0 p-0.5 transition-colors",
-                    refreshing && "text-accent"
-                  )}
-                >
-                  <RefreshCw className={cn("h-3 w-3", refreshing && "animate-spin")} />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent side="bottom" align="end">
-                {refreshing ? "Reloading…" : "Reload agent definitions"}
-              </TooltipContent>
-            </Tooltip>
-          </div>
-
-          <div className="max-h-[220px] overflow-y-auto">
-            {filteredOptions.length === 0 ? (
-              <div className="text-muted-light px-2.5 py-2 text-[11px]">
-                {!loaded ? (
-                  <span className="flex items-center gap-1.5">
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                    Loading agents…
-                  </span>
-                ) : (
-                  "No matching agents"
-                )}
-              </div>
+        <div
+          ref={dropdownRef}
+          tabIndex={-1}
+          onKeyDown={handleDropdownKeyDown}
+          className="bg-separator border-border-light absolute right-0 bottom-full z-[1020] mb-1 min-w-52 overflow-hidden rounded border shadow-[0_4px_12px_rgba(0,0,0,0.3)] outline-none"
+        >
+          {/* Agent list — greyed out when auto is active, scrollable for long lists */}
+          <div
+            className={cn(
+              "max-h-64 overflow-y-auto py-1",
+              isAuto && "pointer-events-none opacity-50"
+            )}
+          >
+            {!loaded && selectableOptions.length === 0 ? (
+              <div className="text-muted-light px-2.5 py-2 text-[11px]">Loading agents…</div>
+            ) : selectableOptions.length === 0 ? (
+              <div className="text-muted-light px-2.5 py-2 text-[11px]">No agents available</div>
             ) : (
-              filteredOptions.map((opt, index) => {
-                const isHighlighted = index === highlightedIndex;
-                // Show keybind for first 9 items (based on position in full options list)
-                const optionIndex = options.findIndex((o) => o.id === opt.id);
-                const keybindLabel = formatNumberedKeybind(optionIndex);
+              selectableOptions.map((opt, index) => {
+                const isHighlighted = index === highlightedIndex && !isAuto;
+                const isSelected = opt.id === normalizedAgentId;
+                const Icon = getAgentIcon(opt.id);
+                // Keybind label matches the item's position in selectableOptions
+                const keybindLabel = formatNumberedKeybind(index);
+
                 return (
                   <div
                     key={opt.id}
@@ -564,55 +429,78 @@ export const AgentModePicker: React.FC<AgentModePickerProps> = (props) => {
                     role="button"
                     tabIndex={-1}
                     data-agent-id={opt.id}
+                    data-testid="agent-option"
                     className={cn(
-                      "px-2.5 py-1.5 cursor-pointer transition-colors duration-100",
-                      "first:rounded-t last:rounded-b",
-                      isHighlighted
-                        ? "text-foreground bg-hover"
-                        : "text-light bg-transparent hover:bg-hover hover:text-foreground"
+                      "flex cursor-pointer items-center gap-2.5 px-2.5 py-1.5 transition-colors duration-100",
+                      isHighlighted ? "bg-hover text-foreground" : "bg-transparent hover:bg-hover",
+                      isSelected ? "text-foreground" : "text-light hover:text-foreground"
                     )}
                     onMouseEnter={() => setHighlightedIndex(index)}
                     onClick={() => handleSelectAgent(opt.id)}
                   >
-                    <div className="grid grid-cols-[1fr_auto_auto_auto] items-center gap-2">
-                      <span
-                        data-testid="agent-name"
-                        className="min-w-0 truncate text-[11px] font-medium"
-                      >
-                        {opt.name}
-                      </span>
-                      <span data-testid="agent-id" className="text-muted-light text-[10px]">
-                        {opt.id}
-                      </span>
-                      {hasTooltipContent(opt) && (
-                        <Tooltip>
-                          <TooltipTrigger
-                            asChild
-                            onClick={(e) => e.stopPropagation()}
-                            onMouseDown={(e) => e.stopPropagation()}
-                          >
-                            <HelpIndicator className="ml-0.5">?</HelpIndicator>
-                          </TooltipTrigger>
-                          <TooltipContent
-                            side="left"
-                            align="center"
-                            className="max-w-72 whitespace-normal"
-                          >
-                            <AgentTooltipContent opt={opt} />
-                          </TooltipContent>
-                        </Tooltip>
+                    <Icon
+                      className="h-4 w-4 shrink-0"
+                      style={opt.uiColor ? { color: opt.uiColor } : undefined}
+                    />
+                    <span
+                      data-testid="agent-name"
+                      className={cn(
+                        "min-w-0 flex-1 truncate text-[11px] font-medium",
+                        isSelected && "text-accent"
                       )}
-                      {keybindLabel && (
-                        <span className="text-muted-light ml-1 text-[10px] tabular-nums">
-                          {keybindLabel}
-                        </span>
-                      )}
-                    </div>
+                    >
+                      {opt.name}
+                    </span>
+                    {keybindLabel && (
+                      <span className="text-muted-light mobile-hide-shortcut-hints ml-auto text-[10px] tabular-nums">
+                        {keybindLabel}
+                      </span>
+                    )}
                   </div>
                 );
               })
             )}
           </div>
+
+          {/* Divider + Auto toggle — only shown when auto agent is available */}
+          {autoAvailable && (
+            <div className="border-border border-t px-2.5 py-1.5">
+              <div
+                role="button"
+                tabIndex={-1}
+                className="flex cursor-pointer items-center gap-2"
+                onClick={() => {
+                  if (isAuto) {
+                    // Turn off auto → default to exec (first built-in)
+                    setAgentId("exec");
+                  } else {
+                    setAgentId("auto");
+                  }
+                  closePicker();
+                }}
+              >
+                {/* Wrapper stops propagation so the parent div's onClick
+                   doesn't double-fire when clicking the Switch directly */}
+                <span onClick={(e) => e.stopPropagation()}>
+                  <Switch
+                    checked={isAuto}
+                    size="sm"
+                    onCheckedChange={(checked) => {
+                      setAgentId(checked ? "auto" : "exec");
+                      closePicker();
+                    }}
+                    aria-label="Auto-select agent"
+                  />
+                </span>
+                <div className="flex flex-col">
+                  <span className="text-foreground text-[11px] font-medium">Auto</span>
+                  <span className="text-muted text-[10px] leading-tight">
+                    Mux chooses the best agent
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

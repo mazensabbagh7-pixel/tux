@@ -1652,6 +1652,81 @@ export const ContextMeterWithIdleCompaction: AppStory = {
 };
 
 /**
+ * Context meter hover summary tooltip.
+ *
+ * Captures the non-interactive one-line tooltip shown on hover so the quick
+ * compaction stats remain visible even after controls moved to click-to-open.
+ */
+export const ContextMeterHoverSummaryTooltip: AppStory = {
+  render: () => (
+    <AppWithMocks
+      setup={() =>
+        setupSimpleChatStory({
+          workspaceId: "ws-context-meter-hover",
+          workspaceName: "feature/context-meter-hover",
+          projectName: "my-app",
+          idleCompactionHours: 4,
+          messages: [
+            createUserMessage("msg-1", "Can you keep an eye on context usage?", {
+              historySequence: 1,
+              timestamp: STABLE_TIMESTAMP - 240000,
+            }),
+            createAssistantMessage(
+              "msg-2",
+              "Sure — I’ll keep compaction settings tuned as usage grows.",
+              {
+                historySequence: 2,
+                timestamp: STABLE_TIMESTAMP - 230000,
+                contextUsage: { inputTokens: 128000, outputTokens: 2500 },
+              }
+            ),
+          ],
+        })
+      }
+    />
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    const contextButton = await waitFor(
+      () => canvas.getByRole("button", { name: /context usage/i }),
+      { interval: 50, timeout: 10000 }
+    );
+
+    await userEvent.hover(contextButton);
+
+    await waitFor(
+      () => {
+        const tooltip = document.querySelector('[role="tooltip"]');
+        if (!(tooltip instanceof HTMLElement)) {
+          throw new Error("Compaction hover summary tooltip not visible");
+        }
+
+        const text = tooltip.textContent ?? "";
+        if (!text.includes("Context ")) {
+          throw new Error("Expected context usage summary in tooltip");
+        }
+        if (!text.includes("Auto ")) {
+          throw new Error("Expected auto-compaction summary in tooltip");
+        }
+        if (!text.includes("Idle 4h")) {
+          throw new Error("Expected idle compaction summary in tooltip");
+        }
+      },
+      { interval: 50, timeout: 5000 }
+    );
+  },
+  parameters: {
+    docs: {
+      description: {
+        story:
+          "Captures the context usage hover summary tooltip with one-line stats for context, auto-compaction threshold, and idle timer.",
+      },
+    },
+  },
+};
+
+/**
  * Story showing a propose_plan tool call with Plan UI.
  * Tests the plan card rendering with icon action buttons at the bottom.
  */
@@ -1721,6 +1796,82 @@ graph TD
           "Shows the ProposePlanToolCall component with a completed plan. " +
           "The plan card displays with the title in the header and icon action buttons " +
           "(Copy, Start Here, Show Text) at the bottom, matching the AssistantMessage aesthetic.",
+      },
+    },
+  },
+};
+
+/**
+ * Same as ProposePlan but with agent mode set to "plan".
+ * Shows Implement + Start Orchestrator buttons (no Continue in Auto).
+ */
+export const ProposePlanInPlanMode: AppStory = {
+  render: () => (
+    <AppWithMocks
+      setup={() => {
+        window.localStorage.setItem("agentId:ws-plan-mode", JSON.stringify("plan"));
+
+        return setupSimpleChatStory({
+          workspaceId: "ws-plan-mode",
+          messages: [
+            createUserMessage("msg-1", "Help me refactor the authentication module", {
+              historySequence: 1,
+              timestamp: STABLE_TIMESTAMP - 300000,
+            }),
+            createAssistantMessage(
+              "msg-2",
+              "I'll create a plan for refactoring the authentication module.",
+              {
+                historySequence: 2,
+                timestamp: STABLE_TIMESTAMP - 290000,
+                toolCalls: [
+                  createProposePlanTool(
+                    "call-plan-1",
+                    `# Authentication Module Refactor
+
+## Overview
+
+Refactor the authentication system to improve security and maintainability.
+
+## Tasks
+
+1. **Extract JWT utilities** - Move token generation and validation to dedicated module
+2. **Add refresh token support** - Implement secure refresh token rotation
+3. **Improve password hashing** - Upgrade to Argon2id with proper salt rounds
+4. **Add rate limiting** - Implement per-IP and per-user rate limits
+5. **Session management** - Add Redis-backed session store
+
+## Implementation Order
+
+\`\`\`mermaid
+graph TD
+    A[Extract JWT utils] --> B[Add refresh tokens]
+    B --> C[Improve hashing]
+    C --> D[Add rate limiting]
+    D --> E[Session management]
+\`\`\`
+
+## Success Criteria
+
+- All existing tests pass
+- New tests for refresh token flow
+- Security audit passes
+- Performance benchmarks maintained`
+                  ),
+                ],
+              }
+            ),
+          ],
+        });
+      }}
+    />
+  ),
+  parameters: {
+    docs: {
+      description: {
+        story:
+          'Same as ProposePlan but with agent mode set to "plan". ' +
+          "Shows Implement and Start Orchestrator buttons instead of Continue in Auto.",
       },
     },
   },

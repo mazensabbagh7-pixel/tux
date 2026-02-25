@@ -1483,48 +1483,74 @@ export const ImmersiveReviewView: React.FC<ImmersiveReviewViewProps> = (props) =
         {/* Back button */}
         <button
           onClick={onExit}
-          className="text-muted hover:text-foreground flex cursor-pointer items-center gap-1 border-none bg-transparent p-0 text-xs transition-colors"
+          className="text-muted hover:text-foreground flex shrink-0 cursor-pointer items-center gap-1 border-none bg-transparent p-0 text-xs transition-colors"
           aria-label="Exit immersive review"
         >
           <ArrowLeft className="h-4 w-4" />
-          <span>Back</span>
+          <span className="hidden sm:inline">Back</span>
         </button>
 
-        <div className="bg-border-light h-4 w-px" />
+        <div className="bg-border-light hidden h-4 w-px shrink-0 sm:block" />
 
         {/* File navigation */}
-        <div className="flex items-center gap-1">
+        <div className="flex min-w-0 flex-1 items-center gap-1 sm:flex-initial">
           <button
             onClick={() => navigateFile(-1)}
             disabled={fileCount <= 1}
-            className="text-muted hover:text-foreground disabled:text-dim flex cursor-pointer items-center border-none bg-transparent p-0 transition-colors disabled:cursor-default"
+            className="text-muted hover:text-foreground disabled:text-dim flex shrink-0 cursor-pointer items-center border-none bg-transparent p-0 transition-colors disabled:cursor-default"
             aria-label="Previous file"
           >
             <ChevronLeft className="h-4 w-4" />
           </button>
+          {/* Mobile: show filename only */}
           <span
-            className="text-foreground max-w-[400px] truncate font-mono text-xs"
+            className="text-foreground min-w-0 flex-1 truncate font-mono text-xs sm:hidden"
+            title={activeFilePath ?? undefined}
+          >
+            {activeFilePath?.split("/").pop() ?? "No files"}
+          </span>
+          {/* Desktop: show full path */}
+          <span
+            className="text-foreground hidden max-w-[400px] truncate font-mono text-xs sm:block"
             title={activeFilePath ?? undefined}
           >
             {activeFilePath ?? "No files"}
           </span>
-          <span className="text-dim text-[10px]">
+          <span className="text-dim hidden shrink-0 text-[10px] sm:inline">
             {fileIndex >= 0 ? `${fileIndex + 1}/${fileCount}` : ""}
           </span>
           <button
             onClick={() => navigateFile(1)}
             disabled={fileCount <= 1}
-            className="text-muted hover:text-foreground disabled:text-dim flex cursor-pointer items-center border-none bg-transparent p-0 transition-colors disabled:cursor-default"
+            className="text-muted hover:text-foreground disabled:text-dim flex shrink-0 cursor-pointer items-center border-none bg-transparent p-0 transition-colors disabled:cursor-default"
             aria-label="Next file"
           >
             <ChevronRight className="h-4 w-4" />
           </button>
         </div>
 
-        <div className="bg-border-light h-4 w-px" />
+        <div className="bg-border-light hidden h-4 w-px shrink-0 sm:block" />
 
-        {/* Hunk and line selection summary */}
-        <div className="text-muted flex items-center gap-1 text-[10px]">
+        {/* Hunk read toggle — mobile only (desktop copy lives inside the summary div below) */}
+        {selectedHunk && (
+          <button
+            type="button"
+            className={cn(
+              "text-muted hover:text-read flex shrink-0 cursor-pointer items-center border-none bg-transparent p-0 transition-colors duration-150 sm:hidden",
+              props.isRead(selectedHunk.id) && "text-read"
+            )}
+            onClick={() => onToggleRead(selectedHunk.id)}
+            aria-label={props.isRead(selectedHunk.id) ? "Mark hunk as unread" : "Mark hunk as read"}
+          >
+            {props.isRead(selectedHunk.id) ? (
+              <Check aria-hidden="true" className="h-3 w-3" />
+            ) : (
+              <Circle aria-hidden="true" className="h-3 w-3" />
+            )}
+          </button>
+        )}
+        {/* Hunk selection summary — hidden on mobile, includes toggle on desktop */}
+        <div className="text-muted hidden items-center gap-1 text-[10px] sm:flex">
           {selectedHunk && (
             <button
               type="button"

@@ -37,6 +37,7 @@ import {
 } from "@/common/constants/toolLimits";
 import { TOOL_EDIT_WARNING } from "@/common/types/tools";
 import { SYSTEM1_BASH_OUTPUT_COMPACTION_LIMITS } from "@/common/types/tasks";
+import { THINKING_LEVELS } from "@/common/types/thinking";
 
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { extractToolFilePath } from "@/common/utils/tools/toolInputFilePath";
@@ -488,7 +489,7 @@ const TaskListStatusSchema = z.enum([
   "interrupted",
   "reported",
 ]);
-const TaskListThinkingLevelSchema = z.enum(["off", "low", "medium", "high", "xhigh", "max"]);
+const TaskListThinkingLevelSchema = z.enum(THINKING_LEVELS);
 
 export const TaskListToolArgsSchema = z
   .object({
@@ -670,7 +671,9 @@ export const TOOL_DEFINITIONS = {
   },
   file_read: {
     description:
-      "Read the contents of a file from the file system. Read as little as possible to complete the task.",
+      "Read the contents of a file from the file system. Read as little as possible to complete the task. " +
+      "Content is returned with line numbers prepended in the format '<line_number>\\t<content>'. " +
+      "These line numbers are NOT part of the actual file content and must not be included when editing files.",
     schema: z.preprocess(
       normalizeFilePath,
       z.object({
@@ -1267,7 +1270,12 @@ export const FileReadToolResultSchema = z.union([
     file_size: z.number(),
     modifiedTime: z.string(),
     lines_read: z.number(),
-    content: z.string(),
+    content: z
+      .string()
+      .describe(
+        "File content with line numbers prepended as '<line_number>\\t<content>'. " +
+          "Line numbers are not part of the actual file content."
+      ),
     warning: z.string().optional(),
   }),
   z.object({

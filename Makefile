@@ -61,9 +61,9 @@ include fmt.mk
 
 .PHONY: all build dev start clean help
 .PHONY: build-renderer version build-icons build-static build-docker-runtime verify-docker-runtime-artifacts
-.PHONY: lint lint-fix typecheck typecheck-react-native static-check
+.PHONY: lint lint-fix typecheck typecheck-react-native mobile-web static-check
 .PHONY: test test-unit test-integration test-watch test-coverage test-e2e test-e2e-perf smoke-test
-.PHONY: dist dist-mac dist-win dist-linux install-mac-arm64
+.PHONY: dist dist-mac dist-win dist-linux install-mac-arm64 check-appimage-icons
 .PHONY: vscode-ext vscode-ext-install
 .PHONY: docs-server check-docs-links
 .PHONY: storybook storybook-build test-storybook chromatic
@@ -183,8 +183,9 @@ dev-server: node_modules/.installed build-main ## Start server mode with hot rel
 	@echo "  Frontend (with HMR):     http://$(or $(VITE_HOST),localhost):$(or $(VITE_PORT),5173)"
 	@echo ""
 	@echo "For remote access: make dev-server VITE_HOST=0.0.0.0 VITE_ALLOWED_HOSTS=<public-host>"
+	@# Keep tsgo -> tsc-alias sequential to avoid transient unresolved @/ imports in dist during restarts.
 	@bun x concurrently -k \
-		"bun x concurrently \"$(TSGO) -w -p tsconfig.main.json\" \"bun x tsc-alias -w -p tsconfig.main.json\"" \
+		"bun x nodemon --watch src --watch tsconfig.main.json --watch tsconfig.json --ext ts,tsx,json --ignore dist --ignore node_modules --exec 'node scripts/build-main-watch.js'" \
 		'bun x esbuild src/cli/api.ts $(ESBUILD_CLI_FLAGS) --watch' \
 		"bun x nodemon --watch dist/cli/index.js --watch dist/cli/server.js --delay 500ms --exec 'NODE_ENV=development node dist/cli/index.js server --no-auth --host $(or $(BACKEND_HOST),127.0.0.1) --port $(or $(BACKEND_PORT),3000)'" \
 		"MUX_VITE_HOST=$(or $(VITE_HOST),127.0.0.1) MUX_VITE_PORT=$(or $(VITE_PORT),5173) MUX_VITE_ALLOWED_HOSTS=$(VITE_ALLOWED_HOSTS) MUX_BACKEND_PORT=$(or $(BACKEND_PORT),3000) vite"
@@ -298,15 +299,19 @@ version: ## Generate version file
 
 src/version.ts: version
 
+build/icons/512x512.png: docs/img/logo-white.svg scripts/generate-icons.ts
+	@echo "Generating Linux icon set..."
+	@bun scripts/generate-icons.ts linux-icons
+
 # Platform-specific icon targets
 ifeq ($(shell uname), Darwin)
-build-icons: build/icon.icns build/icon.png ## Generate Electron app icons from logo (macOS builds both)
+build-icons: build/icon.icns build/icon.png build/icons/512x512.png ## Generate Electron app icons from logo (macOS builds both)
 
 build/icon.icns: docs/img/logo-white.svg scripts/generate-icons.ts
 	@echo "Generating macOS ICNS icon..."
 	@bun scripts/generate-icons.ts icns
 else
-build-icons: build/icon.png ## Generate Electron app icons from logo (Linux builds PNG only)
+build-icons: build/icon.png build/icons/512x512.png ## Generate Electron app icons from logo (Linux builds PNG only)
 endif
 
 build/icon.png: docs/img/logo-white.svg scripts/generate-icons.ts
@@ -355,6 +360,9 @@ typecheck: node_modules/.installed src/version.ts $(BUILTIN_AGENTS_GENERATED) $(
 		"$(TSGO) --noEmit -p tsconfig.main.json"
 endif
 
+mobile-web: mobile/node_modules/.installed ## Start mobile app web dev server
+	cd mobile && bun run web
+
 typecheck-react-native: mobile/node_modules/.installed ## Run TypeScript type checking for React Native app
 	@echo "Type checking React Native app..."
 	@cd mobile && bunx tsc --noEmit
@@ -379,6 +387,9 @@ test-unit: node_modules/.installed build-main ## Run unit tests
 	@bun test src
 
 test: test-unit ## Alias for test-unit
+
+test-mobile: mobile/node_modules/.installed ## Run mobile app tests
+	@cd mobile && bun test
 
 test-watch: ## Run tests in watch mode
 	@./scripts/test.sh --watch
@@ -448,6 +459,9 @@ dist-linux: build ## Build Linux distributable
 
 dist-linux-arm64: build ## Build Linux arm64 distributable
 	@bun x electron-builder --linux --arm64 --publish never
+
+check-appimage-icons: ## Validate AppImage icon structure (requires prior dist-linux build)
+	@./scripts/check-appimage-icons.sh
 
 ## VS Code Extension (delegates to vscode/Makefile)
 

@@ -107,7 +107,7 @@ export const CODEX_OAUTH_ALLOWED_MODELS = new Set<string>([
  * model is accessible.
  */
 export const CODEX_OAUTH_REQUIRED_MODELS = new Set<string>([
-  "gpt-5.3-codex",
+  // Spark variants still require ChatGPT OAuth routing.
   "gpt-5.3-codex-spark",
 ]);
 

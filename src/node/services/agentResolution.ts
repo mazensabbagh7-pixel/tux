@@ -51,8 +51,6 @@ export interface ResolveAgentOptions {
   requestedAgentId: string | undefined;
   /** When true, skip workspace-specific agents (for "unbricking" broken agent files). */
   disableWorkspaceAgents: boolean;
-  /** Enable switch_agent tool for sessions that were started from the Auto agent. */
-  enableAgentSwitchTool: boolean;
   modelString: string;
   /** Caller-supplied tool policy (applied AFTER agent policy for further restriction). */
   callerToolPolicy: ToolPolicy | undefined;
@@ -104,7 +102,6 @@ export async function resolveAgentForStream(
     workspacePath,
     requestedAgentId: rawAgentId,
     disableWorkspaceAgents,
-    enableAgentSwitchTool,
     modelString,
     callerToolPolicy,
     cfg,
@@ -223,18 +220,10 @@ export async function resolveAgentForStream(
   // --- Tool policy composition ---
   // Agent policy establishes baseline (deny-all + enable whitelist + runtime restrictions).
   // Caller policy then narrows further if needed.
-  // Auto must be able to call switch_agent on its first turn even before metadata persistence.
-  const shouldEnableAgentSwitchTool = enableAgentSwitchTool || agentDefinition.id === "auto";
-  // Only force toolChoice=require in top-level workspaces where switch_agent can actually run.
-  // Corrupted/stale subagent metadata may still point at auto; that should degrade safely.
-  const shouldRequireSwitchAgentTool =
-    agentDefinition.id === "auto" && shouldEnableAgentSwitchTool && !isSubagentWorkspace;
   const agentToolPolicy = resolveToolPolicyForAgent({
     agents: agentsForInheritance,
     isSubagent: isSubagentWorkspace,
     disableTaskToolsForDepth: shouldDisableTaskToolsForDepth,
-    enableAgentSwitchTool: shouldEnableAgentSwitchTool,
-    requireSwitchAgentTool: shouldRequireSwitchAgentTool,
   });
 
   // The Chat with Mux system workspace must remain sandboxed regardless of caller-supplied
@@ -259,9 +248,21 @@ export async function resolveAgentForStream(
         ]
       : undefined;
 
+  // Caller require policies (e.g. task completion enforcement) must take precedence.
+  // Drop agent-level require filters in that case to avoid multiple-required-tool conflicts.
+  const callerRequiresTool =
+    callerToolPolicy?.some((filter) => filter.action === "require") === true;
+  const agentToolPolicyForComposition = callerRequiresTool
+    ? agentToolPolicy.filter((filter) => filter.action !== "require")
+    : agentToolPolicy;
+
   const effectiveToolPolicy: ToolPolicy | undefined =
-    callerToolPolicy || agentToolPolicy.length > 0 || systemWorkspaceToolPolicy
-      ? [...agentToolPolicy, ...(callerToolPolicy ?? []), ...(systemWorkspaceToolPolicy ?? [])]
+    callerToolPolicy || agentToolPolicyForComposition.length > 0 || systemWorkspaceToolPolicy
+      ? [
+          ...agentToolPolicyForComposition,
+          ...(callerToolPolicy ?? []),
+          ...(systemWorkspaceToolPolicy ?? []),
+        ]
       : undefined;
 
   // --- Sentinel tool names for agent transition detection ---

@@ -176,6 +176,14 @@ function normalizeRuntimeEnablementOverrides(
   return Object.keys(overrides).length > 0 ? overrides : undefined;
 }
 
+function normalizeProjectKind(value: unknown): "user" | "system" | undefined {
+  if (value === "user" || value === "system") {
+    return value;
+  }
+
+  return undefined;
+}
+
 function normalizeProjectRuntimeSettings(projectConfig: ProjectConfig): ProjectConfig {
   // Per-project runtime overrides are optional; keep config.json sparse by persisting only explicit
   // overrides (false enablement + explicit default runtime selections).
@@ -187,6 +195,7 @@ function normalizeProjectRuntimeSettings(projectConfig: ProjectConfig): ProjectC
     runtimeEnablement?: unknown;
     defaultRuntime?: unknown;
     runtimeOverridesEnabled?: unknown;
+    projectKind?: unknown;
   };
   const runtimeEnablement = normalizeRuntimeEnablementOverrides(record.runtimeEnablement);
   const defaultRuntime = normalizeRuntimeEnablementId(record.defaultRuntime);
@@ -209,6 +218,13 @@ function normalizeProjectRuntimeSettings(projectConfig: ProjectConfig): ProjectC
     next.defaultRuntime = defaultRuntime;
   } else {
     delete next.defaultRuntime;
+  }
+
+  const projectKind = normalizeProjectKind(record.projectKind);
+  if (projectKind !== undefined) {
+    next.projectKind = projectKind;
+  } else {
+    delete next.projectKind;
   }
 
   return next;
@@ -710,16 +726,26 @@ export class Config {
 
   /**
    * Find a workspace path and project path by workspace ID
-   * @returns Object with workspace and project paths, or null if not found
+   * @returns Object with workspace/project paths and available workspace metadata, or null
    */
-  findWorkspace(workspaceId: string): { workspacePath: string; projectPath: string } | null {
+  findWorkspace(workspaceId: string): {
+    workspacePath: string;
+    projectPath: string;
+    workspaceName?: string;
+    parentWorkspaceId?: string;
+  } | null {
     const config = this.loadConfigOrDefault();
 
     for (const [projectPath, project] of config.projects) {
       for (const workspace of project.workspaces) {
         // NEW FORMAT: Check config first (primary source of truth after migration)
         if (workspace.id === workspaceId) {
-          return { workspacePath: workspace.path, projectPath };
+          return {
+            workspacePath: workspace.path,
+            projectPath,
+            workspaceName: workspace.name,
+            parentWorkspaceId: workspace.parentWorkspaceId,
+          };
         }
 
         // LEGACY FORMAT: Fall back to metadata.json and legacy ID for unmigrated workspaces
@@ -735,7 +761,12 @@ export class Config {
               const data = fs.readFileSync(metadataPath, "utf-8");
               const metadata = JSON.parse(data) as WorkspaceMetadata;
               if (metadata.id === workspaceId) {
-                return { workspacePath: workspace.path, projectPath };
+                return {
+                  workspacePath: workspace.path,
+                  projectPath,
+                  workspaceName: undefined,
+                  parentWorkspaceId: undefined,
+                };
               }
             } catch {
               // Ignore parse errors, try legacy ID
@@ -745,7 +776,12 @@ export class Config {
           // Try legacy ID format as last resort
           const legacyId = this.generateLegacyId(projectPath, workspace.path);
           if (legacyId === workspaceId) {
-            return { workspacePath: workspace.path, projectPath };
+            return {
+              workspacePath: workspace.path,
+              projectPath,
+              workspaceName: undefined,
+              parentWorkspaceId: undefined,
+            };
           }
         }
       }
@@ -841,7 +877,6 @@ export class Config {
                   : undefined),
               parentWorkspaceId: workspace.parentWorkspaceId,
               agentType: workspace.agentType,
-              agentSwitchingEnabled: workspace.agentSwitchingEnabled,
               taskStatus: workspace.taskStatus,
               reportedAt: workspace.reportedAt,
               taskModelString: workspace.taskModelString,
@@ -928,7 +963,6 @@ export class Config {
             // Preserve tree/task metadata when present in config (metadata.json won't have it)
             metadata.parentWorkspaceId ??= workspace.parentWorkspaceId;
             metadata.agentType ??= workspace.agentType;
-            metadata.agentSwitchingEnabled ??= workspace.agentSwitchingEnabled;
             metadata.taskStatus ??= workspace.taskStatus;
             metadata.reportedAt ??= workspace.reportedAt;
             metadata.taskModelString ??= workspace.taskModelString;
@@ -979,7 +1013,6 @@ export class Config {
                   : undefined),
               parentWorkspaceId: workspace.parentWorkspaceId,
               agentType: workspace.agentType,
-              agentSwitchingEnabled: workspace.agentSwitchingEnabled,
               taskStatus: workspace.taskStatus,
               reportedAt: workspace.reportedAt,
               taskModelString: workspace.taskModelString,
@@ -1024,7 +1057,6 @@ export class Config {
                 : undefined),
             parentWorkspaceId: workspace.parentWorkspaceId,
             agentType: workspace.agentType,
-            agentSwitchingEnabled: workspace.agentSwitchingEnabled,
             taskStatus: workspace.taskStatus,
             reportedAt: workspace.reportedAt,
             taskModelString: workspace.taskModelString,
@@ -1085,7 +1117,6 @@ export class Config {
         parentWorkspaceId: metadata.parentWorkspaceId,
         agentType: metadata.agentType,
         agentId: metadata.agentId,
-        agentSwitchingEnabled: metadata.agentSwitchingEnabled,
         taskStatus: metadata.taskStatus,
         reportedAt: metadata.reportedAt,
         taskModelString: metadata.taskModelString,
@@ -1141,7 +1172,7 @@ export class Config {
    */
   async updateWorkspaceMetadata(
     workspaceId: string,
-    updates: Partial<Pick<WorkspaceMetadata, "name" | "runtimeConfig" | "agentSwitchingEnabled">>
+    updates: Partial<Pick<WorkspaceMetadata, "name" | "runtimeConfig">>
   ): Promise<void> {
     await this.editConfig((config) => {
       for (const [_projectPath, projectConfig] of config.projects) {
@@ -1149,9 +1180,6 @@ export class Config {
         if (workspace) {
           if (updates.name !== undefined) workspace.name = updates.name;
           if (updates.runtimeConfig !== undefined) workspace.runtimeConfig = updates.runtimeConfig;
-          if (updates.agentSwitchingEnabled !== undefined) {
-            workspace.agentSwitchingEnabled = updates.agentSwitchingEnabled;
-          }
           return config;
         }
       }

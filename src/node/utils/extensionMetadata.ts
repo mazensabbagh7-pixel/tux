@@ -41,7 +41,11 @@ export function getExtensionMetadataPath(rootDir?: string): string {
   return getMuxExtensionMetadataPath(rootDir);
 }
 
-function coerceAgentStatus(value: unknown): ExtensionAgentStatus | null {
+/**
+ * Coerce an unknown value into a valid ExtensionAgentStatus, or null if invalid.
+ * Shared between the sync reader (extensionMetadata.ts) and ExtensionMetadataService.
+ */
+export function coerceAgentStatus(value: unknown): ExtensionAgentStatus | null {
   if (typeof value !== "object" || value === null) {
     return null;
   }
@@ -63,9 +67,16 @@ function coerceAgentStatus(value: unknown): ExtensionAgentStatus | null {
 }
 
 /**
+ * Coerce an unknown value into a string URL, or null if not a string.
+ */
+export function coerceStatusUrl(url: unknown): string | null {
+  return typeof url === "string" ? url : null;
+}
+
+/**
  * Read extension metadata from JSON file.
  * Returns a map of workspace ID to metadata.
- * Used by both the main app and VS Code extension.
+ * Used by both the main app and VS Code extension (vscode/src/muxConfig.ts).
  */
 export function readExtensionMetadata(): Map<string, ExtensionMetadata> {
   const metadataPath = getExtensionMetadataPath();
@@ -95,7 +106,7 @@ export function readExtensionMetadata(): Map<string, ExtensionMetadata> {
         lastModel: metadata.lastModel ?? null,
         lastThinkingLevel: isThinkingLevel(rawThinkingLevel) ? rawThinkingLevel : null,
         agentStatus: coerceAgentStatus(rawAgentStatus),
-        lastStatusUrl: typeof rawLastStatusUrl === "string" ? rawLastStatusUrl : null,
+        lastStatusUrl: coerceStatusUrl(rawLastStatusUrl),
       });
     }
 

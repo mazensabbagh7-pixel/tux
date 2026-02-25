@@ -28,7 +28,8 @@ describe("built-in agent definitions", () => {
 
     const auto = byId.get("auto");
     expect(auto).toBeTruthy();
-    expect(auto?.frontmatter.tools?.remove ?? []).toContain(".*");
+    expect(auto?.frontmatter.base).toBeUndefined();
+    expect(auto?.frontmatter.tools?.require ?? []).toContain("switch_agent");
     expect(auto?.body).toContain("Immediately call `switch_agent`");
   });
 
@@ -63,6 +64,9 @@ describe("built-in agent definitions", () => {
     expect(orchestrator).toBeTruthy();
     expect(orchestrator?.frontmatter.ui?.requires).toEqual(["plan"]);
     expect(orchestrator?.frontmatter.ui?.hidden).toBeUndefined();
+    expect(orchestrator?.frontmatter.subagent?.append_prompt).toContain(
+      "Do NOT create pull requests"
+    );
     expect(orchestrator?.frontmatter.subagent?.runnable).toBe(false);
   });
 
