@@ -257,19 +257,35 @@ export async function probeWellKnownResourceMetadata(serverUrl: string): Promise
   if (!requestUrl) return undefined;
 
   const base = new URL(requestUrl);
-  const wellKnownUrl = new URL("/.well-known/oauth-protected-resource", base);
 
-  try {
-    const response = await fetch(wellKnownUrl.toString(), {
-      method: "GET",
-      redirect: "manual",
-      signal: AbortSignal.timeout(5_000),
-    });
-    if (response.ok) {
-      return wellKnownUrl;
+  // Try both the origin-root well-known URL (RFC 8615 standard location) and
+  // a path-relative variant for servers mounted under a sub-path (e.g.,
+  // example.com/mcp/ → example.com/mcp/.well-known/oauth-protected-resource).
+  const candidates = [
+    new URL("/.well-known/oauth-protected-resource", base),
+    ...(base.pathname !== "/" && base.pathname !== ""
+      ? [
+          new URL(
+            `.well-known/oauth-protected-resource`,
+            base.href.endsWith("/") ? base.href : `${base.href}/`
+          ),
+        ]
+      : []),
+  ];
+
+  for (const wellKnownUrl of candidates) {
+    try {
+      const response = await fetch(wellKnownUrl.toString(), {
+        method: "GET",
+        redirect: "manual",
+        signal: AbortSignal.timeout(5_000),
+      });
+      if (response.ok) {
+        return wellKnownUrl;
+      }
+    } catch {
+      // Server doesn't support RFC 9728 at this path — try next.
     }
-  } catch {
-    // Server doesn't support RFC 9728 — that's fine.
   }
   return undefined;
 }

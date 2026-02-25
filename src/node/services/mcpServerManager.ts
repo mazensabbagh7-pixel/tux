@@ -279,7 +279,9 @@ async function extractBearerOauthChallenge(options: {
 
   const challenge = parseBearerWwwAuthenticate(header);
   if (!challenge) {
-    return {};
+    // Header exists but isn't a Bearer challenge (e.g., Basic auth) —
+    // don't surface the OAuth callout, the server uses a different auth scheme.
+    return null;
   }
 
   return {
