@@ -707,9 +707,7 @@ export class McpOauthService {
     // endpoint directly. Servers like Figma expose RFC 9728 metadata at a
     // standard URL that the SDK can use to discover the correct auth server.
     let resourceMetadataUrl = challenge?.resourceMetadataUrl;
-    if (!resourceMetadataUrl) {
-      resourceMetadataUrl = await probeWellKnownResourceMetadata(serverUrlForDiscovery);
-    }
+    resourceMetadataUrl ??= await probeWellKnownResourceMetadata(serverUrlForDiscovery);
 
     const flow: DesktopFlow = {
       flowId,
@@ -856,9 +854,7 @@ export class McpOauthService {
     // endpoint directly. Servers like Figma expose RFC 9728 metadata at a
     // standard URL that the SDK can use to discover the correct auth server.
     let resourceMetadataUrl = challenge?.resourceMetadataUrl;
-    if (!resourceMetadataUrl) {
-      resourceMetadataUrl = await probeWellKnownResourceMetadata(serverUrlForDiscovery);
-    }
+    resourceMetadataUrl ??= await probeWellKnownResourceMetadata(serverUrlForDiscovery);
 
     const flow: ServerFlow = {
       flowId,
