@@ -261,15 +261,13 @@ export async function probeWellKnownResourceMetadata(serverUrl: string): Promise
   // Try both the origin-root well-known URL (RFC 8615 standard location) and
   // a path-relative variant for servers mounted under a sub-path (e.g.,
   // example.com/mcp/ → example.com/mcp/.well-known/oauth-protected-resource).
+  // Build the path-based URL from pathname (not href) to avoid query strings
+  // corrupting the resolved path.
+  const basePath = base.pathname.endsWith("/") ? base.pathname : `${base.pathname}/`;
   const candidates = [
     new URL("/.well-known/oauth-protected-resource", base),
     ...(base.pathname !== "/" && base.pathname !== ""
-      ? [
-          new URL(
-            `.well-known/oauth-protected-resource`,
-            base.href.endsWith("/") ? base.href : `${base.href}/`
-          ),
-        ]
+      ? [new URL(`${basePath}.well-known/oauth-protected-resource`, base.origin)]
       : []),
   ];
 
