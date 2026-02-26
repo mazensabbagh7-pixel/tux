@@ -1272,13 +1272,36 @@ export class ProviderModelFactory {
 
         // GPT-5+ models need the Responses API; the Copilot /chat/completions
         // endpoint returns "model not supported" for these models.
+        // The Copilot API also rejects requests that include `max_output_tokens`,
+        // so we strip it from the body before sending.
         if (shouldUseCopilotResponsesApi(modelId)) {
+          const copilotResponsesFetchFn = async (
+            input: Parameters<typeof fetch>[0],
+            init?: Parameters<typeof fetch>[1]
+          ) => {
+            // Strip fields the Copilot Responses API doesn't accept.
+            if (init?.body && typeof init.body === "string") {
+              try {
+                const body = JSON.parse(init.body);
+                delete body.max_output_tokens;
+                init = { ...init, body: JSON.stringify(body) };
+              } catch {
+                // Not JSON — pass through unchanged.
+              }
+            }
+            return copilotFetch(input, init);
+          };
+          const copilotResponsesFetch = Object.assign(
+            copilotResponsesFetchFn,
+            baseFetch
+          ) as typeof fetch;
+
           const { createOpenAI } = await PROVIDER_REGISTRY.openai();
           const provider = createOpenAI({
             name: "github-copilot",
             baseURL,
             apiKey: "copilot", // placeholder — actual auth via custom fetch
-            fetch: copilotFetch,
+            fetch: copilotResponsesFetch,
           });
           return Ok(provider.responses(modelId));
         }
