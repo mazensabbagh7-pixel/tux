@@ -1309,10 +1309,8 @@ export class ProviderModelFactory {
       }
 
       // GitHub Copilot — OpenAI-compatible with custom auth headers.
-      // GPT-5+ models (except gpt-5-mini) require the Responses API (/responses),
-      // while older models use the Chat Completions API (/chat/completions).
-      // We use @ai-sdk/openai for GPT-5+ (has responses() support) and
-      // @ai-sdk/openai-compatible for everything else (chat only).
+      // Copilot currently serves Codex-family models on /responses and keeps
+      // GPT-family models on /chat/completions.
       if (providerName === "github-copilot") {
         const creds = resolveProviderCredentials("github-copilot" as ProviderName, providerConfig);
         if (!creds.isConfigured) {

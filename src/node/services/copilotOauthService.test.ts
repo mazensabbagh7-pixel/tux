@@ -7,6 +7,8 @@ import type { ProviderService } from "@/node/services/providerService";
 import type { WindowService } from "@/node/services/windowService";
 import { CopilotOauthService, COPILOT_MODELS } from "./copilotOauthService";
 
+const EXPECTED_COPILOT_CLIENT_ID = "Ov23li8tweQw6odWQebz";
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -150,6 +152,25 @@ describe("CopilotOauthService", () => {
       expect(capturedUrl).toBe("https://github.com/login/device/code");
     });
 
+    it("sends Copilot client_id and read:user scope to device code endpoint", async () => {
+      let capturedBody: RequestInit["body"] | undefined;
+
+      mockFetch((_input, init) => {
+        capturedBody = init?.body;
+        return deviceCodeResponse();
+      });
+
+      await service.startDeviceFlow();
+
+      const params =
+        capturedBody instanceof URLSearchParams
+          ? capturedBody
+          : new URLSearchParams(typeof capturedBody === "string" ? capturedBody : "");
+
+      expect(params.get("client_id")).toBe(EXPECTED_COPILOT_CLIENT_ID);
+      expect(params.get("scope")).toBe("read:user");
+    });
+
     it("returns Err when fetch response is not ok", async () => {
       mockFetch(() => new Response("Server Error", { status: 500 }));
 
@@ -232,6 +253,38 @@ describe("CopilotOauthService", () => {
       );
       expect(apiKeyCall).toBeDefined();
       expect(apiKeyCall!.value).toBe("ghp_final_token");
+    });
+
+    it("uses Copilot client_id when polling for access token", async () => {
+      let capturedPollingBody: RequestInit["body"] | undefined;
+
+      mockFetch((input, init) => {
+        const url = String(input);
+        if (url.includes("/login/device/code")) {
+          return deviceCodeResponse();
+        }
+
+        capturedPollingBody = init?.body;
+        return tokenSuccessResponse("ghp_poll_token");
+      });
+
+      const startResult = await service.startDeviceFlow();
+      expect(startResult.success).toBe(true);
+      if (!startResult.success) return;
+
+      const waitResult = await service.waitForDeviceFlow(startResult.data.flowId, {
+        timeoutMs: 10_000,
+      });
+      expect(waitResult.success).toBe(true);
+
+      const params =
+        capturedPollingBody instanceof URLSearchParams
+          ? capturedPollingBody
+          : new URLSearchParams(typeof capturedPollingBody === "string" ? capturedPollingBody : "");
+
+      expect(params.get("client_id")).toBe(EXPECTED_COPILOT_CLIENT_ID);
+      expect(params.get("device_code")).toBe("dc_test_123");
+      expect(params.get("grant_type")).toBe("urn:ietf:params:oauth:grant-type:device_code");
     });
 
     it("calls focusMainWindow after successful auth", async () => {
