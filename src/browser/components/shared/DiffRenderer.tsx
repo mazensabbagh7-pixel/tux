@@ -1378,8 +1378,6 @@ export const SelectableDiffRenderer = React.memo<SelectableDiffRendererProps>(
     const firstLineType = highlightedLineData[0]?.type;
     const lastLineType = highlightedLineData[highlightedLineData.length - 1]?.type;
 
-    const shouldCullOffscreenDiffRows = highlightedLineData.length >= 500;
-
     const cursorLikeOutlineColor = "hsl(from var(--color-review-accent) h s l / 0.45)";
     const normalizedSelectedLineRange = selectedLineRange
       ? {
@@ -1424,15 +1422,6 @@ export const SelectableDiffRenderer = React.memo<SelectableDiffRendererProps>(
           const isComposerSelected = isLineInSelection(displayIndex, renderSelection);
           const isRangeSelected = isLineInSelection(displayIndex, normalizedSelectedLineRange);
           const lineOutlineStyle = getCursorLikeOutlineStyle(displayIndex);
-          const lineRenderStyle = shouldCullOffscreenDiffRows
-            ? {
-                ...lineOutlineStyle,
-                // Keep very large diffs responsive by letting Chromium skip style/layout/paint
-                // work for rows outside the viewport.
-                contentVisibility: "auto" as const,
-                containIntrinsicSize: "1.4em",
-              }
-            : lineOutlineStyle;
           const isInReviewRange = reviewRangeByLineIndex[displayIndex] ?? false;
           const baseCodeBg = getDiffLineBackground(lineInfo.type);
           const codeBg = applyReviewRangeOverlay(baseCodeBg, isInReviewRange);
@@ -1452,7 +1441,7 @@ export const SelectableDiffRenderer = React.memo<SelectableDiffRendererProps>(
                   "group relative col-span-3 grid grid-cols-subgrid",
                   onLineIndexSelect ? "cursor-pointer" : "cursor-text"
                 )}
-                style={lineRenderStyle}
+                style={lineOutlineStyle}
                 data-line-index={displayIndex}
                 data-selected={isComposerSelected || isRangeSelected ? "true" : "false"}
                 onClick={(e) => {
