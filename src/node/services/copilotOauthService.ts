@@ -12,12 +12,32 @@ const SCOPE = "read:user";
 const POLLING_SAFETY_MARGIN_MS = 3000;
 const DEFAULT_TIMEOUT_MS = 5 * 60 * 1000;
 const COMPLETED_FLOW_TTL_MS = 60 * 1000;
-// Only surface top-tier model families from the Copilot API
-export const COPILOT_MODEL_PREFIXES = ["gpt-5", "claude-", "gemini-3", "grok-code"];
 
 const GITHUB_DEVICE_CODE_URL = "https://github.com/login/device/code";
 const GITHUB_ACCESS_TOKEN_URL = "https://github.com/login/oauth/access_token";
-const COPILOT_API_BASE_URL = "https://api.githubcopilot.com";
+
+// Curated list of Copilot model IDs. These are the current models available
+// through the GitHub Copilot API — kept in sync with models.json.
+// Only includes current-generation models; legacy/dated variants are omitted.
+export const COPILOT_MODELS: readonly string[] = [
+  // Anthropic
+  "claude-haiku-4.5",
+  "claude-opus-4.5",
+  "claude-opus-41",
+  "claude-sonnet-4",
+  "claude-sonnet-4.5",
+  // Google
+  "gemini-2.5-pro",
+  "gemini-3-pro-preview",
+  // OpenAI
+  "gpt-4.1",
+  "gpt-4o",
+  "gpt-5",
+  "gpt-5-mini",
+  "gpt-5.1",
+  "gpt-5.1-codex-max",
+  "gpt-5.2",
+];
 
 interface DeviceFlow {
   flowId: string;
@@ -205,32 +225,8 @@ export class CopilotOauthService {
             return;
           }
 
-          // Fetch available models from Copilot API (best-effort, non-blocking on failure)
-          try {
-            const modelsRes = await fetch(`${COPILOT_API_BASE_URL}/models`, {
-              headers: {
-                Authorization: `Bearer ${data.access_token}`,
-                "Openai-Intent": "conversation-edits",
-                Accept: "application/json",
-              },
-            });
-
-            if (modelsRes.ok) {
-              const modelsData = (await modelsRes.json()) as {
-                data?: Array<{ id: string }>;
-              };
-              if (modelsData.data && modelsData.data.length > 0) {
-                const modelIds = modelsData.data
-                  .map((m) => m.id)
-                  .filter((id) => COPILOT_MODEL_PREFIXES.some((prefix) => id.startsWith(prefix)));
-                if (modelIds.length > 0) {
-                  this.providerService.setModels("github-copilot", modelIds);
-                }
-              }
-            }
-          } catch (e) {
-            log.debug("Failed to fetch Copilot models after login", e);
-          }
+          // Populate the model picker with the curated Copilot model list.
+          this.providerService.setModels("github-copilot", [...COPILOT_MODELS]);
 
           log.debug(`Copilot OAuth completed successfully (flowId=${flow.flowId})`);
           this.windowService?.focusMainWindow();

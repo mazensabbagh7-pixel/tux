@@ -5,7 +5,7 @@ import type { Result } from "@/common/types/result";
 import { Err, Ok } from "@/common/types/result";
 import type { ProviderService } from "@/node/services/providerService";
 import type { WindowService } from "@/node/services/windowService";
-import { CopilotOauthService } from "./copilotOauthService";
+import { CopilotOauthService, COPILOT_MODELS } from "./copilotOauthService";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -38,11 +38,6 @@ function tokenSuccessResponse(token = "ghp_test_token"): Response {
 /** Polling "not yet" response. */
 function authorizationPendingResponse(): Response {
   return jsonResponse({ error: "authorization_pending" });
-}
-
-/** Models list response from Copilot API. */
-function modelsResponse(models: string[] = ["gpt-5", "claude-sonnet-4"]): Response {
-  return jsonResponse({ data: models.map((id) => ({ id })) });
 }
 
 // Helper to mock globalThis.fetch without needing the `preconnect` property.
@@ -213,9 +208,6 @@ describe("CopilotOauthService", () => {
         if (url.includes("/login/device/code")) {
           return deviceCodeResponse();
         }
-        if (url.includes("/models")) {
-          return modelsResponse();
-        }
         // Polling endpoint
         pollCount++;
         if (pollCount === 1) {
@@ -248,9 +240,6 @@ describe("CopilotOauthService", () => {
         if (url.includes("/login/device/code")) {
           return deviceCodeResponse();
         }
-        if (url.includes("/models")) {
-          return modelsResponse();
-        }
         return tokenSuccessResponse();
       });
 
@@ -275,9 +264,6 @@ describe("CopilotOauthService", () => {
         const url = String(input);
         if (url.includes("/login/device/code")) {
           return deviceCodeResponse();
-        }
-        if (url.includes("/models")) {
-          return modelsResponse();
         }
         pollCount++;
         if (pollCount === 1) {
@@ -461,9 +447,6 @@ describe("CopilotOauthService", () => {
         if (url.includes("/login/device/code")) {
           return deviceCodeResponse();
         }
-        if (url.includes("/models")) {
-          return modelsResponse();
-        }
         pollCount++;
         if (pollCount === 1) {
           throw new Error("ECONNRESET");
@@ -501,9 +484,6 @@ describe("CopilotOauthService", () => {
         if (url.includes("/login/device/code")) {
           return deviceCodeResponse();
         }
-        if (url.includes("/models")) {
-          return modelsResponse();
-        }
         pollCallCount++;
         return tokenSuccessResponse("ghp_single_poll");
       });
@@ -530,32 +510,17 @@ describe("CopilotOauthService", () => {
   });
 
   // -------------------------------------------------------------------------
-  // Model fetching after successful auth
+  // Curated model list after successful auth
   // -------------------------------------------------------------------------
 
-  describe("model fetching after successful auth", () => {
-    it("fetches models from Copilot API and stores only allowed prefixes via setModels", async () => {
-      let modelsUrl = "";
-      let modelsAuthHeader = "";
-      mockFetch((input, init) => {
+  describe("curated model list after successful auth", () => {
+    it("stores the curated COPILOT_MODELS list via setModels on success", async () => {
+      mockFetch((input) => {
         const url = String(input);
         if (url.includes("/login/device/code")) {
           return deviceCodeResponse();
         }
-        if (url.includes("/models")) {
-          modelsUrl = url;
-          modelsAuthHeader = (init?.headers as Record<string, string>)?.Authorization ?? "";
-          // Return a mix of matching and non-matching models
-          return modelsResponse([
-            "gpt-5",
-            "claude-sonnet-4.5",
-            "gpt-4o",
-            "o3-mini",
-            "gemini-3-pro-preview",
-            "grok-code-mini",
-          ]);
-        }
-        return tokenSuccessResponse("ghp_model_token");
+        return tokenSuccessResponse();
       });
 
       const startResult = await service.startDeviceFlow();
@@ -567,155 +532,10 @@ describe("CopilotOauthService", () => {
       });
       expect(waitResult.success).toBe(true);
 
-      // Verify models endpoint was called with correct URL and auth
-      expect(modelsUrl).toBe("https://api.githubcopilot.com/models");
-      expect(modelsAuthHeader).toBe("Bearer ghp_model_token");
-
-      // Verify only models matching allowed prefixes were stored
       expect(deps.setModelsCalls).toHaveLength(1);
       const call = deps.setModelsCalls[0];
       expect(call?.provider).toBe("github-copilot");
-      expect(call?.models).toEqual([
-        "gpt-5",
-        "claude-sonnet-4.5",
-        "gemini-3-pro-preview",
-        "grok-code-mini",
-      ]);
-    });
-
-    it("excludes models not matching any allowed prefix", async () => {
-      mockFetch((input) => {
-        const url = String(input);
-        if (url.includes("/login/device/code")) {
-          return deviceCodeResponse();
-        }
-        if (url.includes("/models")) {
-          // All models are non-matching
-          return modelsResponse(["gpt-4o", "o3-mini", "o1-preview"]);
-        }
-        return tokenSuccessResponse();
-      });
-
-      const startResult = await service.startDeviceFlow();
-      expect(startResult.success).toBe(true);
-      if (!startResult.success) return;
-
-      const waitResult = await service.waitForDeviceFlow(startResult.data.flowId, {
-        timeoutMs: 10_000,
-      });
-      expect(waitResult.success).toBe(true);
-
-      // setModels should not be called when all models are filtered out
-      expect(deps.setModelsCalls).toHaveLength(0);
-    });
-
-    it("login succeeds even if model fetch returns non-200", async () => {
-      mockFetch((input) => {
-        const url = String(input);
-        if (url.includes("/login/device/code")) {
-          return deviceCodeResponse();
-        }
-        if (url.includes("/models")) {
-          return new Response("Internal Server Error", { status: 500 });
-        }
-        return tokenSuccessResponse();
-      });
-
-      const startResult = await service.startDeviceFlow();
-      expect(startResult.success).toBe(true);
-      if (!startResult.success) return;
-
-      const waitResult = await service.waitForDeviceFlow(startResult.data.flowId, {
-        timeoutMs: 10_000,
-      });
-
-      // Login should still succeed
-      expect(waitResult.success).toBe(true);
-
-      // No models should have been stored
-      expect(deps.setModelsCalls).toHaveLength(0);
-    });
-
-    it("login succeeds even if model fetch throws a network error", async () => {
-      mockFetch((input) => {
-        const url = String(input);
-        if (url.includes("/login/device/code")) {
-          return deviceCodeResponse();
-        }
-        if (url.includes("/models")) {
-          throw new Error("ECONNREFUSED");
-        }
-        return tokenSuccessResponse();
-      });
-
-      const startResult = await service.startDeviceFlow();
-      expect(startResult.success).toBe(true);
-      if (!startResult.success) return;
-
-      const waitResult = await service.waitForDeviceFlow(startResult.data.flowId, {
-        timeoutMs: 10_000,
-      });
-
-      // Login should still succeed despite model fetch failure
-      expect(waitResult.success).toBe(true);
-
-      // Token should still have been persisted
-      const apiKeyCall = deps.setConfigCalls.find(
-        (c) => c.provider === "github-copilot" && c.keyPath[0] === "apiKey"
-      );
-      expect(apiKeyCall).toBeDefined();
-
-      // No models should have been stored
-      expect(deps.setModelsCalls).toHaveLength(0);
-    });
-
-    it("does not call setModels when API returns empty model list", async () => {
-      mockFetch((input) => {
-        const url = String(input);
-        if (url.includes("/login/device/code")) {
-          return deviceCodeResponse();
-        }
-        if (url.includes("/models")) {
-          return jsonResponse({ data: [] });
-        }
-        return tokenSuccessResponse();
-      });
-
-      const startResult = await service.startDeviceFlow();
-      expect(startResult.success).toBe(true);
-      if (!startResult.success) return;
-
-      const waitResult = await service.waitForDeviceFlow(startResult.data.flowId, {
-        timeoutMs: 10_000,
-      });
-      expect(waitResult.success).toBe(true);
-
-      // Empty list — should not call setModels
-      expect(deps.setModelsCalls).toHaveLength(0);
-    });
-
-    it("does not call setModels when API response has no data field", async () => {
-      mockFetch((input) => {
-        const url = String(input);
-        if (url.includes("/login/device/code")) {
-          return deviceCodeResponse();
-        }
-        if (url.includes("/models")) {
-          return jsonResponse({ something_else: true });
-        }
-        return tokenSuccessResponse();
-      });
-
-      const startResult = await service.startDeviceFlow();
-      expect(startResult.success).toBe(true);
-      if (!startResult.success) return;
-
-      const waitResult = await service.waitForDeviceFlow(startResult.data.flowId, {
-        timeoutMs: 10_000,
-      });
-      expect(waitResult.success).toBe(true);
-
-      expect(deps.setModelsCalls).toHaveLength(0);
+      expect(call?.models).toEqual([...COPILOT_MODELS]);
     });
   });
 
