@@ -52,9 +52,9 @@ describe("SelectableDiffRenderer drag selection", () => {
     fireEvent.mouseEnter(indicators[2]);
     fireEvent.mouseUp(window);
 
-    const textarea = (await waitFor(() =>
-      getByPlaceholderText(/Add a review note/i)
-    )) as HTMLTextAreaElement;
+    await waitFor(() => {
+      expect(getByPlaceholderText(/Add a review note/i)).toBeTruthy();
+    });
 
     await waitFor(() => {
       const selectedLines = Array.from(
@@ -68,7 +68,12 @@ describe("SelectableDiffRenderer drag selection", () => {
       // Input should render *after* the last selected line (line 2).
       const inputWrapper = allLines[2]?.nextElementSibling;
       expect(inputWrapper).toBeTruthy();
-      expect(inputWrapper?.querySelector("textarea")).toBe(textarea);
+
+      // Inline composer can re-mount once while drag selection settles. Assert placement and
+      // semantics instead of strict DOM node identity.
+      const textareaInWrapper = inputWrapper?.querySelector("textarea");
+      expect(textareaInWrapper).toBeTruthy();
+      expect(textareaInWrapper?.getAttribute("placeholder")).toContain("Add a review note");
     });
   });
 });

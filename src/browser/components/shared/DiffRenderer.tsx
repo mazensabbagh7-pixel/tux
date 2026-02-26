@@ -122,6 +122,14 @@ const getIndicatorChar = (type: DiffLineType): string => {
 
 const REVIEW_RANGE_TINT = "hsl(from var(--color-review-accent) h s l / 0.08)";
 
+const REVIEW_NOTE_MIN_ROWS = 2;
+const REVIEW_NOTE_MAX_ROWS = 8;
+
+const getTextareaRowsFromNoteText = (text: string): number => {
+  const explicitLineCount = text.split("\n").length;
+  return Math.min(REVIEW_NOTE_MAX_ROWS, Math.max(REVIEW_NOTE_MIN_ROWS, explicitLineCount));
+};
+
 const applyReviewRangeOverlay = (base: string, isActive: boolean): string => {
   if (!isActive) return base;
   return `linear-gradient(${REVIEW_RANGE_TINT}, ${REVIEW_RANGE_TINT}), ${base}`;
@@ -707,28 +715,16 @@ const ReviewNoteInput: React.FC<ReviewNoteInputProps> = React.memo(
   }) => {
     const { showOld, showNew } = getLineNumberModeFlags(lineNumberMode);
     const textareaRef = React.useRef<HTMLTextAreaElement>(null);
-    const resizeFrameRef = React.useRef<number | null>(null);
 
-    const resizeTextarea = React.useCallback(() => {
-      const textarea = textareaRef.current;
-      if (!textarea) {
+    // Avoid scrollHeight reads during typing: in large immersive diffs those force full-grid
+    // layout on each keypress. Row count based on explicit newlines keeps input latency stable.
+    const syncTextareaRows = React.useCallback((textarea: HTMLTextAreaElement) => {
+      const nextRows = getTextareaRowsFromNoteText(textarea.value);
+      if (textarea.rows === nextRows) {
         return;
       }
-
-      textarea.style.height = "auto";
-      textarea.style.height = `${textarea.scrollHeight}px`;
+      textarea.rows = nextRows;
     }, []);
-
-    const scheduleTextareaResize = React.useCallback(() => {
-      if (resizeFrameRef.current !== null) {
-        cancelAnimationFrame(resizeFrameRef.current);
-      }
-
-      resizeFrameRef.current = window.requestAnimationFrame(() => {
-        resizeFrameRef.current = null;
-        resizeTextarea();
-      });
-    }, [resizeTextarea]);
 
     // Keep the composer uncontrolled so typing does not trigger per-key React re-renders
     // through immersive diff overlays. Parent-initiated prefill changes are synced here.
@@ -739,22 +735,19 @@ const ReviewNoteInput: React.FC<ReviewNoteInputProps> = React.memo(
       }
 
       textarea.value = initialNoteText ?? "";
-      scheduleTextareaResize();
-    }, [initialNoteText, scheduleTextareaResize]);
+      syncTextareaRows(textarea);
+    }, [initialNoteText, syncTextareaRows]);
 
     // Auto-focus on mount.
     React.useEffect(() => {
-      textareaRef.current?.focus();
-      scheduleTextareaResize();
-    }, [scheduleTextareaResize]);
+      const textarea = textareaRef.current;
+      if (!textarea) {
+        return;
+      }
 
-    React.useEffect(() => {
-      return () => {
-        if (resizeFrameRef.current !== null) {
-          cancelAnimationFrame(resizeFrameRef.current);
-        }
-      };
-    }, []);
+      textarea.focus();
+      syncTextareaRows(textarea);
+    }, [syncTextareaRows]);
 
     const handleSubmit = () => {
       const text = textareaRef.current?.value ?? "";
@@ -873,13 +866,13 @@ const ReviewNoteInput: React.FC<ReviewNoteInputProps> = React.memo(
             />
             <textarea
               ref={textareaRef}
-              className="text-primary placeholder:text-muted/70 min-w-0 flex-1 resize-none overflow-y-hidden bg-transparent px-2 py-1.5 text-[12px] leading-[1.5] transition-colors focus:outline-none"
-              style={{
-                minHeight: "calc(12px * 1.5 * 2 + 12px)",
-              }}
+              className="text-primary placeholder:text-muted/70 min-w-0 flex-1 resize-none overflow-y-auto bg-transparent px-2 py-1.5 text-[12px] leading-[1.5] transition-colors focus:outline-none"
+              rows={REVIEW_NOTE_MIN_ROWS}
               placeholder="Add a review note… (Enter to submit, Shift+Enter for newline, Esc to cancel)"
               defaultValue={initialNoteText ?? ""}
-              onInput={scheduleTextareaResize}
+              onInput={(e) => {
+                syncTextareaRows(e.currentTarget);
+              }}
               onClick={(e) => e.stopPropagation()}
               onKeyDown={(e) => {
                 stopKeyboardPropagation(e);
@@ -1385,6 +1378,8 @@ export const SelectableDiffRenderer = React.memo<SelectableDiffRendererProps>(
     const firstLineType = highlightedLineData[0]?.type;
     const lastLineType = highlightedLineData[highlightedLineData.length - 1]?.type;
 
+    const shouldCullOffscreenDiffRows = highlightedLineData.length >= 500;
+
     const cursorLikeOutlineColor = "hsl(from var(--color-review-accent) h s l / 0.45)";
     const normalizedSelectedLineRange = selectedLineRange
       ? {
@@ -1429,6 +1424,15 @@ export const SelectableDiffRenderer = React.memo<SelectableDiffRendererProps>(
           const isComposerSelected = isLineInSelection(displayIndex, renderSelection);
           const isRangeSelected = isLineInSelection(displayIndex, normalizedSelectedLineRange);
           const lineOutlineStyle = getCursorLikeOutlineStyle(displayIndex);
+          const lineRenderStyle = shouldCullOffscreenDiffRows
+            ? {
+                ...lineOutlineStyle,
+                // Keep very large diffs responsive by letting Chromium skip style/layout/paint
+                // work for rows outside the viewport.
+                contentVisibility: "auto" as const,
+                containIntrinsicSize: "1.4em",
+              }
+            : lineOutlineStyle;
           const isInReviewRange = reviewRangeByLineIndex[displayIndex] ?? false;
           const baseCodeBg = getDiffLineBackground(lineInfo.type);
           const codeBg = applyReviewRangeOverlay(baseCodeBg, isInReviewRange);
@@ -1448,7 +1452,7 @@ export const SelectableDiffRenderer = React.memo<SelectableDiffRendererProps>(
                   "group relative col-span-3 grid grid-cols-subgrid",
                   onLineIndexSelect ? "cursor-pointer" : "cursor-text"
                 )}
-                style={lineOutlineStyle}
+                style={lineRenderStyle}
                 data-line-index={displayIndex}
                 data-selected={isComposerSelected || isRangeSelected ? "true" : "false"}
                 onClick={(e) => {
