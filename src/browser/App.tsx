@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useRef } from "react";
+import { useEffect, useCallback, useRef, useState } from "react";
 import { useRouter } from "./contexts/RouterContext";
 import { useLocation, useNavigate } from "react-router-dom";
 import "./styles/globals.css";
@@ -59,7 +59,7 @@ import {
   markPendingWorkspaceAiSettings,
 } from "@/browser/utils/workspaceAiSettingsSync";
 import { AuthTokenModal } from "@/browser/components/AuthTokenModal/AuthTokenModal";
-
+import { CreationCenterContent } from "@/browser/features/ChatInput/CreationCenterContent";
 import { ProjectPage } from "@/browser/components/ProjectPage/ProjectPage";
 
 import { SettingsProvider, useSettings } from "./contexts/SettingsContext";
@@ -85,6 +85,13 @@ import { getErrorMessage } from "@/common/utils/errors";
 import { WORKSPACE_DEFAULTS } from "@/constants/workspaceDefaults";
 import { LandingPage } from "@/browser/features/LandingPage/LandingPage";
 import { LoadingScreen } from "@/browser/components/LoadingScreen/LoadingScreen";
+
+interface WorkspaceCreationTransition {
+  workspaceId: string;
+  projectName: string;
+  workspaceName: string;
+  workspaceTitle?: string;
+}
 
 function AppInner() {
   // Get workspace state from context
@@ -175,6 +182,41 @@ function AppInner() {
   const creationProjectPath =
     !selectedWorkspace && !currentWorkspaceId ? pendingNewWorkspaceProject : null;
 
+  const [workspaceCreationTransition, setWorkspaceCreationTransition] =
+    useState<WorkspaceCreationTransition | null>(null);
+
+  const activeWorkspaceIdForTransition =
+    currentWorkspaceId ?? selectedWorkspace?.workspaceId ?? null;
+
+  // Keep a single creation overlay visible while routing from ProjectPage → WorkspaceShell.
+  // Without this bridge the mobile UI shows two back-to-back loading screens with a
+  // restarted animation, which feels like a redundant second loading step.
+  useEffect(() => {
+    if (!workspaceCreationTransition) {
+      return;
+    }
+
+    if (isAnalyticsOpen || currentSettingsSection) {
+      setWorkspaceCreationTransition(null);
+      return;
+    }
+
+    if (activeWorkspaceIdForTransition !== workspaceCreationTransition.workspaceId) {
+      setWorkspaceCreationTransition(null);
+    }
+  }, [
+    activeWorkspaceIdForTransition,
+    currentSettingsSection,
+    isAnalyticsOpen,
+    workspaceCreationTransition,
+  ]);
+
+  const showWorkspaceCreationTransition =
+    workspaceCreationTransition !== null &&
+    !isAnalyticsOpen &&
+    !currentSettingsSection &&
+    activeWorkspaceIdForTransition === workspaceCreationTransition.workspaceId;
+
   // History navigation (back/forward)
   const navigate = useNavigate();
   const location = useLocation();
@@ -191,6 +233,15 @@ function AppInner() {
   const handleToggleSidebar = useCallback(() => {
     setSidebarCollapsed((prev) => !prev);
   }, [setSidebarCollapsed]);
+
+  const handleWorkspaceHydrated = useCallback((workspaceId: string) => {
+    setWorkspaceCreationTransition((prev) => {
+      if (prev?.workspaceId !== workspaceId) {
+        return prev;
+      }
+      return null;
+    });
+  }, []);
 
   // Telemetry tracking
   const telemetry = useTelemetry();
@@ -984,7 +1035,7 @@ function AppInner() {
         <div className="mobile-main-content flex min-w-0 flex-1 flex-col overflow-hidden">
           <WindowsToolchainBanner />
           <RosettaBanner />
-          <div className="mobile-layout flex flex-1 overflow-hidden">
+          <div className="mobile-layout relative flex flex-1 overflow-hidden">
             {/* Route-driven settings and analytics render in the main pane so project/workspace navigation stays visible. */}
             {isAnalyticsOpen ? (
               <AnalyticsDashboard
@@ -1029,6 +1080,7 @@ function AppInner() {
                       namedWorkspacePath={workspacePath}
                       runtimeConfig={currentMetadata.runtimeConfig}
                       incompatibleRuntime={currentMetadata.incompatibleRuntime}
+                      onWorkspaceHydrated={handleWorkspaceHydrated}
                       isInitializing={currentMetadata.isInitializing === true}
                     />
                   </ErrorBoundary>
@@ -1067,6 +1119,13 @@ function AppInner() {
                       setWorkspaceMetadata((prev) => new Map(prev).set(metadata.id, metadata));
 
                       if (options?.autoNavigate !== false) {
+                        setWorkspaceCreationTransition({
+                          workspaceId: metadata.id,
+                          projectName,
+                          workspaceName: metadata.name,
+                          workspaceTitle: metadata.title,
+                        });
+
                         // Only switch to new workspace if user hasn't selected another one
                         // during the creation process (selectedWorkspace was null when creation started)
                         setSelectedWorkspace((current) => {
@@ -1096,6 +1155,16 @@ function AppInner() {
                 leftSidebarCollapsed={sidebarCollapsed}
                 onToggleLeftSidebarCollapsed={handleToggleSidebar}
               />
+            )}
+            {showWorkspaceCreationTransition && workspaceCreationTransition && (
+              <div className="absolute inset-0 z-20">
+                <CreationCenterContent
+                  projectName={workspaceCreationTransition.projectName}
+                  isSending
+                  workspaceName={workspaceCreationTransition.workspaceName}
+                  workspaceTitle={workspaceCreationTransition.workspaceTitle}
+                />
+              </div>
             )}
           </div>
         </div>
