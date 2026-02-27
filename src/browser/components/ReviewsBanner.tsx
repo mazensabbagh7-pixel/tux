@@ -28,7 +28,7 @@ import { Tooltip, TooltipTrigger, TooltipContent } from "./Tooltip/Tooltip";
 import type { Review } from "@/common/types/review";
 import { useReviews } from "@/browser/hooks/useReviews";
 import { formatRelativeTime } from "@/browser/utils/ui/dateTime";
-import { DiffRenderer } from "./shared/DiffRenderer";
+import { DiffRenderer } from "@/browser/features/Shared/DiffRenderer";
 import { matchesKeybind, formatKeybind, KEYBINDS } from "@/browser/utils/ui/keybinds";
 
 // ═══════════════════════════════════════════════════════════════════════════════

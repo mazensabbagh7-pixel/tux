@@ -6,7 +6,7 @@ import {
   type TutorialState,
   type TutorialSequence,
 } from "@/common/constants/storage";
-import { useIsSplashScreenActive } from "@/browser/components/splashScreens/SplashScreenProvider";
+import { useIsSplashScreenActive } from "@/browser/features/SplashScreens/SplashScreenProvider";
 import { readPersistedState, updatePersistedState } from "@/browser/hooks/usePersistedState";
 
 // Tutorial step definitions for each sequence

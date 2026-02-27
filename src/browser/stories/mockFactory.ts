@@ -519,7 +519,7 @@ export function withHookOutput(
 import type {
   CodeExecutionResult,
   NestedToolCall,
-} from "@/browser/components/tools/shared/codeExecutionTypes";
+} from "@/browser/features/Tools/Shared/codeExecutionTypes";
 
 /** Create a code_execution tool call with nested tools */
 export function createCodeExecutionTool(

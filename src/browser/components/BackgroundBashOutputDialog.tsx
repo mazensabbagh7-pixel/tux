@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { CopyButton } from "./CopyButton/CopyButton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./Dialog/Dialog";
-import { DetailContent } from "./tools/shared/ToolPrimitives";
+import { DetailContent } from "@/browser/features/Tools/Shared/ToolPrimitives";
 import { useAPI } from "@/browser/contexts/API";
 import {
   appendLiveBashOutputChunk,

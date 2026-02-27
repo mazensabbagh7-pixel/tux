@@ -15,11 +15,11 @@ import {
 } from "@/browser/hooks/usePersistedState";
 import { useFeatureFlags } from "@/browser/contexts/FeatureFlagsContext";
 import { useAPI } from "@/browser/contexts/API";
-import { CostsTab } from "./RightSidebar/CostsTab";
+import { CostsTab } from "@/browser/features/RightSidebar/CostsTab";
 
-import { ReviewPanel } from "./RightSidebar/CodeReview/ReviewPanel";
+import { ReviewPanel } from "@/browser/features/RightSidebar/CodeReview/ReviewPanel";
 import { ErrorBoundary } from "./ErrorBoundary";
-import { StatsTab } from "./RightSidebar/StatsTab";
+import { StatsTab } from "@/browser/features/RightSidebar/StatsTab";
 import { OutputTab } from "./OutputTab";
 
 import {
@@ -32,7 +32,7 @@ import {
 import { SidebarCollapseButton } from "./SidebarCollapseButton/SidebarCollapseButton";
 import { cn } from "@/common/lib/utils";
 import type { ReviewNoteData } from "@/common/types/review";
-import { TerminalTab } from "./RightSidebar/TerminalTab";
+import { TerminalTab } from "@/browser/features/RightSidebar/TerminalTab";
 import {
   RIGHT_SIDEBAR_TABS,
   isTabType,
@@ -70,7 +70,7 @@ import {
   RightSidebarTabStrip,
   getTabName,
   type TabDragData,
-} from "./RightSidebar/RightSidebarTabStrip";
+} from "@/browser/features/RightSidebar/RightSidebarTabStrip";
 import {
   createTerminalSession,
   openTerminalPopout,
@@ -86,9 +86,9 @@ import {
   TerminalTabLabel,
   getTabContentClassName,
   type ReviewStats,
-} from "./RightSidebar/tabs";
-import { FileViewerTab } from "./RightSidebar/FileViewer";
-import { ExplorerTab } from "./RightSidebar/ExplorerTab";
+} from "@/browser/features/RightSidebar/Tabs";
+import { FileViewerTab } from "@/browser/features/RightSidebar/FileViewer";
+import { ExplorerTab } from "@/browser/features/RightSidebar/ExplorerTab";
 import {
   DndContext,
   DragOverlay,

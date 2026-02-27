@@ -5,7 +5,7 @@ import { cn } from "@/common/lib/utils";
 import { stopKeyboardPropagation } from "@/browser/utils/events";
 import { ToggleGroup, ToggleGroupItem } from "./ToggleGroupPrimitive/ToggleGroupPrimitive";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./Dialog/Dialog";
-import { BaseSelectorPopover } from "./RightSidebar/CodeReview/BaseSelectorPopover";
+import { BaseSelectorPopover } from "@/browser/features/RightSidebar/CodeReview/BaseSelectorPopover";
 
 // Helper for indicator colors
 const getIndicatorColor = (branch: number): string => {

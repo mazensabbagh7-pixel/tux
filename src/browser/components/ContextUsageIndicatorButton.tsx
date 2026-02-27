@@ -1,11 +1,11 @@
 import React from "react";
 import { Hourglass } from "lucide-react";
-import { TokenMeter } from "./RightSidebar/TokenMeter";
+import { TokenMeter } from "@/browser/features/RightSidebar/TokenMeter";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "./Dialog/Dialog";
 import {
   HorizontalThresholdSlider,
   type AutoCompactionConfig,
-} from "./RightSidebar/ThresholdSlider";
+} from "@/browser/features/RightSidebar/ThresholdSlider";
 import { Switch } from "./Switch/Switch";
 import { formatTokens, type TokenMeterData } from "@/common/utils/tokens/tokenMeterUtils";
 import { cn } from "@/common/lib/utils";

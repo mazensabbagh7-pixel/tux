@@ -45,7 +45,7 @@ void mock.module("@/browser/contexts/ProjectContext", () => ({
 
 // Mock ChatInput to simulate the old (buggy) behavior where onReady can fire again
 // on unrelated re-renders (e.g. workspace list updates).
-void mock.module("./ChatInput/index", () => ({
+void mock.module("@/browser/features/ChatInput/index", () => ({
   ChatInput: (props: {
     onReady?: (api: {
       focus: () => void;

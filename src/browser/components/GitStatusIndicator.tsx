@@ -5,7 +5,7 @@ import { STORAGE_KEYS, WORKSPACE_DEFAULTS } from "@/constants/workspaceDefaults"
 import { usePersistedState } from "@/browser/hooks/usePersistedState";
 import { invalidateGitStatus, useGitStatusRefreshing } from "@/browser/stores/GitStatusStore";
 import { GitStatusIndicatorView, type GitStatusIndicatorMode } from "./GitStatusIndicatorView";
-import { useGitBranchDetails } from "./hooks/useGitBranchDetails";
+import { useGitBranchDetails } from "@/browser/features/Hooks/useGitBranchDetails";
 
 interface GitStatusIndicatorProps {
   gitStatus: GitStatus | null;

@@ -1485,9 +1485,9 @@ export function createMockORPCClient(options: MockORPCClientOptions = {}): APICl
       getFileCompletions: (input: { workspaceId: string; query: string; limit?: number }) => {
         // Mock file paths for storybook - simulate typical project structure
         const mockPaths = [
-          "src/browser/components/ChatInput/index.tsx",
-          "src/browser/components/CommandSuggestions.tsx",
-          "src/browser/components/App.tsx",
+          "src/browser/features/ChatInput/index.tsx",
+          "src/browser/features/ChatInput/CommandSuggestions.tsx",
+          "src/browser/App.tsx",
           "src/browser/hooks/usePersistedState.ts",
           "src/browser/contexts/WorkspaceContext.tsx",
           "src/common/utils/atMentions.ts",

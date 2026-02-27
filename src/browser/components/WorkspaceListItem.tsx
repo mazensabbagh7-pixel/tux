@@ -18,7 +18,7 @@ import { useContextMenuPosition } from "@/browser/hooks/useContextMenuPosition";
 import { PositionedMenu, PositionedMenuItem } from "./PositionedMenu/PositionedMenu";
 import { Trash2, Ellipsis, Loader2, Sparkles } from "lucide-react";
 import { WorkspaceStatusIndicator } from "./WorkspaceStatusIndicator";
-import { Shimmer } from "./ai-elements/shimmer";
+import { Shimmer } from "@/browser/features/AIElements/Shimmer";
 import { ArchiveIcon } from "./icons/ArchiveIcon";
 import { WorkspaceTerminalIcon } from "./icons/WorkspaceTerminalIcon";
 import { WORKSPACE_DRAG_TYPE, type WorkspaceDragItem } from "./WorkspaceSectionDropZone";

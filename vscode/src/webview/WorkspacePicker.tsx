@@ -4,7 +4,7 @@ import { Check, ChevronDown } from "lucide-react";
 
 import { cn } from "mux/common/lib/utils";
 import { LocalIcon, SSHIcon, WorktreeIcon } from "mux/browser/components/icons/RuntimeIcons";
-import { Shimmer } from "mux/browser/components/ai-elements/shimmer";
+import { Shimmer } from "mux/browser/features/AIElements/Shimmer";
 import { Button } from "mux/browser/components/Button/Button";
 import { Input } from "mux/browser/components/Input/Input";
 import { Popover, PopoverContent, PopoverTrigger } from "mux/browser/components/Popover/Popover";

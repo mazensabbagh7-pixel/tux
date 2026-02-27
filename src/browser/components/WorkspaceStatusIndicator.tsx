@@ -1,5 +1,5 @@
 import { useWorkspaceSidebarState } from "@/browser/stores/WorkspaceStore";
-import { ModelDisplay } from "@/browser/components/Messages/ModelDisplay";
+import { ModelDisplay } from "@/browser/features/Messages/ModelDisplay";
 import { EmojiIcon } from "@/browser/components/icons/EmojiIcon";
 import { CircleHelp, ExternalLinkIcon, Loader2 } from "lucide-react";
 import { memo } from "react";

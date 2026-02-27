@@ -15,18 +15,18 @@ import {
 } from "@/browser/utils/messages/transcriptContextMenu";
 import { useContextMenuPosition } from "@/browser/hooks/useContextMenuPosition";
 import { PositionedMenu, PositionedMenuItem } from "./PositionedMenu/PositionedMenu";
-import { MessageListProvider } from "./Messages/MessageListContext";
+import { MessageListProvider } from "@/browser/features/Messages/MessageListContext";
 import { cn } from "@/common/lib/utils";
-import { MessageRenderer } from "./Messages/MessageRenderer";
-import type { UserMessageNavigation } from "./Messages/UserMessage";
-import { InterruptedBarrier } from "./Messages/ChatBarrier/InterruptedBarrier";
-import { EditCutoffBarrier } from "./Messages/ChatBarrier/EditCutoffBarrier";
-import { StreamingBarrier } from "./Messages/ChatBarrier/StreamingBarrier";
-import { RetryBarrier } from "./Messages/ChatBarrier/RetryBarrier";
+import { MessageRenderer } from "@/browser/features/Messages/MessageRenderer";
+import type { UserMessageNavigation } from "@/browser/features/Messages/UserMessage";
+import { InterruptedBarrier } from "@/browser/features/Messages/ChatBarrier/InterruptedBarrier";
+import { EditCutoffBarrier } from "@/browser/features/Messages/ChatBarrier/EditCutoffBarrier";
+import { StreamingBarrier } from "@/browser/features/Messages/ChatBarrier/StreamingBarrier";
+import { RetryBarrier } from "@/browser/features/Messages/ChatBarrier/RetryBarrier";
 import { PinnedTodoList } from "./PinnedTodoList";
 import { VIM_ENABLED_KEY } from "@/common/constants/storage";
-import { ChatInput, type ChatInputAPI } from "./ChatInput/index";
-import type { QueueDispatchMode } from "./ChatInput/types";
+import { ChatInput, type ChatInputAPI } from "@/browser/features/ChatInput/index";
+import type { QueueDispatchMode } from "@/browser/features/ChatInput/types";
 import {
   shouldShowInterruptedBarrier,
   mergeConsecutiveStreamErrors,
@@ -34,7 +34,7 @@ import {
   shouldBypassDeferredMessages,
 } from "@/browser/utils/messages/messageUtils";
 import { computeTaskReportLinking } from "@/browser/utils/messages/taskReportLinking";
-import { BashOutputCollapsedIndicator } from "./tools/BashOutputCollapsedIndicator";
+import { BashOutputCollapsedIndicator } from "@/browser/features/Tools/BashOutputCollapsedIndicator";
 import {
   getInterruptionContext,
   getLastNonDecorativeMessage,
@@ -54,7 +54,7 @@ import type { DisplayedMessage, QueuedMessage as QueuedMessageData } from "@/com
 import type { RuntimeConfig } from "@/common/types/runtime";
 import { getRuntimeTypeForTelemetry } from "@/common/telemetry";
 import { useAIViewKeybinds } from "@/browser/hooks/useAIViewKeybinds";
-import { QueuedMessage } from "./Messages/QueuedMessage";
+import { QueuedMessage } from "@/browser/features/Messages/QueuedMessage";
 import { CompactionWarning } from "./CompactionWarning";
 import { ContextSwitchWarning as ContextSwitchWarningBanner } from "./ContextSwitchWarning";
 import { ConcurrentLocalWarning } from "./ConcurrentLocalWarning";
