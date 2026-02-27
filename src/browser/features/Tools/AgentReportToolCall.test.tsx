@@ -42,6 +42,6 @@ describe("AgentReportToolCall", () => {
     // Validate that markdown body content renders regardless of whether another test
     // has mocked MarkdownCore into plain-text fallback mode in this Bun process.
     expect(view.getByText(/Hello/)).toBeTruthy();
-    expect(view.getByText("World")).toBeTruthy();
+    expect(view.getByText(/World/)).toBeTruthy();
   });
 });
