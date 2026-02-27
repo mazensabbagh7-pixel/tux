@@ -1,6 +1,7 @@
 import { useTheme } from "@/browser/contexts/ThemeContext";
 import { Shimmer } from "@/browser/components/ai-elements/shimmer";
-import { LoadingAnimation } from "@/browser/components/LoadingAnimation";
+// POC: swap to V2 kick animation
+import { LoadingAnimationV2 as LoadingAnimation } from "@/browser/components/LoadingAnimationV2";
 
 interface CreationCenterContentProps {
   projectName: string;

@@ -1,7 +1,8 @@
 import type { TerminalSessionCreateOptions } from "@/browser/utils/terminal";
 import React, { useCallback, useRef } from "react";
 import { cn } from "@/common/lib/utils";
-import { LoadingAnimation } from "./LoadingAnimation";
+// POC: swap to V2 kick animation
+import { LoadingAnimationV2 as LoadingAnimation } from "./LoadingAnimationV2";
 import { RIGHT_SIDEBAR_WIDTH_KEY, getReviewImmersiveKey } from "@/common/constants/storage";
 import { useResizableSidebar } from "@/browser/hooks/useResizableSidebar";
 import { useResizeObserver } from "@/browser/hooks/useResizeObserver";
