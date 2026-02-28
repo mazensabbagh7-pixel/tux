@@ -6,7 +6,7 @@ import "./styles/globals.css";
 import { useWorkspaceContext, toWorkspaceSelection } from "./contexts/WorkspaceContext";
 import { MUX_HELP_CHAT_WORKSPACE_ID } from "@/common/constants/muxChat";
 import { useProjectContext } from "./contexts/ProjectContext";
-import type { WorkspaceSelection } from "./components/ProjectSidebar/ProjectSidebar";
+import type { WorkspaceSelection } from "./features/Project/ProjectSidebar/ProjectSidebar";
 import { LeftSidebar } from "./components/LeftSidebar/LeftSidebar";
 import { ProjectCreateModal } from "./components/ProjectCreateModal/ProjectCreateModal";
 import { AIView } from "./components/AIView/AIView";

@@ -1,21 +1,21 @@
 import type { TerminalSessionCreateOptions } from "@/browser/utils/terminal";
 import React, { useCallback, useRef } from "react";
 import { cn } from "@/common/lib/utils";
-import { LoadingAnimation } from "../LoadingAnimation/LoadingAnimation";
+import { LoadingAnimation } from "@/browser/components/LoadingAnimation/LoadingAnimation";
 import { RIGHT_SIDEBAR_WIDTH_KEY, getReviewImmersiveKey } from "@/common/constants/storage";
 import { useResizableSidebar } from "@/browser/hooks/useResizableSidebar";
 import { useResizeObserver } from "@/browser/hooks/useResizeObserver";
 import { useOpenTerminal } from "@/browser/hooks/useOpenTerminal";
 import { usePersistedState } from "@/browser/hooks/usePersistedState";
 import { RightSidebar } from "@/browser/features/RightSidebar/RightSidebar";
-import { PopoverError } from "../PopoverError/PopoverError";
+import { PopoverError } from "@/browser/components/PopoverError/PopoverError";
 import type { RuntimeConfig } from "@/common/types/runtime";
 import { useBackgroundBashError } from "@/browser/contexts/BackgroundBashContext";
 import { useWorkspaceState } from "@/browser/stores/WorkspaceStore";
 import { useReviews } from "@/browser/hooks/useReviews";
 import type { ReviewNoteData } from "@/common/types/review";
-import { ConnectionStatusToast } from "../ConnectionStatusToast/ConnectionStatusToast";
-import { ChatPane } from "../ChatPane/ChatPane";
+import { ConnectionStatusToast } from "@/browser/components/ConnectionStatusToast/ConnectionStatusToast";
+import { ChatPane } from "@/browser/components/ChatPane/ChatPane";
 
 // ChatPane uses tailwind `min-w-96`.
 const CHAT_PANE_MIN_WIDTH_PX = 384;

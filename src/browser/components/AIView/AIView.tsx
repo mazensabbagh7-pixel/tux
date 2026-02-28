@@ -6,7 +6,7 @@ import { ThinkingProvider } from "@/browser/contexts/ThinkingContext";
 import { WorkspaceModeAISync } from "@/browser/components/WorkspaceModeAISync/WorkspaceModeAISync";
 import { AgentProvider } from "@/browser/contexts/AgentContext";
 import { BackgroundBashProvider } from "@/browser/contexts/BackgroundBashContext";
-import { WorkspaceShell } from "../WorkspaceShell/WorkspaceShell";
+import { WorkspaceShell } from "@/browser/features/Workspace/WorkspaceShell/WorkspaceShell";
 
 interface AIViewProps {
   workspaceId: string;

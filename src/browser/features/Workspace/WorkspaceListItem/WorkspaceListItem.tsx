@@ -10,25 +10,25 @@ import type { FrontendWorkspaceMetadata } from "@/common/types/workspace";
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from "react";
 import { useDrag } from "react-dnd";
 import { getEmptyImage } from "react-dnd-html5-backend";
-import { GitStatusIndicator } from "../GitStatusIndicator/GitStatusIndicator";
+import { GitStatusIndicator } from "@/browser/features/Project/GitStatus/GitStatusIndicator/GitStatusIndicator";
 
-import { Tooltip, TooltipTrigger, TooltipContent } from "../Tooltip/Tooltip";
-import { Popover, PopoverContent, PopoverTrigger, PopoverAnchor } from "../Popover/Popover";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/browser/components/Tooltip/Tooltip";
+import { Popover, PopoverContent, PopoverTrigger, PopoverAnchor } from "@/browser/components/Popover/Popover";
 import { useContextMenuPosition } from "@/browser/hooks/useContextMenuPosition";
-import { PositionedMenu, PositionedMenuItem } from "../PositionedMenu/PositionedMenu";
+import { PositionedMenu, PositionedMenuItem } from "@/browser/components/PositionedMenu/PositionedMenu";
 import { Trash2, Ellipsis, Loader2, Sparkles } from "lucide-react";
 import { WorkspaceStatusIndicator } from "../WorkspaceStatusIndicator/WorkspaceStatusIndicator";
 import { Shimmer } from "@/browser/components/Shimmer/Shimmer";
-import { ArchiveIcon } from "../Icons/ArchiveIcon/ArchiveIcon";
-import { WorkspaceTerminalIcon } from "../Icons/WorkspaceTerminalIcon/WorkspaceTerminalIcon";
+import { ArchiveIcon } from "@/browser/components/Icons/ArchiveIcon/ArchiveIcon";
+import { WorkspaceTerminalIcon } from "@/browser/components/Icons/WorkspaceTerminalIcon/WorkspaceTerminalIcon";
 import {
   WORKSPACE_DRAG_TYPE,
   type WorkspaceDragItem,
-} from "../WorkspaceSectionDropZone/WorkspaceSectionDropZone";
+} from "@/browser/components/WorkspaceSectionDropZone/WorkspaceSectionDropZone";
 import { useLinkSharingEnabled } from "@/browser/contexts/TelemetryEnabledContext";
 import { formatKeybind, KEYBINDS } from "@/browser/utils/ui/keybinds";
-import { ShareTranscriptDialog } from "../ShareTranscriptDialog/ShareTranscriptDialog";
-import { WorkspaceActionsMenuContent } from "../WorkspaceActionsMenuContent/WorkspaceActionsMenuContent";
+import { ShareTranscriptDialog } from "@/browser/components/ShareTranscriptDialog/ShareTranscriptDialog";
+import { WorkspaceActionsMenuContent } from "@/browser/components/WorkspaceActionsMenuContent/WorkspaceActionsMenuContent";
 import { useAPI } from "@/browser/contexts/API";
 
 export interface WorkspaceSelection {

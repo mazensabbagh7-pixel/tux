@@ -4,7 +4,7 @@
  */
 
 import { useWorkspacePR } from "@/browser/stores/PRStatusStore";
-import { PRLinkBadge } from "../PRLinkBadge/PRLinkBadge";
+import { PRLinkBadge } from "@/browser/components/PRLinkBadge/PRLinkBadge";
 
 interface WorkspaceLinksProps {
   workspaceId: string;

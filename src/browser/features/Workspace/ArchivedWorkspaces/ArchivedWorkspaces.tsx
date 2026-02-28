@@ -7,10 +7,10 @@ import { usePersistedState } from "@/browser/hooks/usePersistedState";
 import { getArchivedWorkspacesExpandedKey } from "@/common/constants/storage";
 import { useAPI } from "@/browser/contexts/API";
 import { ChevronDown, ChevronRight, Loader2, Search, Trash2 } from "lucide-react";
-import { ArchiveIcon, ArchiveRestoreIcon } from "../Icons/ArchiveIcon/ArchiveIcon";
-import { Tooltip, TooltipTrigger, TooltipContent } from "../Tooltip/Tooltip";
-import { RuntimeBadge } from "../RuntimeBadge/RuntimeBadge";
-import { Skeleton } from "../Skeleton/Skeleton";
+import { ArchiveIcon, ArchiveRestoreIcon } from "@/browser/components/Icons/ArchiveIcon/ArchiveIcon";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/browser/components/Tooltip/Tooltip";
+import { RuntimeBadge } from "@/browser/components/RuntimeBadge/RuntimeBadge";
+import { Skeleton } from "@/browser/components/Skeleton/Skeleton";
 import {
   Dialog,
   DialogContent,
@@ -19,7 +19,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/browser/components/Dialog/Dialog";
-import { ForceDeleteModal } from "../ForceDeleteModal/ForceDeleteModal";
+import { ForceDeleteModal } from "@/browser/components/ForceDeleteModal/ForceDeleteModal";
 import { Button } from "@/browser/components/Button/Button";
 import type { z } from "zod";
 import type { SessionUsageFileSchema } from "@/common/orpc/schemas/chatStats";

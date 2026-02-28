@@ -51,13 +51,13 @@ import {
   getSectionTierKey,
   sortSectionsByLinkedList,
 } from "@/browser/utils/ui/workspaceFiltering";
-import { Tooltip, TooltipTrigger, TooltipContent } from "../Tooltip/Tooltip";
-import { SidebarCollapseButton } from "../SidebarCollapseButton/SidebarCollapseButton";
-import { ConfirmationModal } from "../ConfirmationModal/ConfirmationModal";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/browser/components/Tooltip/Tooltip";
+import { SidebarCollapseButton } from "@/browser/components/SidebarCollapseButton/SidebarCollapseButton";
+import { ConfirmationModal } from "@/browser/components/ConfirmationModal/ConfirmationModal";
 import { useSettings } from "@/browser/contexts/SettingsContext";
 
-import { WorkspaceListItem, type WorkspaceSelection } from "../WorkspaceListItem/WorkspaceListItem";
-import { WorkspaceStatusIndicator } from "../WorkspaceStatusIndicator/WorkspaceStatusIndicator";
+import { WorkspaceListItem, type WorkspaceSelection } from "@/browser/features/Workspace/WorkspaceListItem/WorkspaceListItem";
+import { WorkspaceStatusIndicator } from "@/browser/features/Workspace/WorkspaceStatusIndicator/WorkspaceStatusIndicator";
 import { TitleEditProvider, useTitleEdit } from "@/browser/contexts/WorkspaceTitleEditContext";
 import { useConfirmDialog } from "@/browser/contexts/ConfirmDialogContext";
 import { useProjectContext } from "@/browser/contexts/ProjectContext";
@@ -67,19 +67,19 @@ import { useWorkspaceActions } from "@/browser/contexts/WorkspaceContext";
 import { useRouter } from "@/browser/contexts/RouterContext";
 import { usePopoverError } from "@/browser/hooks/usePopoverError";
 import { forkWorkspace } from "@/browser/utils/chatCommands";
-import { PopoverError } from "../PopoverError/PopoverError";
-import { SectionHeader } from "../SectionHeader/SectionHeader";
-import { AddSectionButton } from "../AddSectionButton/AddSectionButton";
-import { WorkspaceSectionDropZone } from "../WorkspaceSectionDropZone/WorkspaceSectionDropZone";
-import { WorkspaceDragLayer } from "../WorkspaceDragLayer/WorkspaceDragLayer";
-import { SectionDragLayer } from "../SectionDragLayer/SectionDragLayer";
-import { DraggableSection } from "../DraggableSection/DraggableSection";
+import { PopoverError } from "@/browser/components/PopoverError/PopoverError";
+import { SectionHeader } from "@/browser/components/SectionHeader/SectionHeader";
+import { AddSectionButton } from "@/browser/components/AddSectionButton/AddSectionButton";
+import { WorkspaceSectionDropZone } from "@/browser/components/WorkspaceSectionDropZone/WorkspaceSectionDropZone";
+import { WorkspaceDragLayer } from "@/browser/components/WorkspaceDragLayer/WorkspaceDragLayer";
+import { SectionDragLayer } from "@/browser/components/SectionDragLayer/SectionDragLayer";
+import { DraggableSection } from "@/browser/components/DraggableSection/DraggableSection";
 import type { SectionConfig } from "@/common/types/project";
 import { getErrorMessage } from "@/common/utils/errors";
 import { getProjectWorkspaceCounts } from "@/common/utils/projectRemoval";
 
 // Re-export WorkspaceSelection for backwards compatibility
-export type { WorkspaceSelection } from "../WorkspaceListItem/WorkspaceListItem";
+export type { WorkspaceSelection } from "@/browser/features/Workspace/WorkspaceListItem/WorkspaceListItem";
 
 // Draggable project item moved to module scope to avoid remounting on every parent render.
 // Defining components inside another component causes a new function identity each render,

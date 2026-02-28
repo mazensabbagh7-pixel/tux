@@ -24,7 +24,7 @@ import { InterruptedBarrier } from "@/browser/features/Messages/ChatBarrier/Inte
 import { EditCutoffBarrier } from "@/browser/features/Messages/ChatBarrier/EditCutoffBarrier";
 import { StreamingBarrier } from "@/browser/features/Messages/ChatBarrier/StreamingBarrier";
 import { RetryBarrier } from "@/browser/features/Messages/ChatBarrier/RetryBarrier";
-import { PinnedTodoList } from "../PinnedTodoList/PinnedTodoList";
+import { PinnedTodoList } from "@/browser/features/Workspace/PinnedTodoList/PinnedTodoList";
 import { VIM_ENABLED_KEY } from "@/common/constants/storage";
 import { ChatInput, type ChatInputAPI } from "@/browser/features/ChatInput/index";
 import type { QueueDispatchMode } from "@/browser/features/ChatInput/types";
@@ -50,7 +50,7 @@ import {
   useWorkspaceStoreRaw,
   type WorkspaceState,
 } from "@/browser/stores/WorkspaceStore";
-import { WorkspaceMenuBar } from "../WorkspaceMenuBar/WorkspaceMenuBar";
+import { WorkspaceMenuBar } from "@/browser/features/Workspace/WorkspaceMenuBar/WorkspaceMenuBar";
 import type { DisplayedMessage, QueuedMessage as QueuedMessageData } from "@/common/types/message";
 import type { RuntimeConfig } from "@/common/types/runtime";
 import { getRuntimeTypeForTelemetry } from "@/common/telemetry";
@@ -58,7 +58,7 @@ import { useAIViewKeybinds } from "@/browser/hooks/useAIViewKeybinds";
 import { QueuedMessage } from "@/browser/features/Messages/QueuedMessage";
 import { CompactionWarning } from "../CompactionWarning/CompactionWarning";
 import { ContextSwitchWarning as ContextSwitchWarningBanner } from "../ContextSwitchWarning/ContextSwitchWarning";
-import { ConcurrentLocalWarning } from "../ConcurrentLocalWarning/ConcurrentLocalWarning";
+import { ConcurrentLocalWarning } from "@/browser/features/Workspace/ConcurrentLocalWarning/ConcurrentLocalWarning";
 import { BackgroundProcessesBanner } from "../BackgroundProcessesBanner/BackgroundProcessesBanner";
 import { checkAutoCompaction } from "@/common/utils/compaction/autoCompactionCheck";
 import { cancelCompaction } from "@/browser/utils/compaction/handler";

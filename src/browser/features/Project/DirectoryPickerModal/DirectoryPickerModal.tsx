@@ -8,10 +8,10 @@ import {
   DialogFooter,
 } from "@/browser/components/Dialog/Dialog";
 import { Button } from "@/browser/components/Button/Button";
-import { Checkbox } from "../Checkbox/Checkbox";
+import { Checkbox } from "@/browser/components/Checkbox/Checkbox";
 import { Input } from "@/browser/components/Input/Input";
 import type { FileTreeNode } from "@/common/utils/git/numstatParser";
-import { DirectoryTree } from "../DirectoryTree/DirectoryTree";
+import { DirectoryTree } from "@/browser/components/DirectoryTree/DirectoryTree";
 import { useAPI } from "@/browser/contexts/API";
 import { formatKeybind, isMac } from "@/browser/utils/ui/keybinds";
 import { getErrorMessage } from "@/common/utils/errors";

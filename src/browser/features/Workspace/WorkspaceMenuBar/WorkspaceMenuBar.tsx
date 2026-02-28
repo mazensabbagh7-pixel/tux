@@ -10,13 +10,13 @@ import {
   getNotifyOnResponseKey,
   getNotifyOnResponseAutoEnableKey,
 } from "@/common/constants/storage";
-import { GitStatusIndicator } from "../GitStatusIndicator/GitStatusIndicator";
-import { RuntimeBadge } from "../RuntimeBadge/RuntimeBadge";
-import { BranchSelector } from "../BranchSelector/BranchSelector";
-import { WorkspaceMCPModal } from "../WorkspaceMCPModal/WorkspaceMCPModal";
-import { Tooltip, TooltipTrigger, TooltipContent } from "../Tooltip/Tooltip";
-import { Popover, PopoverTrigger, PopoverContent } from "../Popover/Popover";
-import { Checkbox } from "../Checkbox/Checkbox";
+import { GitStatusIndicator } from "@/browser/features/Project/GitStatus/GitStatusIndicator/GitStatusIndicator";
+import { RuntimeBadge } from "@/browser/components/RuntimeBadge/RuntimeBadge";
+import { BranchSelector } from "@/browser/features/Project/BranchSelector/BranchSelector";
+import { WorkspaceMCPModal } from "@/browser/components/WorkspaceMCPModal/WorkspaceMCPModal";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/browser/components/Tooltip/Tooltip";
+import { Popover, PopoverTrigger, PopoverContent } from "@/browser/components/Popover/Popover";
+import { Checkbox } from "@/browser/components/Checkbox/Checkbox";
 import { formatKeybind, KEYBINDS, matchesKeybind } from "@/browser/utils/ui/keybinds";
 import { useGitStatus } from "@/browser/stores/GitStatusStore";
 import { useWorkspaceSidebarState } from "@/browser/stores/WorkspaceStore";
@@ -31,15 +31,15 @@ import { useOpenInEditor } from "@/browser/hooks/useOpenInEditor";
 import { usePersistedState } from "@/browser/hooks/usePersistedState";
 import { usePopoverError } from "@/browser/hooks/usePopoverError";
 import { isDesktopMode, DESKTOP_TITLEBAR_HEIGHT_CLASS } from "@/browser/hooks/useDesktopTitlebar";
-import { DebugLlmRequestModal } from "../DebugLlmRequestModal/DebugLlmRequestModal";
+import { DebugLlmRequestModal } from "@/browser/components/DebugLlmRequestModal/DebugLlmRequestModal";
 import { WorkspaceLinks } from "../WorkspaceLinks/WorkspaceLinks";
-import { ShareTranscriptDialog } from "../ShareTranscriptDialog/ShareTranscriptDialog";
-import { ConfirmationModal } from "../ConfirmationModal/ConfirmationModal";
-import { PopoverError } from "../PopoverError/PopoverError";
-import { WorkspaceActionsMenuContent } from "../WorkspaceActionsMenuContent/WorkspaceActionsMenuContent";
-import { WorkspaceTerminalIcon } from "../Icons/WorkspaceTerminalIcon/WorkspaceTerminalIcon";
+import { ShareTranscriptDialog } from "@/browser/components/ShareTranscriptDialog/ShareTranscriptDialog";
+import { ConfirmationModal } from "@/browser/components/ConfirmationModal/ConfirmationModal";
+import { PopoverError } from "@/browser/components/PopoverError/PopoverError";
+import { WorkspaceActionsMenuContent } from "@/browser/components/WorkspaceActionsMenuContent/WorkspaceActionsMenuContent";
+import { WorkspaceTerminalIcon } from "@/browser/components/Icons/WorkspaceTerminalIcon/WorkspaceTerminalIcon";
 
-import { SkillIndicator } from "../SkillIndicator/SkillIndicator";
+import { SkillIndicator } from "@/browser/components/SkillIndicator/SkillIndicator";
 import { useAPI } from "@/browser/contexts/API";
 import { useAgent } from "@/browser/contexts/AgentContext";
 

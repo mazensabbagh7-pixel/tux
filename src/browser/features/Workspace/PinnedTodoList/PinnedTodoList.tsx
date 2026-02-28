@@ -1,5 +1,5 @@
 import React, { useSyncExternalStore } from "react";
-import { TodoList } from "../TodoList/TodoList";
+import { TodoList } from "@/browser/components/TodoList/TodoList";
 import { useWorkspaceStoreRaw } from "@/browser/stores/WorkspaceStore";
 import { usePersistedState } from "@/browser/hooks/usePersistedState";
 import { cn } from "@/common/lib/utils";
