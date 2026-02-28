@@ -6,6 +6,11 @@ import { cleanup, render } from "@testing-library/react";
 import { useTheme } from "@/browser/contexts/ThemeContext";
 import { installDom } from "../../../../../tests/ui/dom";
 
+// AppLoader transitively imports react-dnd, and @react-dnd/asap touches
+// document APIs at module evaluation time.
+// Install a full happy-dom instance before importing AppLoader.
+installDom();
+
 let cleanupDom: (() => void) | null = null;
 
 let apiStatus: "auth_required" | "connecting" | "error" = "auth_required";
@@ -16,6 +21,11 @@ let apiError: string | null = "Authentication required";
 void mock.module("lottie-react", () => ({
   __esModule: true,
   default: () => <div data-testid="LottieMock" />,
+}));
+
+void mock.module("@/browser/App", () => ({
+  __esModule: true,
+  default: () => <div data-testid="AppMock" />,
 }));
 
 void mock.module("@/browser/contexts/API", () => ({
@@ -51,6 +61,252 @@ void mock.module("@/browser/contexts/API", () => ({
   },
 }));
 
+const noop = (): void => undefined;
+const noopPromise = () => Promise.resolve();
+
+const mockPolicyState = {
+  source: "none" as const,
+  status: { state: "disabled" as const },
+  policy: null,
+  loading: false,
+  refresh: noopPromise,
+};
+
+const mockRouterState = {
+  navigateToWorkspace: noop,
+  navigateToProject: noop,
+  navigateToHome: noop,
+  navigateToSettings: noop,
+  navigateFromSettings: noop,
+  navigateToAnalytics: noop,
+  navigateFromAnalytics: noop,
+  currentWorkspaceId: null,
+  currentSettingsSection: null,
+  currentProjectId: null,
+  currentProjectPathFromState: null,
+  pendingSectionId: null,
+  pendingDraftId: null,
+  isAnalyticsOpen: false,
+};
+
+const mockProjectContextValue = {
+  userProjects: new Map<string, unknown>(),
+  systemProjectPath: null,
+  resolveProjectPath: () => null,
+  getProjectConfig: () => undefined,
+  loading: true,
+  refreshProjects: noopPromise,
+  addProject: noop,
+  removeProject: () => Promise.resolve({ success: true }),
+  isProjectCreateModalOpen: false,
+  openProjectCreateModal: noop,
+  closeProjectCreateModal: noop,
+  workspaceModalState: {
+    isOpen: false,
+    projectPath: null,
+    projectName: "",
+    branches: [],
+    defaultTrunkBranch: undefined,
+    loadErrorMessage: null,
+    isLoading: false,
+  },
+  openWorkspaceModal: noopPromise,
+  closeWorkspaceModal: noop,
+  getBranchesForProject: () => Promise.resolve({ branches: [], recommendedTrunk: null }),
+  getSecrets: () => Promise.resolve([]),
+  updateSecrets: noopPromise,
+  createSection: () => Promise.resolve({ success: false, error: "not implemented" }),
+  updateSection: () => Promise.resolve({ success: false, error: "not implemented" }),
+  removeSection: () => Promise.resolve({ success: false, error: "not implemented" }),
+  reorderSections: () => Promise.resolve({ success: false, error: "not implemented" }),
+  assignWorkspaceToSection: () => Promise.resolve({ success: false, error: "not implemented" }),
+  hasAnyProject: false,
+  resolveNewChatProjectPath: () => null,
+};
+
+const mockWorkspaceMetadata = new Map<string, unknown>();
+const mockWorkspaceActions = {
+  workspaceDraftPromotionsByProject: {},
+  promoteWorkspaceDraft: noop,
+  createWorkspace: () =>
+    Promise.resolve({
+      projectPath: "",
+      projectName: "",
+      namedWorkspacePath: "",
+      workspaceId: "",
+    }),
+  removeWorkspace: () => Promise.resolve({ success: true }),
+  updateWorkspaceTitle: () => Promise.resolve({ success: true }),
+  archiveWorkspace: () => Promise.resolve({ success: true }),
+  unarchiveWorkspace: () => Promise.resolve({ success: true }),
+  refreshWorkspaceMetadata: noopPromise,
+  setWorkspaceMetadata: noop,
+  selectedWorkspace: null,
+  setSelectedWorkspace: noop,
+  pendingNewWorkspaceProject: null,
+  pendingNewWorkspaceSectionId: null,
+  pendingNewWorkspaceDraftId: null,
+  beginWorkspaceCreation: noop,
+  workspaceDraftsByProject: {},
+  createWorkspaceDraft: noop,
+  updateWorkspaceDraftSection: noop,
+  openWorkspaceDraft: noop,
+  deleteWorkspaceDraft: noop,
+  getWorkspaceInfo: () => Promise.resolve(null),
+};
+
+const mockWorkspaceContextValue = {
+  workspaceMetadata: mockWorkspaceMetadata,
+  loading: true,
+  ...mockWorkspaceActions,
+};
+
+const mockWorkspaceStoreRaw = {
+  setClient: noop,
+  syncWorkspaces: noop,
+};
+
+const mockWorkspaceStoreSingleton = {
+  subscribeFileModifyingTool: () => () => undefined,
+  getFileModifyingToolMs: () => null,
+  clearFileModifyingToolMs: noop,
+  simulateFileModifyingToolEnd: noop,
+  getWorkspaceSidebarState: () => ({}),
+  addWorkspace: noop,
+  setActiveWorkspaceId: noop,
+};
+
+const mockGitStatusStoreRaw = {
+  setClient: noop,
+  syncWorkspaces: noop,
+  subscribeToFileModifications: noop,
+};
+
+const mockBackgroundBashStoreRaw = {
+  setClient: noop,
+};
+
+let mockPRStatusStoreInstance = {
+  setClient: noop,
+};
+
+class MockWorkspaceStore {
+  setClient() {
+    return undefined;
+  }
+
+  syncWorkspaces() {
+    return undefined;
+  }
+}
+
+class MockGitStatusStore {
+  setClient() {
+    return undefined;
+  }
+
+  syncWorkspaces() {
+    return undefined;
+  }
+
+  subscribeToFileModifications() {
+    return undefined;
+  }
+}
+
+class MockBackgroundBashStore {
+  setClient() {
+    return undefined;
+  }
+}
+
+class MockPRStatusStore {
+  setClient() {
+    return undefined;
+  }
+}
+
+void mock.module("@/browser/contexts/PolicyContext", () => ({
+  PolicyProvider: (props: { children: React.ReactNode }) => props.children,
+  usePolicy: () => mockPolicyState,
+}));
+
+void mock.module("@/browser/contexts/RouterContext", () => ({
+  RouterProvider: (props: { children: React.ReactNode }) => props.children,
+  useRouter: () => mockRouterState,
+}));
+
+void mock.module("@/browser/contexts/ProjectContext", () => ({
+  ProjectProvider: (props: { children: React.ReactNode }) => props.children,
+  useProjectContext: () => mockProjectContextValue,
+}));
+
+void mock.module("@/browser/contexts/WorkspaceContext", () => ({
+  WorkspaceProvider: (props: { children: React.ReactNode }) => props.children,
+  toWorkspaceSelection: (metadata: {
+    id: string;
+    projectPath: string;
+    projectName: string;
+    namedWorkspacePath: string;
+  }) => ({
+    workspaceId: metadata.id,
+    projectPath: metadata.projectPath,
+    projectName: metadata.projectName,
+    namedWorkspacePath: metadata.namedWorkspacePath,
+  }),
+  useWorkspaceMetadata: () => ({
+    workspaceMetadata: mockWorkspaceMetadata,
+    loading: true,
+  }),
+  useWorkspaceActions: () => mockWorkspaceActions,
+  useWorkspaceContext: () => mockWorkspaceContextValue,
+  useOptionalWorkspaceContext: () => mockWorkspaceContextValue,
+}));
+
+void mock.module("@/browser/stores/WorkspaceStore", () => ({
+  WorkspaceStore: MockWorkspaceStore,
+  workspaceStore: mockWorkspaceStoreSingleton,
+  useWorkspaceState: () => ({}),
+  useWorkspaceStoreRaw: () => mockWorkspaceStoreRaw,
+  useWorkspaceRecency: () => ({}),
+  useWorkspaceSidebarState: () => ({}),
+  useBashToolLiveOutput: () => "",
+  useTaskToolLiveTaskId: () => null,
+  useLatestStreamingBashId: () => null,
+  useWorkspaceAggregator: () => null,
+  showAllMessages: noop,
+  addEphemeralMessage: noop,
+  removeEphemeralMessage: noop,
+  useWorkspaceUsage: () => ({}),
+  useWorkspaceStatsSnapshot: () => null,
+  useWorkspaceConsumers: () => ({}),
+}));
+
+void mock.module("@/browser/stores/GitStatusStore", () => ({
+  GitStatusStore: MockGitStatusStore,
+  useGitStatus: () => null,
+  useGitStatusRefreshing: () => false,
+  useGitStatusStoreRaw: () => mockGitStatusStoreRaw,
+  invalidateGitStatus: noop,
+}));
+
+void mock.module("@/browser/stores/BackgroundBashStore", () => ({
+  BackgroundBashStore: MockBackgroundBashStore,
+  useBackgroundBashStoreRaw: () => mockBackgroundBashStoreRaw,
+  useBackgroundProcesses: () => [],
+  useForegroundBashToolCallIds: () => new Set<string>(),
+  useBackgroundBashTerminatingIds: () => new Set<string>(),
+}));
+
+void mock.module("@/browser/stores/PRStatusStore", () => ({
+  PRStatusStore: MockPRStatusStore,
+  getPRStatusStoreInstance: () => mockPRStatusStoreInstance,
+  setPRStatusStoreInstance: (store: { setClient: () => void }) => {
+    mockPRStatusStoreInstance = store;
+  },
+  useWorkspacePR: () => null,
+}));
+
 void mock.module("@/browser/components/LoadingScreen/LoadingScreen", () => ({
   LoadingScreen: () => {
     const { theme } = useTheme();
@@ -77,7 +333,8 @@ void mock.module("@/browser/components/AuthTokenModal/AuthTokenModal", () => ({
   clearStoredAuthToken: () => {},
 }));
 
-import { AppLoader } from "../AppLoader/AppLoader";
+// eslint-disable-next-line no-restricted-syntax -- AppLoader imports react-dnd, which requires DOM globals during module evaluation.
+const { AppLoader } = await import("./AppLoader");
 
 describe("AppLoader", () => {
   beforeEach(() => {
