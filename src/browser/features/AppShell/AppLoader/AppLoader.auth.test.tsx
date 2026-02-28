@@ -1,10 +1,10 @@
-import "../../../../tests/ui/dom";
+import "../../../../../tests/ui/dom";
 
 import React from "react";
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { cleanup, render } from "@testing-library/react";
-import { useTheme } from "../../contexts/ThemeContext";
-import { installDom } from "../../../../tests/ui/dom";
+import { useTheme } from "@/browser/contexts/ThemeContext";
+import { installDom } from "../../../../../tests/ui/dom";
 
 let cleanupDom: (() => void) | null = null;
 

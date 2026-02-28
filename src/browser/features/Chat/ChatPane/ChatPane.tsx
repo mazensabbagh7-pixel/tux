@@ -14,7 +14,10 @@ import {
   getTranscriptContextMenuText,
 } from "@/browser/utils/messages/transcriptContextMenu";
 import { useContextMenuPosition } from "@/browser/hooks/useContextMenuPosition";
-import { PositionedMenu, PositionedMenuItem } from "../PositionedMenu/PositionedMenu";
+import {
+  PositionedMenu,
+  PositionedMenuItem,
+} from "@/browser/components/PositionedMenu/PositionedMenu";
 import { MessageListProvider } from "@/browser/features/Messages/MessageListContext";
 import { cn } from "@/common/lib/utils";
 import { MessageRenderer } from "@/browser/features/Messages/MessageRenderer";
@@ -56,22 +59,22 @@ import type { RuntimeConfig } from "@/common/types/runtime";
 import { getRuntimeTypeForTelemetry } from "@/common/telemetry";
 import { useAIViewKeybinds } from "@/browser/hooks/useAIViewKeybinds";
 import { QueuedMessage } from "@/browser/features/Messages/QueuedMessage";
-import { CompactionWarning } from "../CompactionWarning/CompactionWarning";
-import { ContextSwitchWarning as ContextSwitchWarningBanner } from "../ContextSwitchWarning/ContextSwitchWarning";
+import { CompactionWarning } from "@/browser/components/CompactionWarning/CompactionWarning";
+import { ContextSwitchWarning as ContextSwitchWarningBanner } from "@/browser/components/ContextSwitchWarning/ContextSwitchWarning";
 import { ConcurrentLocalWarning } from "@/browser/features/Workspace/ConcurrentLocalWarning/ConcurrentLocalWarning";
-import { BackgroundProcessesBanner } from "../BackgroundProcessesBanner/BackgroundProcessesBanner";
+import { BackgroundProcessesBanner } from "@/browser/features/AppShell/BackgroundProcessesBanner/BackgroundProcessesBanner";
 import { checkAutoCompaction } from "@/common/utils/compaction/autoCompactionCheck";
 import { cancelCompaction } from "@/browser/utils/compaction/handler";
 import type { ContextSwitchWarning } from "@/browser/utils/compaction/contextSwitchCheck";
 import { useProviderOptions } from "@/browser/hooks/useProviderOptions";
-import { useAutoCompactionSettings } from "../../hooks/useAutoCompactionSettings";
+import { useAutoCompactionSettings } from "@/browser/hooks/useAutoCompactionSettings";
 import { useContextSwitchWarning } from "@/browser/hooks/useContextSwitchWarning";
 import { useProvidersConfig } from "@/browser/hooks/useProvidersConfig";
 import { useSendMessageOptions } from "@/browser/hooks/useSendMessageOptions";
 import type { TerminalSessionCreateOptions } from "@/browser/utils/terminal";
 import { useAPI } from "@/browser/contexts/API";
 import { useReviews } from "@/browser/hooks/useReviews";
-import { ReviewsBanner } from "../ReviewsBanner/ReviewsBanner";
+import { ReviewsBanner } from "@/browser/components/ReviewsBanner/ReviewsBanner";
 import type { ReviewNoteData } from "@/common/types/review";
 import { useWorkspaceContext } from "@/browser/contexts/WorkspaceContext";
 import {

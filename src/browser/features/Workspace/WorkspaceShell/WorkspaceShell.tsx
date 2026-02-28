@@ -14,8 +14,8 @@ import { useBackgroundBashError } from "@/browser/contexts/BackgroundBashContext
 import { useWorkspaceState } from "@/browser/stores/WorkspaceStore";
 import { useReviews } from "@/browser/hooks/useReviews";
 import type { ReviewNoteData } from "@/common/types/review";
-import { ConnectionStatusToast } from "@/browser/components/ConnectionStatusToast/ConnectionStatusToast";
-import { ChatPane } from "@/browser/components/ChatPane/ChatPane";
+import { ConnectionStatusToast } from "@/browser/features/AppShell/ConnectionStatusToast/ConnectionStatusToast";
+import { ChatPane } from "@/browser/features/Chat/ChatPane/ChatPane";
 
 // ChatPane uses tailwind `min-w-96`.
 const CHAT_PANE_MIN_WIDTH_PX = 384;

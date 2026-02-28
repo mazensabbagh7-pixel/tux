@@ -1,8 +1,8 @@
 import React, { useState, useCallback, useEffect } from "react";
 import { Terminal, X, ChevronDown, ChevronRight, Loader2, FileText } from "lucide-react";
-import { Tooltip, TooltipTrigger, TooltipContent } from "../Tooltip/Tooltip";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/browser/components/Tooltip/Tooltip";
 import { cn } from "@/common/lib/utils";
-import { BackgroundBashOutputDialog } from "../BackgroundBashOutputDialog/BackgroundBashOutputDialog";
+import { BackgroundBashOutputDialog } from "@/browser/components/BackgroundBashOutputDialog/BackgroundBashOutputDialog";
 import { formatDuration } from "@/browser/features/Tools/Shared/toolUtils";
 import {
   useBackgroundBashTerminatingIds,

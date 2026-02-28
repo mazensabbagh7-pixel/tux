@@ -1,23 +1,23 @@
 import { useState, useEffect } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import App from "../../App";
-import { AuthTokenModal } from "../AuthTokenModal/AuthTokenModal";
-import { ThemeProvider } from "../../contexts/ThemeContext";
-import { LoadingScreen } from "../LoadingScreen/LoadingScreen";
-import { StartupConnectionError } from "../StartupConnectionError/StartupConnectionError";
-import { useReducedMotion } from "../../hooks/useReducedMotion";
-import { useWorkspaceStoreRaw, workspaceStore } from "../../stores/WorkspaceStore";
-import { useGitStatusStoreRaw } from "../../stores/GitStatusStore";
-import { useBackgroundBashStoreRaw } from "../../stores/BackgroundBashStore";
-import { getPRStatusStoreInstance } from "../../stores/PRStatusStore";
-import { ProjectProvider, useProjectContext } from "../../contexts/ProjectContext";
+import App from "@/browser/App";
+import { AuthTokenModal } from "@/browser/components/AuthTokenModal/AuthTokenModal";
+import { ThemeProvider } from "@/browser/contexts/ThemeContext";
+import { LoadingScreen } from "@/browser/components/LoadingScreen/LoadingScreen";
+import { StartupConnectionError } from "@/browser/components/StartupConnectionError/StartupConnectionError";
+import { useReducedMotion } from "@/browser/hooks/useReducedMotion";
+import { useWorkspaceStoreRaw, workspaceStore } from "@/browser/stores/WorkspaceStore";
+import { useGitStatusStoreRaw } from "@/browser/stores/GitStatusStore";
+import { useBackgroundBashStoreRaw } from "@/browser/stores/BackgroundBashStore";
+import { getPRStatusStoreInstance } from "@/browser/stores/PRStatusStore";
+import { ProjectProvider, useProjectContext } from "@/browser/contexts/ProjectContext";
 import { PolicyProvider, usePolicy } from "@/browser/contexts/PolicyContext";
 import { PolicyBlockedScreen } from "@/browser/components/PolicyBlockedScreen/PolicyBlockedScreen";
 import { APIProvider, useAPI, type APIClient } from "@/browser/contexts/API";
-import { WorkspaceProvider, useWorkspaceContext } from "../../contexts/WorkspaceContext";
-import { RouterProvider } from "../../contexts/RouterContext";
-import { TelemetryEnabledProvider } from "../../contexts/TelemetryEnabledContext";
-import { TerminalRouterProvider } from "../../terminal/TerminalRouterContext";
+import { WorkspaceProvider, useWorkspaceContext } from "@/browser/contexts/WorkspaceContext";
+import { RouterProvider } from "@/browser/contexts/RouterContext";
+import { TelemetryEnabledProvider } from "@/browser/contexts/TelemetryEnabledContext";
+import { TerminalRouterProvider } from "@/browser/terminal/TerminalRouterContext";
 
 interface AppLoaderProps {
   /** Optional pre-created ORPC api?. If provided, skips internal connection setup. */

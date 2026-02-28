@@ -1,7 +1,7 @@
 import React from "react";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
-import { installDom } from "../../../../tests/ui/dom";
+import { installDom } from "../../../../../tests/ui/dom";
 
 import { AgentProvider } from "@/browser/contexts/AgentContext";
 import { TooltipProvider } from "@/browser/components/Tooltip/Tooltip";
