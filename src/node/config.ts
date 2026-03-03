@@ -427,7 +427,7 @@ export class Config {
       for (const entry of systemConfig.projects) {
         if (Array.isArray(entry) && entry.length >= 2 && typeof entry[0] === "string") {
           const [projectPath, projectConfig] = entry;
-          systemProjectMap.set(projectPath, JSON.stringify(projectConfig));
+          systemProjectMap.set(stripTrailingSlashes(projectPath), JSON.stringify(projectConfig));
         }
       }
       const dataProjects = data.projects as Array<[string, unknown]>;

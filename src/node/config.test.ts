@@ -536,6 +536,32 @@ describe("Config", () => {
       expect(projectPaths).not.toContain("/sys/project");
     });
 
+    it("system project paths are normalized before stripping", async () => {
+      writeSystemConfig({
+        projects: [["/sys/project/", { workspaces: [] }]],
+      });
+      writeUserConfig({
+        projects: [],
+      });
+
+      const loaded = config.loadConfigOrDefault();
+      // Normalized path (no trailing slash) should be in the loaded config
+      expect(loaded.projects.has("/sys/project")).toBe(true);
+
+      await config.saveConfig(loaded);
+
+      const savedRaw = JSON.parse(
+        fs.readFileSync(path.join(tempDir, "config.json"), "utf-8")
+      ) as Record<string, unknown>;
+      // System project should be stripped despite trailing slash mismatch
+      const savedProjects = savedRaw.projects as Array<[string, unknown]> | undefined;
+      if (savedProjects) {
+        const projectPaths = savedProjects.map(([p]) => p);
+        expect(projectPaths).not.toContain("/sys/project");
+        expect(projectPaths).not.toContain("/sys/project/");
+      }
+    });
+
     it("system object defaults are stripped key-by-key on save", async () => {
       writeSystemConfig({
         featureFlagOverrides: { flagA: "on", flagB: "off" },
