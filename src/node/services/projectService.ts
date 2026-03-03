@@ -4,7 +4,7 @@ import { DEFAULT_SECTION_COLOR } from "@/common/constants/ui";
 import { sortSectionsByLinkedList } from "@/common/utils/sections";
 import { formatSshEndpoint } from "@/common/utils/ssh/formatSshEndpoint";
 import { spawn } from "child_process";
-import { randomBytes } from "crypto";
+import { createHash, randomBytes } from "crypto";
 import { validateProjectPath, isGitRepository } from "@/node/utils/pathUtils";
 import { listLocalBranches, detectDefaultTrunkBranch } from "@/node/git";
 import type { Result } from "@/common/types/result";
@@ -114,13 +114,37 @@ function resolveProjectParentDir(
   return resolvePathWithTilde(trimmedParentDir);
 }
 
-// Strip filesystem-unsafe characters (including control chars U+0000–U+001F)
+// Windows device names are invalid as path segments (CON/PRN/AUX/NUL/COM1.../LPT9)
+// even when used as a directory name.
+const WINDOWS_RESERVED_BASENAME_PATTERN = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?=\.|$)/iu;
+
+// Derive a conservative folder name from user-controlled repo input.
+// This path can flow into shell-adjacent commands (for example when opening
+// native terminals), so we only keep letters/digits/combining marks plus . _ -.
 function sanitizeRepoFolderName(name: string): string {
-  const unsafeCharsPattern = /[<>:"/\\|?*]/g;
-  return name
-    .replace(unsafeCharsPattern, "-")
-    .replace(/^[.\s]+/, "")
-    .replace(/[.\s]+$/, "");
+  const sanitized = name
+    .normalize("NFKC")
+    .replace(/[^\p{L}\p{M}\p{N}._-]+/gu, "-")
+    .replace(/-+/g, "-")
+    .replace(/^[.\s-]+/u, "")
+    .replace(/[.\s-]+$/u, "");
+
+  if (!sanitized) {
+    return "";
+  }
+
+  const reservedStemMatch = WINDOWS_RESERVED_BASENAME_PATTERN.exec(sanitized);
+  if (reservedStemMatch) {
+    const stemLength = reservedStemMatch[1]?.length ?? 0;
+    return `${sanitized.slice(0, stemLength)}-repo${sanitized.slice(stemLength)}`;
+  }
+
+  return sanitized;
+}
+
+function deriveFallbackRepoFolderName(repoSeed: string): string {
+  const digest = createHash("sha256").update(repoSeed).digest("hex").slice(0, 10);
+  return `repo-${digest}`;
 }
 
 function deriveRepoFolderName(repoUrl: string): string {
@@ -152,8 +176,10 @@ function deriveRepoFolderName(repoUrl: string): string {
   const repoName = path.posix.basename(normalizedCandidatePath).replace(/\.git$/i, "");
   const safeFolderName = sanitizeRepoFolderName(repoName);
 
+  // Keep clone flow resilient even when the repo basename contains only symbols/emojis.
+  // A deterministic fallback avoids user-visible hard failures while staying shell-safe.
   if (!safeFolderName) {
-    throw new Error("Could not determine destination folder name from repository URL");
+    return deriveFallbackRepoFolderName(trimmedRepoUrl);
   }
 
   return safeFolderName;
