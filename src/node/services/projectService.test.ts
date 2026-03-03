@@ -1723,9 +1723,9 @@ exit 1
 
       let removeCallCount = 0;
       service.setWorkspaceService({
-        remove: async () => {
+        remove: () => {
           removeCallCount += 1;
-          return Ok(undefined);
+          return Promise.resolve(Ok(undefined));
         },
       });
 

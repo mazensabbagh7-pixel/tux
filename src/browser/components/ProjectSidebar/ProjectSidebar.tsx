@@ -798,11 +798,14 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
       let message: string;
       if (error.type === "workspace_blockers") {
         const parts: string[] = [];
-        if ((error.activeCount ?? 0) > 0) {
-          parts.push(`${error.activeCount} active`);
+        const activeCount = error.activeCount ?? 0;
+        const archivedCount = error.archivedCount ?? 0;
+
+        if (activeCount > 0) {
+          parts.push(`${activeCount} active`);
         }
-        if ((error.archivedCount ?? 0) > 0) {
-          parts.push(`${error.archivedCount} archived`);
+        if (archivedCount > 0) {
+          parts.push(`${archivedCount} archived`);
         }
         message = `Has ${parts.join(" and ")} workspace(s)`;
       } else if (error.type === "project_not_found") {

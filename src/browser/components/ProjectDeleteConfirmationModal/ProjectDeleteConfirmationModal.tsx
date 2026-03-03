@@ -65,7 +65,7 @@ export function ProjectDeleteConfirmationModal(props: ProjectDeleteConfirmationM
         }}
       >
         <DialogHeader>
-          <DialogTitle>Delete "{props.projectName}"?</DialogTitle>
+          <DialogTitle>Delete &ldquo;{props.projectName}&rdquo;?</DialogTitle>
         </DialogHeader>
 
         <WarningBox>
@@ -94,7 +94,7 @@ export function ProjectDeleteConfirmationModal(props: ProjectDeleteConfirmationM
                 }
 
                 event.preventDefault();
-                handleConfirm();
+                void handleConfirm();
               }
             }}
             placeholder={`Type "${props.projectName}" to confirm`}
@@ -109,7 +109,9 @@ export function ProjectDeleteConfirmationModal(props: ProjectDeleteConfirmationM
           </Button>
           <Button
             variant="destructive"
-            onClick={handleConfirm}
+            onClick={() => {
+              void handleConfirm();
+            }}
             disabled={!confirmationMatches || isConfirming}
           >
             {isConfirming ? "Deleting..." : "Delete Project"}

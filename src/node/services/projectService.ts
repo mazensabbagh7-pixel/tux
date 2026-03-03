@@ -92,9 +92,9 @@ export type CloneEvent =
 
 type ProjectRemoveError = z.infer<typeof ProjectRemoveErrorSchema>;
 
-type WorkspaceRemover = {
+interface WorkspaceRemover {
   remove(workspaceId: string, force?: boolean): Promise<Result<void>>;
-};
+}
 
 function isTildePrefixedPath(value: string): boolean {
   return value === "~" || value.startsWith("~/") || value.startsWith("~\\");
