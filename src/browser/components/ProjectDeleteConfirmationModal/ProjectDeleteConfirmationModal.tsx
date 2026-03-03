@@ -14,12 +14,22 @@ import { Button } from "@/browser/components/Button/Button";
 export interface ProjectDeleteConfirmationModalProps {
   isOpen: boolean;
   projectName: string;
+  activeCount: number;
   archivedCount: number;
   onConfirm: () => void | Promise<void>;
   onCancel: () => void;
 }
 
-export function ProjectDeleteConfirmationModal(props: ProjectDeleteConfirmationModalProps) {
+type ProjectDeleteConfirmationModalComponentProps = Omit<
+  ProjectDeleteConfirmationModalProps,
+  "activeCount"
+> & {
+  activeCount?: number;
+};
+
+export function ProjectDeleteConfirmationModal(
+  props: ProjectDeleteConfirmationModalComponentProps
+) {
   const [typedProjectName, setTypedProjectName] = useState("");
   const [isConfirming, setIsConfirming] = useState(false);
   const confirmationInputId = useId();
@@ -33,6 +43,11 @@ export function ProjectDeleteConfirmationModal(props: ProjectDeleteConfirmationM
   }, [props.isOpen]);
 
   const confirmationMatches = typedProjectName === props.projectName;
+  // Keep old call sites working while project deletion is rolled out to all workspaces.
+  const activeCount = props.activeCount ?? 0;
+  const totalCount = activeCount + props.archivedCount;
+  const hasActive = activeCount > 0;
+  const hasArchived = props.archivedCount > 0;
 
   const handleConfirm = async () => {
     if (!confirmationMatches || isConfirming) {
@@ -71,7 +86,11 @@ export function ProjectDeleteConfirmationModal(props: ProjectDeleteConfirmationM
         <WarningBox>
           <WarningTitle>Warning</WarningTitle>
           <WarningText>
-            This will permanently delete {props.archivedCount} archived workspace(s).
+            This will permanently delete {totalCount} workspace{totalCount !== 1 ? "s" : ""}
+            {hasActive &&
+              hasArchived &&
+              ` (${activeCount} active, ${props.archivedCount} archived)`}
+            . All chat transcripts and worktrees will be lost.
           </WarningText>
         </WarningBox>
 

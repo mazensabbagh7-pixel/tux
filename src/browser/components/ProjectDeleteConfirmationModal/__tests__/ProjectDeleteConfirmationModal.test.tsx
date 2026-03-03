@@ -43,6 +43,7 @@ type ModalProps = ComponentProps<typeof ProjectDeleteConfirmationModal>;
 const DEFAULT_PROPS: ModalProps = {
   isOpen: true,
   projectName: "test-project",
+  activeCount: 0,
   archivedCount: 2,
   onConfirm: () => undefined,
   onCancel: () => undefined,
@@ -71,10 +72,34 @@ describe("ProjectDeleteConfirmationModal", () => {
     cleanupDom = null;
   });
 
-  it("renders archived workspace count in warning text", () => {
-    const { getByText } = renderModal({ archivedCount: 7 });
+  it("shows both active and archived counts when both present", () => {
+    const { getByText } = renderModal({ activeCount: 3, archivedCount: 2 });
 
-    expect(getByText("This will permanently delete 7 archived workspace(s).")).not.toBeNull();
+    expect(getByText(/5 workspaces/)).not.toBeNull();
+    expect(getByText(/\(3 active, 2 archived\)/)).not.toBeNull();
+    expect(getByText(/chat transcripts and worktrees will be lost/)).not.toBeNull();
+  });
+
+  it("shows data loss warning", () => {
+    const { getByText } = renderModal({ activeCount: 0, archivedCount: 1 });
+
+    expect(getByText(/chat transcripts and worktrees will be lost/)).not.toBeNull();
+  });
+
+  it("shows only total count when only active workspaces", () => {
+    const { getByText, queryByText } = renderModal({ activeCount: 2, archivedCount: 0 });
+
+    expect(getByText(/2 workspaces/)).not.toBeNull();
+    expect(queryByText(/active/)).toBeNull();
+    expect(queryByText(/archived/)).toBeNull();
+  });
+
+  it("shows only total count when only archived workspaces", () => {
+    const { getByText, queryByText } = renderModal({ activeCount: 0, archivedCount: 3 });
+
+    expect(getByText(/3 workspaces/)).not.toBeNull();
+    expect(queryByText(/active/)).toBeNull();
+    expect(queryByText(/archived/)).toBeNull();
   });
 
   it("keeps confirm button disabled until project name is typed exactly", async () => {
@@ -161,6 +186,7 @@ describe("ProjectDeleteConfirmationModal", () => {
       <ProjectDeleteConfirmationModal
         isOpen={true}
         projectName="alpha"
+        activeCount={0}
         archivedCount={1}
         onConfirm={onConfirm}
         onCancel={onCancel}
@@ -175,6 +201,7 @@ describe("ProjectDeleteConfirmationModal", () => {
       <ProjectDeleteConfirmationModal
         isOpen={false}
         projectName="alpha"
+        activeCount={0}
         archivedCount={1}
         onConfirm={onConfirm}
         onCancel={onCancel}
@@ -185,6 +212,7 @@ describe("ProjectDeleteConfirmationModal", () => {
       <ProjectDeleteConfirmationModal
         isOpen={true}
         projectName="alpha"
+        activeCount={0}
         archivedCount={1}
         onConfirm={onConfirm}
         onCancel={onCancel}
