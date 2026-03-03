@@ -4,6 +4,7 @@ import * as path from "path";
 import * as os from "os";
 import { execSync } from "child_process";
 import { Config } from "@/node/config";
+import { Ok } from "@/common/types/result";
 import type { SshPromptRequest } from "@/common/orpc/schemas/ssh";
 import { SshPromptService } from "@/node/services/sshPromptService";
 import { ProjectService, type CloneEvent } from "./projectService";
@@ -1629,6 +1630,116 @@ exit 1
       expect(result.success).toBe(false);
       if (result.success) throw new Error("Expected failure");
       expect(result.error.type).toBe("project_not_found");
+    });
+
+    it("with deleteArchived=true cascade-deletes archived workspaces then removes project", async () => {
+      const archivedWorkspaceDirOne = path.join(tempDir, "archived-workspace-one");
+      const archivedWorkspaceDirTwo = path.join(tempDir, "archived-workspace-two");
+      await fs.mkdir(archivedWorkspaceDirOne, { recursive: true });
+      await fs.mkdir(archivedWorkspaceDirTwo, { recursive: true });
+
+      const archivedAt = new Date("2026-01-01T00:00:00.000Z").toISOString();
+      const projectPath = "/fake/project";
+      const cfg = config.loadConfigOrDefault();
+      cfg.projects.set(projectPath, {
+        workspaces: [
+          { id: "archived-workspace-1", path: archivedWorkspaceDirOne, archivedAt },
+          { id: "archived-workspace-2", path: archivedWorkspaceDirTwo, archivedAt },
+        ],
+      });
+      await config.saveConfig(cfg);
+
+      const removedWorkspaceIds: string[] = [];
+      service.setWorkspaceService({
+        remove: async (workspaceId) => {
+          removedWorkspaceIds.push(workspaceId);
+          await config.removeWorkspace(workspaceId);
+          return Ok(undefined);
+        },
+      });
+
+      const result = await service.remove(projectPath, true);
+
+      expect(result.success).toBe(true);
+      expect(removedWorkspaceIds.sort()).toEqual(["archived-workspace-1", "archived-workspace-2"]);
+
+      const after = config.loadConfigOrDefault();
+      expect(after.projects.has(projectPath)).toBe(false);
+    });
+
+    it("with deleteArchived=true still blocks if active workspaces remain", async () => {
+      const activeWorkspaceDir = path.join(tempDir, "active-workspace");
+      const archivedWorkspaceDir = path.join(tempDir, "archived-workspace");
+      await fs.mkdir(activeWorkspaceDir, { recursive: true });
+      await fs.mkdir(archivedWorkspaceDir, { recursive: true });
+
+      const archivedAt = new Date("2026-01-01T00:00:00.000Z").toISOString();
+      const projectPath = "/fake/project";
+      const cfg = config.loadConfigOrDefault();
+      cfg.projects.set(projectPath, {
+        workspaces: [
+          { id: "active-workspace-1", path: activeWorkspaceDir },
+          { id: "archived-workspace-1", path: archivedWorkspaceDir, archivedAt },
+        ],
+      });
+      await config.saveConfig(cfg);
+
+      service.setWorkspaceService({
+        remove: async (workspaceId) => {
+          await config.removeWorkspace(workspaceId);
+          return Ok(undefined);
+        },
+      });
+
+      const result = await service.remove(projectPath, true);
+
+      expect(result.success).toBe(false);
+      if (result.success) throw new Error("Expected failure");
+      expect(result.error.type).toBe("workspace_blockers");
+      if (result.error.type !== "workspace_blockers") {
+        throw new Error("Expected workspace blockers error");
+      }
+      expect(result.error.activeCount).toBe(1);
+      expect(result.error.archivedCount).toBe(0);
+
+      const after = config.loadConfigOrDefault();
+      const project = after.projects.get(projectPath);
+      expect(project).toBeDefined();
+      expect(project?.workspaces).toHaveLength(1);
+      expect(project?.workspaces[0]?.id).toBe("active-workspace-1");
+    });
+
+    it("with deleteArchived=false (default) still returns workspace_blockers when archived exist", async () => {
+      const archivedWorkspaceDir = path.join(tempDir, "default-delete-archived-flag-test");
+      await fs.mkdir(archivedWorkspaceDir, { recursive: true });
+
+      const archivedAt = new Date("2026-01-01T00:00:00.000Z").toISOString();
+      const projectPath = "/fake/project";
+      const cfg = config.loadConfigOrDefault();
+      cfg.projects.set(projectPath, {
+        workspaces: [{ id: "archived-workspace-1", path: archivedWorkspaceDir, archivedAt }],
+      });
+      await config.saveConfig(cfg);
+
+      let removeCallCount = 0;
+      service.setWorkspaceService({
+        remove: async () => {
+          removeCallCount += 1;
+          return Ok(undefined);
+        },
+      });
+
+      const result = await service.remove(projectPath);
+
+      expect(result.success).toBe(false);
+      if (result.success) throw new Error("Expected failure");
+      expect(result.error.type).toBe("workspace_blockers");
+      if (result.error.type !== "workspace_blockers") {
+        throw new Error("Expected workspace blockers error");
+      }
+      expect(result.error.activeCount).toBe(0);
+      expect(result.error.archivedCount).toBe(1);
+      expect(removeCallCount).toBe(0);
     });
 
     it("blocks removal when workspaces still exist on disk", async () => {
