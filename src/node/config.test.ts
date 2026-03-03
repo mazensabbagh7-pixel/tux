@@ -513,8 +513,27 @@ describe("Config", () => {
       expect(config.systemConfigWarnings[0]).toContain(systemConfigPath);
     });
 
+    it("non-object JSON system config logs warning and falls back", () => {
+      const systemConfigPath = path.join(tempDir, "config.system.json");
+      fs.writeFileSync(systemConfigPath, JSON.stringify([1, 2, 3]));
+      writeUserConfig({
+        projects: [],
+        defaultModel: "openai:gpt-4o-mini",
+      });
+
+      const loaded = config.loadConfigOrDefault();
+
+      expect(loaded.defaultModel).toBe("openai:gpt-4o-mini");
+      expect(config.systemConfigWarnings).toHaveLength(1);
+      expect(config.systemConfigWarnings[0]).toContain("not a JSON object");
+    });
+
     it("permission-denied system config logs warning and falls back", () => {
       if (process.platform === "win32") {
+        return;
+      }
+      // Root bypasses file permissions, so chmod(000) may not trigger EACCES.
+      if (process.getuid?.() === 0) {
         return;
       }
 
@@ -570,7 +589,7 @@ describe("Config", () => {
 
       const loaded = config.loadConfigOrDefault();
 
-      expect(loaded.projects).toHaveLength(3);
+      expect(loaded.projects.size).toBe(3);
       expect(loaded.projects.get("/sys/proj")).toEqual({
         workspaces: [{ path: "/user/override" }],
         trusted: true,

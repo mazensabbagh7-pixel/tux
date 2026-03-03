@@ -270,6 +270,8 @@ export class Config {
    * and stored in systemConfigWarnings. Missing file is the normal case.
    */
   private loadSystemConfig(): Partial<AppConfigOnDisk> | undefined {
+    this.systemConfigWarnings.length = 0;
+
     try {
       if (!fs.existsSync(this.systemConfigFile)) {
         return undefined;
