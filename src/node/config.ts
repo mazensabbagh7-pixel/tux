@@ -309,6 +309,18 @@ export class Config {
     return JSON.parse(data) as Partial<AppConfigOnDisk>;
   }
 
+  /**
+   * Merge system config (admin baseline) with user config (overrides).
+   * User values win for all present keys; absent user keys fall through to system.
+   *
+   * LIMITATION: Settings that use sparse storage (e.g., stopCoderWorkspaceOnArchive
+   * stores only `false`, runtimeEnablement stores only disabled entries) cannot be
+   * "reset to default" by users when system config provides a non-default value,
+   * because the user's default serializes as omission and the system value fills in.
+   * This is an inherent tension in the sparse storage pattern — a dedicated follow-up
+   * can address it by explicitly persisting defaults for sparse fields when they
+   * differ from the system baseline.
+   */
   private mergeSystemAndUserConfig(
     system: Partial<AppConfigOnDisk>,
     user: Partial<AppConfigOnDisk>
@@ -318,6 +330,9 @@ export class Config {
     const systemRecord = system as Record<string, unknown>;
 
     for (const [key, userVal] of Object.entries(user as Record<string, unknown>)) {
+      // Skip undefined user values — system defaults fill in.
+      // NOTE: This means sparse settings that serialize "default" as omission
+      // cannot override a non-default system value. See method doc for details.
       if (userVal === undefined) continue;
 
       const systemVal = systemRecord[key];
