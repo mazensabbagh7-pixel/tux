@@ -492,7 +492,9 @@ describe("Config", () => {
       // Save — should NOT write system defaults to user config
       await config.saveConfig(loaded);
 
-      const savedRaw = JSON.parse(fs.readFileSync(path.join(tempDir, "config.json"), "utf-8"));
+      const savedRaw = JSON.parse(
+        fs.readFileSync(path.join(tempDir, "config.json"), "utf-8")
+      ) as Record<string, unknown>;
       expect(savedRaw.defaultModel).toBeUndefined();
       expect(savedRaw.featureFlagOverrides).toBeUndefined();
       // User project should still be there
@@ -514,7 +516,9 @@ describe("Config", () => {
 
       await config.saveConfig(loaded);
 
-      const savedRaw = JSON.parse(fs.readFileSync(path.join(tempDir, "config.json"), "utf-8"));
+      const savedRaw = JSON.parse(
+        fs.readFileSync(path.join(tempDir, "config.json"), "utf-8")
+      ) as Record<string, unknown>;
       expect(savedRaw.defaultModel).toBe("anthropic:claude-sonnet-4-20250514");
     });
 
