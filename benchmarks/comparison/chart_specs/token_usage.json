@@ -1,0 +1,27 @@
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "title": "Token Usage by Agent (Input vs Output)",
+  "width": 500,
+  "height": 300,
+  "data": {
+    "values": []
+  },
+  "mark": "bar",
+  "encoding": {
+    "x": {
+      "field": "agent",
+      "type": "nominal",
+      "title": "Agent"
+    },
+    "y": {
+      "field": "tokens",
+      "type": "quantitative",
+      "title": "Tokens"
+    },
+    "color": {
+      "field": "token_type",
+      "type": "nominal",
+      "title": "Token Type"
+    }
+  }
+}

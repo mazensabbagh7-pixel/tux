@@ -230,6 +230,8 @@
     "ts-jest": "^29.4.4",
     "tsc-alias": "^1.8.16",
     "typescript-eslint": "^8.45.0",
+    "vega": "^6.2.0",
+    "vega-lite": "^6.4.2",
     "vite": "^7.1.11",
     "vite-plugin-svgr": "^4.5.0",
     "vite-plugin-top-level-await": "^1.6.0"

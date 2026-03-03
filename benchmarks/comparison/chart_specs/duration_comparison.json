@@ -1,0 +1,27 @@
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "title": "Average Duration by Agent",
+  "width": 500,
+  "height": 300,
+  "data": {
+    "values": []
+  },
+  "mark": "bar",
+  "encoding": {
+    "x": {
+      "field": "agent",
+      "type": "nominal",
+      "title": "Agent"
+    },
+    "y": {
+      "field": "avg_duration_sec",
+      "type": "quantitative",
+      "title": "Average Duration (sec)"
+    },
+    "color": {
+      "field": "agent",
+      "type": "nominal",
+      "legend": null
+    }
+  }
+}

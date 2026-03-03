@@ -1,0 +1,33 @@
+{
+  "$schema": "https://vega.github.io/schema/vega-lite/v5.json",
+  "title": "Pass Rate by Agent",
+  "width": 500,
+  "height": 300,
+  "data": {
+    "values": []
+  },
+  "mark": "bar",
+  "encoding": {
+    "x": {
+      "field": "agent",
+      "type": "nominal",
+      "title": "Agent"
+    },
+    "y": {
+      "field": "pass_rate",
+      "type": "quantitative",
+      "title": "Pass Rate (%)",
+      "scale": {
+        "domain": [
+          0,
+          100
+        ]
+      }
+    },
+    "color": {
+      "field": "agent",
+      "type": "nominal",
+      "legend": null
+    }
+  }
+}
