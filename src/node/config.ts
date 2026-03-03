@@ -394,6 +394,7 @@ export class Config {
         dataVal != null &&
         typeof dataVal === "object" &&
         !Array.isArray(dataVal) &&
+        sysVal != null &&
         typeof sysVal === "object" &&
         !Array.isArray(sysVal)
       ) {

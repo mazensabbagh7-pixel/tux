@@ -537,6 +537,26 @@ describe("Config", () => {
       expect(savedRaw.featureFlagOverrides).toEqual({ flagC: "on" });
     });
 
+    it("null system config values do not crash save", async () => {
+      writeSystemConfig({
+        featureFlagOverrides: null as unknown as Record<string, unknown>,
+        projects: [],
+      });
+      writeUserConfig({
+        projects: [],
+        featureFlagOverrides: { flagA: "on" },
+      });
+
+      const loaded = config.loadConfigOrDefault();
+      // Should not throw
+      await config.saveConfig(loaded);
+
+      const savedRaw = JSON.parse(
+        fs.readFileSync(path.join(tempDir, "config.json"), "utf-8")
+      ) as Record<string, unknown>;
+      expect(savedRaw.featureFlagOverrides).toEqual({ flagA: "on" });
+    });
+
     it("legacy subagentAiDefaults preserved when system provides agentAiDefaults", () => {
       writeSystemConfig({
         agentAiDefaults: {
