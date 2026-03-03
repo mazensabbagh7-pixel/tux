@@ -856,9 +856,29 @@ export class ProjectService {
         const archivedWorkspaces = projectConfig.workspaces.filter((workspace) =>
           isWorkspaceArchived(workspace.archivedAt, workspace.unarchivedAt)
         );
+        const archivedWorkspaceIdsByPath = new Map<string, string>();
+
+        if (archivedWorkspaces.some((workspace) => !workspace.id)) {
+          const allWorkspaceMetadata = await this.config.getAllWorkspaceMetadata();
+          for (const metadata of allWorkspaceMetadata) {
+            if (metadata.projectPath !== projectPath) {
+              continue;
+            }
+            archivedWorkspaceIdsByPath.set(metadata.namedWorkspacePath, metadata.id);
+          }
+        }
 
         for (const workspace of archivedWorkspaces) {
-          const workspaceId = workspace.id ?? workspace.path;
+          // Legacy workspace entries can be archived without an `id`. Resolve through metadata so
+          // WorkspaceService.remove() receives the canonical workspace ID (it cannot remove by path).
+          const workspaceId = workspace.id ?? archivedWorkspaceIdsByPath.get(workspace.path);
+          if (!workspaceId) {
+            return Err({
+              type: "unknown" as const,
+              message: `Failed to remove project: Failed to resolve archived workspace ID for ${workspace.path}`,
+            });
+          }
+
           const removeResult = await this.workspaceService.remove(workspaceId, true);
           if (!removeResult.success) {
             return Err({

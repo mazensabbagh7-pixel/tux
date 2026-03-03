@@ -1667,6 +1667,46 @@ exit 1
       expect(after.projects.has(projectPath)).toBe(false);
     });
 
+    it("with deleteArchived=true resolves metadata IDs for archived workspaces missing config IDs", async () => {
+      const archivedWorkspaceDir = path.join(tempDir, "legacy-archived-workspace");
+      await fs.mkdir(archivedWorkspaceDir, { recursive: true });
+
+      const archivedAt = new Date("2026-01-01T00:00:00.000Z").toISOString();
+      const projectPath = "/fake/project";
+      const migratedWorkspaceId = "migrated-archived-workspace-id";
+      const cfg = config.loadConfigOrDefault();
+      cfg.projects.set(projectPath, {
+        workspaces: [{ path: archivedWorkspaceDir, archivedAt }],
+      });
+      await config.saveConfig(cfg);
+
+      const legacyWorkspaceId = config.generateLegacyId(projectPath, archivedWorkspaceDir);
+      const metadataPath = path.join(config.getSessionDir(legacyWorkspaceId), "metadata.json");
+      await fs.mkdir(path.dirname(metadataPath), { recursive: true });
+      await fs.writeFile(
+        metadataPath,
+        JSON.stringify({ id: migratedWorkspaceId, name: "legacy-archived-workspace" }),
+        "utf-8"
+      );
+
+      const removedWorkspaceIds: string[] = [];
+      service.setWorkspaceService({
+        remove: async (workspaceId) => {
+          removedWorkspaceIds.push(workspaceId);
+          await config.removeWorkspace(workspaceId);
+          return Ok(undefined);
+        },
+      });
+
+      const result = await service.remove(projectPath, true);
+
+      expect(result.success).toBe(true);
+      expect(removedWorkspaceIds).toEqual([migratedWorkspaceId]);
+
+      const after = config.loadConfigOrDefault();
+      expect(after.projects.has(projectPath)).toBe(false);
+    });
+
     it("with deleteArchived=true still blocks if active workspaces remain", async () => {
       const activeWorkspaceDir = path.join(tempDir, "active-workspace");
       const archivedWorkspaceDir = path.join(tempDir, "archived-workspace");
