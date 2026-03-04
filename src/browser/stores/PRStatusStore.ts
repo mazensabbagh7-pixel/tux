@@ -159,8 +159,11 @@ export class PRStatusStore {
   private workspacePRSubscriptions = new MapStore<string, WorkspacePRCacheEntry>();
   private workspacePRCache = new Map<string, WorkspacePRCacheEntry>();
 
-  // Tracks which workspaces have already had at least one section evaluation payload emitted.
-  private workspaceSectionEvaluated = new Set<string>();
+  // Tracks in-flight section evaluation IPC calls keyed by workspace to avoid duplicate requests.
+  private pendingPRState = new Map<string, string | undefined>();
+  // Tracks the last PR state payload that successfully reached section evaluation IPC.
+  // Failed IPC calls leave this unchanged so we can retry on subsequent polls.
+  private lastEvaluatedPRState = new Map<string, string | undefined>();
 
   // Track active subscriptions per workspace so we only refresh workspaces that are actually visible.
   private workspaceSubscriptionCounts = new Map<string, number>();
@@ -267,6 +270,18 @@ export class PRStatusStore {
     return undefined;
   }
 
+  private getSectionEvaluationPRStateKey(status: GitHubPRStatus | undefined): string {
+    const state = status?.state ?? "none";
+    const mergeStatus = status?.mergeStateStatus ?? "none";
+    const isDraft = status?.isDraft == null ? "unknown" : status.isDraft ? "true" : "false";
+    const hasFailedChecks =
+      status?.hasFailedChecks == null ? "unknown" : status.hasFailedChecks ? "true" : "false";
+    const hasPendingChecks =
+      status?.hasPendingChecks == null ? "unknown" : status.hasPendingChecks ? "true" : "false";
+
+    return `${state}:${mergeStatus}:${isDraft}:${hasFailedChecks}:${hasPendingChecks}`;
+  }
+
   private maybeReevaluateWorkspaceSection(
     workspaceId: string,
     previousStatus: GitHubPRStatus | undefined,
@@ -277,40 +292,45 @@ export class PRStatusStore {
     }
 
     const nextStatus = nextEntry.status;
-    const firstEvaluation = !this.workspaceSectionEvaluated.has(workspaceId);
-    const stateChanged = previousStatus?.state !== nextStatus?.state;
-    const mergeChanged = previousStatus?.mergeStateStatus !== nextStatus?.mergeStateStatus;
-    const draftChanged = previousStatus?.isDraft !== nextStatus?.isDraft;
-    const failedChecksChanged = previousStatus?.hasFailedChecks !== nextStatus?.hasFailedChecks;
-    const pendingChecksChanged = previousStatus?.hasPendingChecks !== nextStatus?.hasPendingChecks;
+    const nextState = nextStatus?.state ?? "none";
+    const nextMergeStatus = nextStatus?.mergeStateStatus;
+    const nextIsDraft = nextStatus?.isDraft;
+    const nextHasFailedChecks = nextStatus?.hasFailedChecks;
+    const nextHasPendingChecks = nextStatus?.hasPendingChecks;
+    const nextStateKey = this.getSectionEvaluationPRStateKey(nextStatus);
 
-    if (
-      !firstEvaluation &&
-      !stateChanged &&
-      !mergeChanged &&
-      !draftChanged &&
-      !failedChecksChanged &&
-      !pendingChecksChanged
-    ) {
+    const previousStateKey = this.getSectionEvaluationPRStateKey(previousStatus);
+
+    const pendingStateKey = this.pendingPRState.get(workspaceId);
+    if (pendingStateKey === nextStateKey && previousStateKey === nextStateKey) {
       return;
     }
+
+    const lastEvaluatedStateKey = this.lastEvaluatedPRState.get(workspaceId);
+    if (lastEvaluatedStateKey === nextStateKey && previousStateKey === nextStateKey) {
+      return;
+    }
+
+    this.pendingPRState.set(workspaceId, nextStateKey);
 
     // Smart Sections Phase 3: trigger backend rule re-evaluation on PR status transitions.
     this.client.projects.sections
       .evaluateWorkspace({
         workspaceId,
-        prState: nextStatus?.state ?? "none",
-        prMergeStatus: nextStatus?.mergeStateStatus,
-        prIsDraft: nextStatus?.isDraft,
-        prHasFailedChecks: nextStatus?.hasFailedChecks,
-        prHasPendingChecks: nextStatus?.hasPendingChecks,
+        prState: nextState,
+        prMergeStatus: nextMergeStatus,
+        prIsDraft: nextIsDraft,
+        prHasFailedChecks: nextHasFailedChecks,
+        prHasPendingChecks: nextHasPendingChecks,
       })
       .then(
         () => {
-          this.workspaceSectionEvaluated.add(workspaceId);
+          this.pendingPRState.delete(workspaceId);
+          this.lastEvaluatedPRState.set(workspaceId, nextStateKey);
         },
         () => {
-          // IPC failure is retried on the next refresh because this workspace stays unevaluated.
+          this.pendingPRState.delete(workspaceId);
+          // IPC failure is retried on the next poll because we only track successful evaluations.
         }
       );
   }
@@ -624,6 +644,8 @@ export class PRStatusStore {
     this.isActive = false;
     this.mergeQueueRefreshPending.clear();
     this.mergeQueueRefreshInFlight.clear();
+    this.pendingPRState.clear();
+    this.lastEvaluatedPRState.clear();
     this.refreshController.dispose();
   }
 }
