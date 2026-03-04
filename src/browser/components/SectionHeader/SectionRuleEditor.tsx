@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Plus, X, Zap } from "lucide-react";
 
 import assert from "@/common/utils/assert";
+import { stopKeyboardPropagation } from "@/browser/utils/events";
 import { RULE_FIELD_KEYS, RULE_FIELD_META } from "@/common/constants/sectionRuleFields";
 import type { SectionRule, SectionRuleCondition } from "@/common/schemas/project";
 
@@ -300,6 +301,8 @@ export function SectionRuleEditor({ rules, onSave, onClose }: SectionRuleEditorP
         return;
       }
 
+      stopKeyboardPropagation(event);
+      event.preventDefault();
       onClose();
     };
 
