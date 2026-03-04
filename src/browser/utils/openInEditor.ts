@@ -1,4 +1,4 @@
-import { readPersistedState } from "@/browser/hooks/usePersistedState";
+import { readPersistedState, updatePersistedState } from "@/browser/hooks/usePersistedState";
 import {
   getEditorDeepLink,
   getDockerDeepLink,
@@ -22,6 +22,8 @@ export interface OpenInEditorResult {
 
 // Browser mode: window.api is not set (only exists in Electron via preload)
 const isBrowserMode = typeof window !== "undefined" && !window.api;
+
+const VS_CODE_EXTENSION_INSTALL_ATTEMPTED_KEY = "vsCodeExtensionInstallAttempted";
 
 // Helper for opening URLs - allows testing in Node environment
 function openUrl(url: string): void {
@@ -97,6 +99,26 @@ export async function openInEditor(args: {
   isFile?: boolean;
 }): Promise<OpenInEditorResult> {
   const editorConfig = readPersistedState<EditorConfig>(EDITOR_CONFIG_KEY, DEFAULT_EDITOR_CONFIG);
+
+  const extensionEditor =
+    editorConfig.editor === "vscode" || editorConfig.editor === "cursor"
+      ? editorConfig.editor
+      : null;
+
+  if (extensionEditor && !readPersistedState(VS_CODE_EXTENSION_INSTALL_ATTEMPTED_KEY, false)) {
+    // Install once in the background so the existing open flow stays non-blocking.
+    args.api?.general
+      .installVsCodeExtension({ editor: extensionEditor })
+      ?.then(
+        () => {
+          updatePersistedState(VS_CODE_EXTENSION_INSTALL_ATTEMPTED_KEY, true);
+        },
+        () => {
+          updatePersistedState(VS_CODE_EXTENSION_INSTALL_ATTEMPTED_KEY, true);
+        }
+      )
+      ?.catch(() => {});
+  }
 
   const isSSH = isSSHRuntime(args.runtimeConfig);
   const isDocker = isDockerRuntime(args.runtimeConfig);
