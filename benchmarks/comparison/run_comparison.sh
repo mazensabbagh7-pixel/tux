@@ -23,6 +23,12 @@ export UV_PYTHON="${UV_PYTHON:-3.12}"
 # Docker containers. Unset it so mux-run.sh resolves from in-container fallback candidates.
 unset MUX_PROJECT_PATH
 
+# Bridge ANTHROPIC_AUTH_TOKEN → ANTHROPIC_API_KEY if the standard key isn't set.
+# Claude Code CLI and Harbor built-in agents expect ANTHROPIC_API_KEY.
+if [[ -z "${ANTHROPIC_API_KEY:-}" && -n "${ANTHROPIC_AUTH_TOKEN:-}" ]]; then
+  export ANTHROPIC_API_KEY="${ANTHROPIC_AUTH_TOKEN}"
+fi
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPORTS_DIR="${SCRIPT_DIR}/reports"
 TIMESTAMP="$(date +"%Y-%m-%d__%H-%M-%S")"
