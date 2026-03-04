@@ -135,6 +135,29 @@ describe("SectionAssignmentService", () => {
     expect(refreshAndEmitMetadataMock).not.toHaveBeenCalled();
   });
 
+  it("clears stale section assignment when no section rules remain", async () => {
+    getInfoMock.mockResolvedValueOnce(makeMetadata({ sectionId: "open-pr" }));
+
+    listSectionsMock.mockReturnValueOnce([
+      {
+        id: "open-pr",
+        name: "Open PR",
+        rules: [],
+      },
+      {
+        id: "dirty",
+        name: "Dirty",
+        rules: [],
+      },
+    ]);
+
+    await service.evaluateWorkspace("ws-1");
+
+    expect(assignWorkspaceToSectionMock).toHaveBeenCalledTimes(1);
+    expect(assignWorkspaceToSectionMock).toHaveBeenCalledWith("/project/demo", "ws-1", null, false);
+    expect(refreshAndEmitMetadataMock).toHaveBeenCalledTimes(1);
+    expect(refreshAndEmitMetadataMock).toHaveBeenCalledWith("ws-1");
+  });
   it("preserves current section when all candidate rules are inconclusive", async () => {
     getInfoMock.mockResolvedValueOnce(makeMetadata({ sectionId: "open-pr" }));
 

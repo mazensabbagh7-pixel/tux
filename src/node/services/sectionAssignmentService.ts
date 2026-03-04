@@ -1,6 +1,5 @@
 import type { SectionRuleCondition } from "@/common/schemas/project";
 import type { StreamEndEvent } from "@/common/types/stream";
-import type { SectionConfig } from "@/common/types/project";
 import assert from "@/common/utils/assert";
 import { evaluateSectionRules, type WorkspaceRuleContext } from "@/common/utils/sectionRules";
 import { sortSectionsByLinkedList } from "@/common/utils/sections";
@@ -43,10 +42,6 @@ function buildAvailableFields(
   }
 
   return availableFields;
-}
-
-function hasRules(sections: SectionConfig[]): boolean {
-  return sections.some((section) => (section.rules?.length ?? 0) > 0);
 }
 
 export interface FrontendProvidedContext {
@@ -123,9 +118,6 @@ export class SectionAssignmentService {
 
     const projectPath = metadata.projectPath;
     const sortedSections = sortSectionsByLinkedList(this.projectService.listSections(projectPath));
-    if (!hasRules(sortedSections)) {
-      return;
-    }
 
     const activityByWorkspace = await this.workspaceService.getActivityList();
     const activity = activityByWorkspace[workspaceId];

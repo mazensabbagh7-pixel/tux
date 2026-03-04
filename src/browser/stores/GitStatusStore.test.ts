@@ -503,6 +503,89 @@ describe("GitStatusStore", () => {
     tryFetchSpy.mockRestore();
   });
 
+  test("retries section reevaluation when prior git-dirty IPC evaluation fails", async () => {
+    const metadata = {
+      id: "ws1",
+      name: "main",
+      projectName: "test-project",
+      projectPath: "/path",
+      namedWorkspacePath: "/path",
+      runtimeConfig: DEFAULT_RUNTIME_CONFIG,
+    };
+
+    const requestImmediateSpy = jest
+      .spyOn(
+        (
+          store as unknown as {
+            refreshController: {
+              requestImmediate: () => void;
+            };
+          }
+        ).refreshController,
+        "requestImmediate"
+      )
+      .mockImplementation(() => undefined);
+    const tryFetchSpy = jest
+      .spyOn(
+        store as unknown as {
+          tryFetchWorkspaces: (workspaces: Map<string, FrontendWorkspaceMetadata>) => void;
+        },
+        "tryFetchWorkspaces"
+      )
+      .mockImplementation(() => undefined);
+
+    store.syncWorkspaces(new Map([["ws1", metadata]]));
+
+    const unsubscribe = store.subscribeKey("ws1", jest.fn());
+
+    mockExecuteBash
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          success: true,
+          output: makeGitStatusOutput(1),
+          exitCode: 0,
+          wall_duration_ms: 0,
+        },
+      } as Result<BashToolResult, string>)
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          success: true,
+          output: makeGitStatusOutput(1),
+          exitCode: 0,
+          wall_duration_ms: 0,
+        },
+      } as Result<BashToolResult, string>);
+
+    mockEvaluateWorkspace.mockReset();
+    mockEvaluateWorkspace
+      .mockRejectedValueOnce(new Error("IPC failed"))
+      .mockResolvedValueOnce(undefined);
+
+    // @ts-expect-error - Accessing private method for testing
+    await store.updateGitStatus();
+    await Promise.resolve();
+    await Promise.resolve();
+    // @ts-expect-error - Accessing private method for testing
+    await store.updateGitStatus();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(mockEvaluateWorkspace).toHaveBeenCalledTimes(2);
+    expect(mockEvaluateWorkspace).toHaveBeenNthCalledWith(1, {
+      workspaceId: "ws1",
+      gitDirty: true,
+    });
+    expect(mockEvaluateWorkspace).toHaveBeenNthCalledWith(2, {
+      workspaceId: "ws1",
+      gitDirty: true,
+    });
+
+    unsubscribe();
+    requestImmediateSpy.mockRestore();
+    tryFetchSpy.mockRestore();
+  });
   test("skips polling when no subscribers", async () => {
     const metadata = {
       id: "ws1",

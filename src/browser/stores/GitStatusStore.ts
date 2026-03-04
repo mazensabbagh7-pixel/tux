@@ -183,6 +183,11 @@ export class GitStatusStore {
   // Incremented on invalidate; status updates check generation to avoid race conditions.
   private invalidationGeneration = new Map<string, number>();
 
+  // Tracks in-flight section evaluation IPC calls keyed by workspace to avoid duplicate requests.
+  private pendingEvaluatedDirty = new Map<string, boolean>();
+  // Tracks the last git dirty value that successfully reached section evaluation IPC.
+  // Failed IPC calls leave this unchanged so we can retry on subsequent polls.
+  private lastEvaluatedDirty = new Map<string, boolean>();
   /**
    * Sync workspaces with metadata.
    * Called when workspace list changes.
@@ -202,6 +207,8 @@ export class GitStatusStore {
       if (!metadata.has(id)) {
         this.statusCache.delete(id);
         this.invalidationGeneration.delete(id);
+        this.pendingEvaluatedDirty.delete(id);
+        this.lastEvaluatedDirty.delete(id);
         this.statuses.delete(id); // Also clean up reactive state
       }
     }
@@ -273,6 +280,10 @@ export class GitStatusStore {
 
       const oldStatus = this.statusCache.get(workspaceId) ?? null;
 
+      if (newStatus !== null) {
+        this.maybeReevaluateWorkspaceSection(workspaceId, oldStatus, newStatus);
+      }
+
       // Check if status actually changed (cheap for simple objects)
       if (!this.areStatusesEqual(oldStatus, newStatus)) {
         // Only update cache on successful status check (preserve old status on failure)
@@ -280,7 +291,6 @@ export class GitStatusStore {
         if (newStatus !== null) {
           this.statusCache.set(workspaceId, newStatus);
           this.statuses.bump(workspaceId); // Invalidate cache + notify
-          this.maybeReevaluateWorkspaceSection(workspaceId, oldStatus, newStatus);
         }
         // On failure (newStatus === null): keep old status, don't bump (no re-render)
       }
@@ -316,15 +326,34 @@ export class GitStatusStore {
       return;
     }
 
-    if (previousStatus?.dirty === nextStatus.dirty) {
+    const pendingDirty = this.pendingEvaluatedDirty.get(workspaceId);
+    if (pendingDirty === nextStatus.dirty && previousStatus?.dirty === nextStatus.dirty) {
       return;
     }
 
+    const lastEvaluatedDirty = this.lastEvaluatedDirty.get(workspaceId);
+    if (lastEvaluatedDirty === nextStatus.dirty && previousStatus?.dirty === nextStatus.dirty) {
+      return;
+    }
+
+    this.pendingEvaluatedDirty.set(workspaceId, nextStatus.dirty);
+
     // Smart Sections: when git dirty state changes, provide fresh frontend context for gitDirty rules.
-    void this.client.projects.sections.evaluateWorkspace({
-      workspaceId,
-      gitDirty: nextStatus.dirty,
-    });
+    this.client.projects.sections
+      .evaluateWorkspace({
+        workspaceId,
+        gitDirty: nextStatus.dirty,
+      })
+      .then(
+        () => {
+          this.pendingEvaluatedDirty.delete(workspaceId);
+          this.lastEvaluatedDirty.set(workspaceId, nextStatus.dirty);
+        },
+        () => {
+          this.pendingEvaluatedDirty.delete(workspaceId);
+          // IPC failure is retried on the next poll because we only track successful evaluations.
+        }
+      );
   }
 
   /**
@@ -553,6 +582,8 @@ export class GitStatusStore {
     this.refreshingWorkspaces.clear();
     this.refreshingWorkspacesCache.clear();
     this.fetchCache.clear();
+    this.pendingEvaluatedDirty.clear();
+    this.lastEvaluatedDirty.clear();
     this.fileModifyUnsubscribe?.();
     this.fileModifyUnsubscribe = null;
     this.refreshController.dispose();
