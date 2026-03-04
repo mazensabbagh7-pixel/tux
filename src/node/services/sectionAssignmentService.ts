@@ -1,5 +1,6 @@
 import type { SectionRuleCondition } from "@/common/schemas/project";
 import type { StreamEndEvent } from "@/common/types/stream";
+import type { WorkspaceMetadata } from "@/common/types/workspace";
 import assert from "@/common/utils/assert";
 import { evaluateSectionRules, type WorkspaceRuleContext } from "@/common/utils/sectionRules";
 import { sortSectionsByLinkedList } from "@/common/utils/sections";
@@ -42,6 +43,17 @@ function buildAvailableFields(
   }
 
   return availableFields;
+}
+
+/** Strip undefined values from an object so spread-merge doesn't overwrite cached data. */
+function stripUndefined<T extends Record<string, unknown>>(obj: T): Partial<T> {
+  const result: Partial<T> = {};
+  for (const key of Object.keys(obj) as Array<keyof T>) {
+    if (obj[key] !== undefined) {
+      result[key] = obj[key];
+    }
+  }
+  return result;
 }
 
 export interface FrontendProvidedContext {
@@ -102,14 +114,15 @@ export class SectionAssignmentService {
 
   async evaluateWorkspace(
     workspaceId: string,
-    frontendContext?: FrontendProvidedContext
+    frontendContext?: FrontendProvidedContext,
+    existingMetadata?: WorkspaceMetadata
   ): Promise<void> {
     assert(
       typeof workspaceId === "string" && workspaceId.trim().length > 0,
       "workspaceId is required"
     );
 
-    const metadata = await this.workspaceService.getInfo(workspaceId);
+    const metadata = existingMetadata ?? (await this.workspaceService.getInfo(workspaceId));
     if (!metadata) {
       return;
     }
@@ -135,7 +148,7 @@ export class SectionAssignmentService {
     let mergedContext: FrontendProvidedContext | undefined;
     if (frontendContext) {
       const previous = this.lastKnownFrontendContext.get(workspaceId) ?? {};
-      mergedContext = { ...previous, ...frontendContext };
+      mergedContext = { ...previous, ...stripUndefined({ ...frontendContext }) };
       this.lastKnownFrontendContext.set(workspaceId, mergedContext);
     } else {
       // Backend-triggered evaluation (stream-end, activity) — use last-known
@@ -237,7 +250,7 @@ export class SectionAssignmentService {
       }
 
       try {
-        await this.evaluateWorkspace(workspace.id);
+        await this.evaluateWorkspace(workspace.id, undefined, workspace);
       } catch (error) {
         log.error("Failed to evaluate workspace during project section assignment", {
           workspaceId: workspace.id,
