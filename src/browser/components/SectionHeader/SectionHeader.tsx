@@ -157,7 +157,8 @@ export const SectionHeader: React.FC<SectionHeaderProps> = ({
             <button
               onClick={() => {
                 setShowColorPicker(false);
-                setShowRuleEditor((previous) => !previous);
+                // The editor closes itself on outside mousedown; toggling can reopen it in the same click.
+                setShowRuleEditor(true);
               }}
               className="text-muted hover:text-foreground hover:bg-hover flex h-5 w-5 cursor-pointer items-center justify-center rounded border-none bg-transparent p-0 transition-colors"
               aria-label="Auto-assign rules"
