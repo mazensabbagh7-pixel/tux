@@ -502,6 +502,8 @@ export function ProjectProvider(props: { children: ReactNode }) {
       if (!api) return { success: false, error: "API not connected" };
       const result = await api.projects.sections.remove({ projectPath, sectionId });
       if (result.success) {
+        invalidatePRSectionEvaluationCache();
+        invalidateGitSectionEvaluationCache();
         await refreshProjects();
       }
       return result;
@@ -514,6 +516,8 @@ export function ProjectProvider(props: { children: ReactNode }) {
       if (!api) return { success: false, error: "API not connected" };
       const result = await api.projects.sections.reorder({ projectPath, sectionIds });
       if (result.success) {
+        invalidatePRSectionEvaluationCache();
+        invalidateGitSectionEvaluationCache();
         await refreshProjects();
       }
       return result;

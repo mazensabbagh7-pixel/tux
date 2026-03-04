@@ -23,6 +23,12 @@ const YES_NO_OPTIONS: RuleFieldOption[] = [
  * Keep this map exhaustive via Record<SectionRuleCondition["field"], ...> so adding new
  * rule fields in the schema fails loudly until UI metadata is updated.
  */
+/**
+ * NOTE: Rules that combine PR fields and git fields (e.g., prState == OPEN AND gitDirty == true)
+ * may not evaluate correctly because PR and git status are sent from separate frontend stores.
+ * Each store provides its own context independently. Mixed-field rules will only match when
+ * both stores have sent context in the same evaluation cycle. This is a known v1 limitation.
+ */
 export const RULE_FIELD_META: Record<SectionRuleCondition["field"], RuleFieldMeta> = {
   agentMode: {
     label: "Agent mode",
