@@ -1281,6 +1281,20 @@ export function createMockORPCClient(options: MockORPCClientOptions = {}): APICl
         setEnabled: () => Promise.resolve({ success: true, data: undefined }),
         setToolAllowlist: () => Promise.resolve({ success: true, data: undefined }),
       },
+      sections: {
+        list: () => Promise.resolve([]),
+        create: () =>
+          Promise.resolve({
+            success: true,
+            data: { id: "mock-section", name: "Mock Section" },
+          }),
+        update: () => Promise.resolve({ success: true, data: undefined }),
+        remove: () => Promise.resolve({ success: true, data: undefined }),
+        reorder: () => Promise.resolve({ success: true, data: undefined }),
+        assignWorkspace: () => Promise.resolve({ success: true, data: undefined }),
+        evaluateWorkspace: () => Promise.resolve(),
+        evaluateProject: () => Promise.resolve(),
+      },
       mcpOauth: {
         getAuthStatus: (input: { projectPath: string; serverName: string }) =>
           Promise.resolve(getMcpOauthStatus(input.projectPath, input.serverName)),
