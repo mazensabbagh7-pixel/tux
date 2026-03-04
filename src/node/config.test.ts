@@ -562,6 +562,23 @@ describe("Config", () => {
       }
     });
 
+    it("system default used as fallback when user value is invalid", () => {
+      writeSystemConfig({
+        defaultModel: "openai:gpt-4o",
+        projects: [],
+      });
+      writeUserConfig({
+        // Invalid model string that normalizeOptionalModelString will reject
+        defaultModel: "not-a-valid-model",
+        projects: [],
+      });
+
+      const loaded = config.loadConfigOrDefault();
+
+      // System default should be used as fallback since user value is invalid
+      expect(loaded.defaultModel).toBe("openai:gpt-4o");
+    });
+
     it("system object defaults are stripped key-by-key on save", async () => {
       writeSystemConfig({
         featureFlagOverrides: { flagA: "on", flagB: "off" },

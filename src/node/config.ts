@@ -495,8 +495,14 @@ export class Config {
         const muxGatewayEnabled = parseOptionalBoolean(parsed.muxGatewayEnabled);
         const muxGatewayModels = parseOptionalStringArray(parsed.muxGatewayModels);
 
-        const defaultModel = normalizeOptionalModelString(parsed.defaultModel);
-        const hiddenModels = normalizeOptionalModelStringArray(parsed.hiddenModels);
+        // When normalization rejects a malformed user value, fall back to the
+        // system default so admin-provided baselines survive invalid user config.
+        const defaultModel =
+          normalizeOptionalModelString(parsed.defaultModel) ??
+          (systemParsed ? normalizeOptionalModelString(systemParsed.defaultModel) : undefined);
+        const hiddenModels =
+          normalizeOptionalModelStringArray(parsed.hiddenModels) ??
+          (systemParsed ? normalizeOptionalModelStringArray(systemParsed.hiddenModels) : undefined);
         const legacySubagentAiDefaults = normalizeSubagentAiDefaults(parsed.subagentAiDefaults);
 
         // Default ON: store `false` only so config.json stays minimal.
@@ -505,7 +511,9 @@ export class Config {
         const updateChannel = parseUpdateChannel(parsed.updateChannel);
 
         const runtimeEnablement = normalizeRuntimeEnablementOverrides(parsed.runtimeEnablement);
-        const defaultRuntime = normalizeRuntimeEnablementId(parsed.defaultRuntime);
+        const defaultRuntime =
+          normalizeRuntimeEnablementId(parsed.defaultRuntime) ??
+          (systemParsed ? normalizeRuntimeEnablementId(systemParsed.defaultRuntime) : undefined);
 
         const agentAiDefaults =
           parsed.agentAiDefaults !== undefined
