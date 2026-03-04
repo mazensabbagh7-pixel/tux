@@ -200,6 +200,40 @@ describe("SectionAssignmentService", () => {
     expect(refreshAndEmitMetadataMock).toHaveBeenCalledTimes(1);
   });
 
+  it("evaluates frontend-only sections during explicit reevaluation without frontend context", async () => {
+    listSectionsMock.mockReturnValueOnce([
+      {
+        id: "not-open-pr",
+        name: "Not Open PR",
+        rules: [
+          {
+            conditions: [{ field: "prState", op: "neq", value: "OPEN" }],
+          },
+        ],
+      },
+      {
+        id: "non-streaming",
+        name: "Non-streaming",
+        rules: [
+          {
+            conditions: [{ field: "streaming", op: "eq", value: false }],
+          },
+        ],
+      },
+    ]);
+
+    await service.evaluateWorkspace("ws-1", undefined, "explicit");
+
+    expect(assignWorkspaceToSectionMock).toHaveBeenCalledTimes(1);
+    expect(assignWorkspaceToSectionMock).toHaveBeenCalledWith(
+      "/project/demo",
+      "ws-1",
+      "not-open-pr",
+      false
+    );
+    expect(refreshAndEmitMetadataMock).toHaveBeenCalledTimes(1);
+  });
+
   it("re-evaluates only workspaces from the requested project", async () => {
     listWorkspacesMock.mockResolvedValueOnce([
       makeMetadata({ id: "ws-1", projectPath: "/project/demo" }),
@@ -212,8 +246,8 @@ describe("SectionAssignmentService", () => {
     await service.evaluateProject("/project/demo");
 
     expect(evaluateWorkspaceSpy).toHaveBeenCalledTimes(2);
-    expect(evaluateWorkspaceSpy).toHaveBeenNthCalledWith(1, "ws-1");
-    expect(evaluateWorkspaceSpy).toHaveBeenNthCalledWith(2, "ws-3");
+    expect(evaluateWorkspaceSpy).toHaveBeenNthCalledWith(1, "ws-1", undefined, "explicit");
+    expect(evaluateWorkspaceSpy).toHaveBeenNthCalledWith(2, "ws-3", undefined, "explicit");
   });
 
   it("debounces rapid stream/activity events into a single evaluation", async () => {

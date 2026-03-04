@@ -280,6 +280,7 @@ export class GitStatusStore {
         if (newStatus !== null) {
           this.statusCache.set(workspaceId, newStatus);
           this.statuses.bump(workspaceId); // Invalidate cache + notify
+          this.maybeReevaluateWorkspaceSection(workspaceId, oldStatus, newStatus);
         }
         // On failure (newStatus === null): keep old status, don't bump (no re-render)
       }
@@ -304,6 +305,26 @@ export class GitStatusStore {
       a.incomingAdditions === b.incomingAdditions &&
       a.incomingDeletions === b.incomingDeletions
     );
+  }
+
+  private maybeReevaluateWorkspaceSection(
+    workspaceId: string,
+    previousStatus: GitStatus | null,
+    nextStatus: GitStatus
+  ): void {
+    if (!this.client) {
+      return;
+    }
+
+    if (previousStatus?.dirty === nextStatus.dirty) {
+      return;
+    }
+
+    // Smart Sections: when git dirty state changes, provide fresh frontend context for gitDirty rules.
+    void this.client.projects.sections.evaluateWorkspace({
+      workspaceId,
+      gitDirty: nextStatus.dirty,
+    });
   }
 
   /**

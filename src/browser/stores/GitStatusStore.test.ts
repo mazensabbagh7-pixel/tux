@@ -19,12 +19,29 @@ import { DEFAULT_RUNTIME_CONFIG } from "@/common/constants/workspace";
  */
 
 const mockExecuteBash = jest.fn<() => Promise<Result<BashToolResult, string>>>();
+const mockEvaluateWorkspace =
+  jest.fn<(input: { workspaceId: string; gitDirty?: boolean }) => Promise<void>>();
+
+function makeGitStatusOutput(dirtyCount: number): string {
+  return `---HEAD_BRANCH---
+main
+---PRIMARY---
+main
+---AHEAD_BEHIND---
+0 0
+---DIRTY---
+${dirtyCount}
+---LINE_DELTA---
+0 0 0 0`;
+}
 
 describe("GitStatusStore", () => {
   let store: GitStatusStore;
 
   beforeEach(() => {
     mockExecuteBash.mockReset();
+    mockEvaluateWorkspace.mockReset();
+    mockEvaluateWorkspace.mockResolvedValue(undefined);
     mockExecuteBash.mockResolvedValue({
       success: true,
       data: {
@@ -48,6 +65,11 @@ describe("GitStatusStore", () => {
     store.setClient({
       workspace: {
         executeBash: mockExecuteBash,
+      },
+      projects: {
+        sections: {
+          evaluateWorkspace: mockEvaluateWorkspace,
+        },
       },
     } as unknown as Parameters<typeof store.setClient>[0]);
   });
@@ -393,6 +415,92 @@ describe("GitStatusStore", () => {
 
       unsub();
     });
+  });
+
+  test("triggers section reevaluation only when git dirty state changes", async () => {
+    const metadata = {
+      id: "ws1",
+      name: "main",
+      projectName: "test-project",
+      projectPath: "/path",
+      namedWorkspacePath: "/path",
+      runtimeConfig: DEFAULT_RUNTIME_CONFIG,
+    };
+
+    store.syncWorkspaces(new Map([["ws1", metadata]]));
+
+    const requestImmediateSpy = jest
+      .spyOn(
+        (
+          store as unknown as {
+            refreshController: {
+              requestImmediate: () => void;
+            };
+          }
+        ).refreshController,
+        "requestImmediate"
+      )
+      .mockImplementation(() => undefined);
+    const tryFetchSpy = jest
+      .spyOn(
+        store as unknown as {
+          tryFetchWorkspaces: (workspaces: Map<string, FrontendWorkspaceMetadata>) => void;
+        },
+        "tryFetchWorkspaces"
+      )
+      .mockImplementation(() => undefined);
+
+    const unsubscribe = store.subscribeKey("ws1", jest.fn());
+
+    mockExecuteBash
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          success: true,
+          output: makeGitStatusOutput(0),
+          exitCode: 0,
+          wall_duration_ms: 0,
+        },
+      } as Result<BashToolResult, string>)
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          success: true,
+          output: makeGitStatusOutput(0),
+          exitCode: 0,
+          wall_duration_ms: 0,
+        },
+      } as Result<BashToolResult, string>)
+      .mockResolvedValueOnce({
+        success: true,
+        data: {
+          success: true,
+          output: makeGitStatusOutput(1),
+          exitCode: 0,
+          wall_duration_ms: 0,
+        },
+      } as Result<BashToolResult, string>);
+
+    // @ts-expect-error - Accessing private method for testing
+    await store.updateGitStatus();
+    // @ts-expect-error - Accessing private method for testing
+    await store.updateGitStatus();
+    // @ts-expect-error - Accessing private method for testing
+    await store.updateGitStatus();
+
+    expect(mockEvaluateWorkspace).toHaveBeenCalledTimes(2);
+    expect(mockEvaluateWorkspace).toHaveBeenNthCalledWith(1, {
+      workspaceId: "ws1",
+      gitDirty: false,
+    });
+    expect(mockEvaluateWorkspace).toHaveBeenNthCalledWith(2, {
+      workspaceId: "ws1",
+      gitDirty: true,
+    });
+
+    unsubscribe();
+    requestImmediateSpy.mockRestore();
+    tryFetchSpy.mockRestore();
   });
 
   test("skips polling when no subscribers", async () => {

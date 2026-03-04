@@ -48,6 +48,8 @@ export interface FrontendProvidedContext {
   gitDirty?: boolean;
 }
 
+export type SectionEvaluationSource = "auto" | "explicit";
+
 export class SectionAssignmentService {
   private pendingEvaluations = new Map<string, ReturnType<typeof setTimeout>>();
 
@@ -95,12 +97,14 @@ export class SectionAssignmentService {
 
   async evaluateWorkspace(
     workspaceId: string,
-    frontendContext?: FrontendProvidedContext
+    frontendContext?: FrontendProvidedContext,
+    source: SectionEvaluationSource = "auto"
   ): Promise<void> {
     assert(
       typeof workspaceId === "string" && workspaceId.trim().length > 0,
       "workspaceId is required"
     );
+    assert(source === "auto" || source === "explicit", "invalid section evaluation source");
 
     const metadata = await this.workspaceService.getInfo(workspaceId);
     if (!metadata) {
@@ -114,8 +118,9 @@ export class SectionAssignmentService {
     const projectPath = metadata.projectPath;
     const sortedSections = sortSectionsByLinkedList(this.projectService.listSections(projectPath));
     const frontendContextAvailable = hasFrontendOnlyContext(frontendContext);
+    const skipFrontendOnlyRules = source === "auto" && !frontendContextAvailable;
 
-    if (!frontendContextAvailable && metadata.sectionId) {
+    if (skipFrontendOnlyRules && metadata.sectionId) {
       const currentSection = sortedSections.find((section) => section.id === metadata.sectionId);
       if (currentSection && sectionHasFrontendOnlyRules(currentSection)) {
         // Preserve assignment when backend-triggered reevaluation lacks frontend-only PR/git context.
@@ -123,9 +128,9 @@ export class SectionAssignmentService {
       }
     }
 
-    const sectionsToEvaluate = frontendContextAvailable
-      ? sortedSections
-      : sortedSections.filter((section) => !sectionHasFrontendOnlyRules(section));
+    const sectionsToEvaluate = skipFrontendOnlyRules
+      ? sortedSections.filter((section) => !sectionHasFrontendOnlyRules(section))
+      : sortedSections;
 
     const hasRules = sectionsToEvaluate.some((section) => (section.rules?.length ?? 0) > 0);
     if (!hasRules) {
@@ -189,7 +194,8 @@ export class SectionAssignmentService {
       }
 
       try {
-        await this.evaluateWorkspace(workspace.id);
+        // Rule edits are explicit user actions, so reevaluate all rule fields (including PR/git).
+        await this.evaluateWorkspace(workspace.id, undefined, "explicit");
       } catch (error) {
         log.error("Failed to evaluate workspace during project section assignment", {
           workspaceId: workspace.id,

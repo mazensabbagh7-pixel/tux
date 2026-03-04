@@ -2650,14 +2650,18 @@ export const router = (authToken?: string) => {
               return;
             }
 
-            await context.sectionAssignmentService.evaluateWorkspace(input.workspaceId, {
-              prState: input.prState,
-              prMergeStatus: input.prMergeStatus,
-              prIsDraft: input.prIsDraft,
-              prHasFailedChecks: input.prHasFailedChecks,
-              prHasPendingChecks: input.prHasPendingChecks,
-              gitDirty: input.gitDirty,
-            });
+            await context.sectionAssignmentService.evaluateWorkspace(
+              input.workspaceId,
+              {
+                prState: input.prState,
+                prMergeStatus: input.prMergeStatus,
+                prIsDraft: input.prIsDraft,
+                prHasFailedChecks: input.prHasFailedChecks,
+                prHasPendingChecks: input.prHasPendingChecks,
+                gitDirty: input.gitDirty,
+              },
+              "explicit"
+            );
           }),
         evaluateProject: t
           .input(schemas.projects.sections.evaluateProject.input)
