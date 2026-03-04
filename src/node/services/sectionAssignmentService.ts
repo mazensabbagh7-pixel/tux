@@ -149,6 +149,12 @@ export class SectionAssignmentService {
     if (frontendContext) {
       const previous = this.lastKnownFrontendContext.get(workspaceId) ?? {};
       mergedContext = { ...previous, ...stripUndefined({ ...frontendContext }) };
+
+      // Frontend omits prMergeStatus when no PR exists; clear cached value to avoid stale rule matches.
+      if (mergedContext.prState === "none") {
+        mergedContext.prMergeStatus = undefined;
+      }
+
       this.lastKnownFrontendContext.set(workspaceId, mergedContext);
     } else {
       // Backend-triggered evaluation (stream-end, activity) — use last-known
@@ -157,7 +163,7 @@ export class SectionAssignmentService {
 
     const context: WorkspaceRuleContext = {
       workspaceId,
-      agentMode: metadata.agentId,
+      agentMode: metadata.agentId ?? metadata.agentType,
       streaming: activity?.streaming ?? false,
       prState: mergedContext?.prState,
       prMergeStatus: mergedContext?.prMergeStatus,
