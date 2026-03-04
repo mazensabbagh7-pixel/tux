@@ -327,8 +327,20 @@ describe("SectionAssignmentService", () => {
     await service.evaluateProject("/project/demo");
 
     expect(evaluateWorkspaceSpy).toHaveBeenCalledTimes(2);
-    expect(evaluateWorkspaceSpy).toHaveBeenNthCalledWith(1, "ws-1");
-    expect(evaluateWorkspaceSpy).toHaveBeenNthCalledWith(2, "ws-3");
+    expect(evaluateWorkspaceSpy).toHaveBeenNthCalledWith(
+      1,
+      "ws-1",
+      undefined,
+      expect.objectContaining({ id: "ws-1" }),
+      expect.any(Object)
+    );
+    expect(evaluateWorkspaceSpy).toHaveBeenNthCalledWith(
+      2,
+      "ws-3",
+      undefined,
+      expect.objectContaining({ id: "ws-3" }),
+      expect.any(Object)
+    );
   });
 
   it("debounces rapid stream/activity events into a single evaluation", async () => {
