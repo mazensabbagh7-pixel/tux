@@ -16,6 +16,17 @@ from benchmarks.comparison.collect_results import (
 )
 
 
+def _write_timing(base: Path, agent: str, model: str | None) -> Path:
+    agent_dir = base / agent
+    agent_dir.mkdir(parents=True, exist_ok=True)
+    payload: dict[str, str] = {"agent": agent}
+    if model is not None:
+        payload["model"] = model
+    timing_path = agent_dir / "timing.json"
+    timing_path.write_text(json.dumps(payload), encoding="utf-8")
+    return timing_path
+
+
 def _write_trial(base: Path, agent: str, trial: str, payload: dict) -> Path:
     """Write a trial under agent/<job_timestamp>/<trial>/result.json (Harbor layout)."""
     trial_dir = base / agent / "2026-01-01__00-00-00" / trial
@@ -103,12 +114,28 @@ def test_parse_trial_result_formats(
 ) -> None:
     row = parse_trial_result(agent, _write_trial(tmp_path, agent, trial, payload))
     assert row is not None
+    assert row["model"] is None
     assert row["task_id"] == trial.split("__", 1)[0]
     for key, value in expected.items():
         if isinstance(value, float):
             assert row[key] == pytest.approx(value)
         else:
             assert row[key] == value
+
+
+def test_parse_trial_result_includes_model_when_provided(tmp_path: Path) -> None:
+    trial_dir = _write_trial(
+        tmp_path,
+        "claude-code",
+        "json-parse__abc",
+        {"passed": True, "n_input_tokens": 1, "n_output_tokens": 2},
+    )
+    row = parse_trial_result(
+        "claude-code", trial_dir, model="anthropic/claude-sonnet-4-5"
+    )
+
+    assert row is not None
+    assert row["model"] == "anthropic/claude-sonnet-4-5"
 
 
 def test_duration_and_task_id_helpers() -> None:
@@ -146,6 +173,7 @@ def test_parse_trial_result_handles_missing_or_malformed_fields(tmp_path: Path) 
         ),
     )
     assert row is not None
+    assert row["model"] is None
     assert row["passed"] is None
     assert row["score"] is None
     assert row["n_input_tokens"] is None
@@ -159,6 +187,7 @@ def test_write_outputs_generates_expected_json_and_csv(tmp_path: Path) -> None:
     rows = [
         {
             "agent": "mux",
+            "model": "anthropic/claude-sonnet-4-5",
             "task_id": "task-1",
             "passed": True,
             "score": 1.0,
@@ -176,6 +205,7 @@ def test_write_outputs_generates_expected_json_and_csv(tmp_path: Path) -> None:
     assert parsed == [
         {
             "agent": "mux",
+            "model": "anthropic/claude-sonnet-4-5",
             "task_id": "task-1",
             "passed": "True",
             "score": "1.0",
@@ -212,10 +242,19 @@ def test_main_flow_collects_results_and_handles_empty_dirs(
             "agent_result": {"n_input_tokens": 1, "n_output_tokens": 1, "cost_usd": 0.005},
         },
     )
+    _write_timing(tmp_path, "mux", "anthropic/claude-sonnet-4-5")
+    _write_timing(tmp_path, "claude-code", "anthropic/claude-sonnet-4-5")
+    _write_timing(tmp_path, "codex", "openai/gpt-5.2-codex")
     (tmp_path / "empty-agent").mkdir(parents=True, exist_ok=True)
 
     assert main([str(tmp_path)]) == 0
-    assert len(collect_results(tmp_path)) == 3
+    rows = collect_results(tmp_path)
+    assert len(rows) == 3
+    assert {row["agent"]: row["model"] for row in rows} == {
+        "mux": "anthropic/claude-sonnet-4-5",
+        "claude-code": "anthropic/claude-sonnet-4-5",
+        "codex": "openai/gpt-5.2-codex",
+    }
     assert len(json.loads((tmp_path / "data.json").read_text(encoding="utf-8"))) == 3
     assert "Collected 3 trial(s) across 3 agent(s)." in capsys.readouterr().out
 
@@ -226,6 +265,39 @@ def test_main_handles_empty_output_directory(
     assert main([str(tmp_path)]) == 0
     assert json.loads((tmp_path / "data.json").read_text(encoding="utf-8")) == []
     assert "Collected 0 trial(s) across 0 agent(s)." in capsys.readouterr().out
+
+
+def test_collect_results_reads_model_from_timing_json(tmp_path: Path) -> None:
+    _write_timing(tmp_path, "claude-code", "anthropic/claude-sonnet-4-5")
+    _write_trial(
+        tmp_path,
+        "claude-code",
+        "task-a__111",
+        {"passed": True, "n_input_tokens": 1, "n_output_tokens": 1},
+    )
+    _write_trial(
+        tmp_path,
+        "claude-code",
+        "task-b__222",
+        {"passed": False, "n_input_tokens": 1, "n_output_tokens": 2},
+    )
+
+    rows = collect_results(tmp_path)
+    assert len(rows) == 2
+    assert {row["model"] for row in rows} == {"anthropic/claude-sonnet-4-5"}
+
+
+def test_collect_results_sets_model_none_when_timing_missing(tmp_path: Path) -> None:
+    _write_trial(
+        tmp_path,
+        "mux",
+        "task-a__111",
+        {"passed": True, "n_input_tokens": 3, "n_output_tokens": 2},
+    )
+
+    rows = collect_results(tmp_path)
+    assert len(rows) == 1
+    assert rows[0]["model"] is None
 
 
 def _write_trial_harbor_layout(
@@ -262,14 +334,15 @@ def test_collect_results_with_real_harbor_layout(
             },
         },
     )
-    # Also write harbor.log and timing.json siblings (should be ignored)
+    # Also write harbor.log and timing.json siblings.
     (tmp_path / "mux" / "harbor.log").write_text("log", encoding="utf-8")
-    (tmp_path / "mux" / "timing.json").write_text("{}", encoding="utf-8")
+    _write_timing(tmp_path, "mux", None)
 
     assert main([str(tmp_path)]) == 0
     rows = json.loads((tmp_path / "data.json").read_text(encoding="utf-8"))
     assert len(rows) == 1
     assert rows[0]["agent"] == "mux"
+    assert rows[0]["model"] is None
     assert rows[0]["task_id"] == "chess-best-move"
     assert rows[0]["passed"] is False
     assert "Collected 1 trial(s)" in capsys.readouterr().out

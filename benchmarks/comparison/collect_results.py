@@ -10,6 +10,7 @@ from typing import Any
 
 RESULT_COLUMNS = [
     "agent",
+    "model",
     "task_id",
     "passed",
     "score",
@@ -130,7 +131,9 @@ def extract_score(data: dict[str, Any]) -> float | None:
     return _as_float(data.get("score"))
 
 
-def parse_trial_result(agent: str, trial_dir: Path) -> dict[str, Any] | None:
+def parse_trial_result(
+    agent: str, trial_dir: Path, model: str | None = None
+) -> dict[str, Any] | None:
     result_path = trial_dir / "result.json"
     if not result_path.is_file():
         return None
@@ -154,6 +157,7 @@ def parse_trial_result(agent: str, trial_dir: Path) -> dict[str, Any] | None:
 
     return {
         "agent": agent,
+        "model": model,
         "task_id": extract_task_id(trial_dir.name),
         "passed": get_passed(data),
         "score": extract_score(data),
@@ -163,6 +167,25 @@ def parse_trial_result(agent: str, trial_dir: Path) -> dict[str, Any] | None:
         "cost_usd": _as_float(_pick(data, "cost_usd")),
         "duration_sec": extract_duration_sec(data),
     }
+
+
+def read_agent_model(agent_dir: Path) -> str | None:
+    timing_path = agent_dir / "timing.json"
+    if not timing_path.is_file():
+        return None
+
+    try:
+        raw = json.loads(timing_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        print(f"Warning: failed to read {timing_path}: {exc}", file=sys.stderr)
+        return None
+
+    if not isinstance(raw, dict):
+        print(f"Warning: expected JSON object in {timing_path}", file=sys.stderr)
+        return None
+
+    model = raw.get("model")
+    return model if isinstance(model, str) else None
 
 
 def collect_agent_results(agent_dir: Path) -> list[dict[str, Any]]:
@@ -176,6 +199,7 @@ def collect_agent_results(agent_dir: Path) -> list[dict[str, Any]]:
     ``jobs/`` prefix for older layouts.
     """
     rows: list[dict[str, Any]] = []
+    model = read_agent_model(agent_dir)
 
     # Candidate job root dirs: Harbor default (<agent_dir>/<timestamp>/)
     # or legacy (<agent_dir>/jobs/<timestamp>/).
@@ -194,7 +218,7 @@ def collect_agent_results(agent_dir: Path) -> list[dict[str, Any]]:
     for job_dir in job_roots:
         for trial_dir in sorted(job_dir.iterdir()):
             if trial_dir.is_dir():
-                row = parse_trial_result(agent_dir.name, trial_dir)
+                row = parse_trial_result(agent_dir.name, trial_dir, model)
                 if row is not None:
                     rows.append(row)
     return rows
@@ -234,12 +258,29 @@ def print_summary(rows: list[dict[str, Any]]) -> None:
     for agent in agents:
         agent_rows = [row for row in rows if row["agent"] == agent]
         known_agent = [row for row in agent_rows if isinstance(row.get("passed"), bool)]
+        models = sorted(
+            {
+                model
+                for model in (row.get("model") for row in agent_rows)
+                if isinstance(model, str)
+            }
+        )
         if known_agent:
             passed = sum(1 for row in known_agent if row["passed"])
             rate = f"{passed}/{len(known_agent)} ({100.0 * passed / len(known_agent):.1f}%)"
         else:
             rate = "n/a"
-        print(f"- {agent}: {len(agent_rows)} trial(s), pass rate {rate}")
+
+        if not models:
+            model_display = "n/a"
+        elif len(models) == 1:
+            model_display = models[0]
+        else:
+            model_display = ", ".join(models)
+
+        print(
+            f"- {agent} (model: {model_display}): {len(agent_rows)} trial(s), pass rate {rate}"
+        )
 
 
 def main(argv: list[str] | None = None) -> int:

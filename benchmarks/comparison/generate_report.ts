@@ -6,6 +6,7 @@ import * as vl from "vega-lite";
 
 export interface TrialResult {
   agent: string;
+  model: string | null;
   task_id: string;
   passed: boolean | null;
   score: number | null;
@@ -18,6 +19,7 @@ export interface TrialResult {
 
 export interface AgentSummary {
   agent: string;
+  model: string | null;
   tasks: number;
   passes: number;
   passRatePct: number;
@@ -128,6 +130,7 @@ function isTrialResult(value: unknown): value is TrialResult {
 
   return (
     typeof candidate.agent === "string" &&
+    (typeof candidate.model === "string" || candidate.model === null) &&
     typeof candidate.task_id === "string" &&
     (typeof candidate.passed === "boolean" || candidate.passed === null) &&
     isNumberOrNull(candidate.score) &&
@@ -215,6 +218,7 @@ export function computeAgentSummary(data: TrialResult[]): AgentSummary[] {
 
       return {
         agent,
+        model: trials[0]?.model ?? null,
         tasks,
         passes,
         passRatePct,
@@ -237,11 +241,12 @@ export function computeAgentSummary(data: TrialResult[]): AgentSummary[] {
 }
 
 export function generateSummaryTable(summaries: AgentSummary[]): string {
-  const header = "| Agent | Tasks | Pass Rate | Avg Cost (USD) | Avg Tokens | Avg Duration (s) |";
-  const separator = "| --- | ---: | ---: | ---: | ---: | ---: |";
+  const header =
+    "| Agent | Model | Tasks | Pass Rate | Avg Cost (USD) | Avg Tokens | Avg Duration (s) |";
+  const separator = "| --- | --- | ---: | ---: | ---: | ---: | ---: |";
   const rows = summaries.map(
     (summary) =>
-      `| ${summary.agent} | ${summary.tasks} | ${summary.passRatePct.toFixed(1)}% | $${summary.avgCostUsd.toFixed(4)} | ${formatInteger(summary.avgTokens)} | ${summary.avgDurationSec.toFixed(1)} |`
+      `| ${summary.agent} | ${summary.model ?? "N/A"} | ${summary.tasks} | ${summary.passRatePct.toFixed(1)}% | $${summary.avgCostUsd.toFixed(4)} | ${formatInteger(summary.avgTokens)} | ${summary.avgDurationSec.toFixed(1)} |`
   );
 
   return [header, separator, ...rows].join("\n");

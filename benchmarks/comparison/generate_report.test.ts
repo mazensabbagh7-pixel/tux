@@ -16,6 +16,7 @@ import {
 const SAMPLE_DATA: TrialResult[] = [
   {
     agent: "mux",
+    model: "anthropic/claude-sonnet-4-5",
     task_id: "task-a",
     passed: true,
     score: 1,
@@ -27,6 +28,7 @@ const SAMPLE_DATA: TrialResult[] = [
   },
   {
     agent: "mux",
+    model: "anthropic/claude-sonnet-4-5",
     task_id: "task-b",
     passed: false,
     score: 0,
@@ -38,6 +40,7 @@ const SAMPLE_DATA: TrialResult[] = [
   },
   {
     agent: "codex",
+    model: "openai/gpt-5.2-codex",
     task_id: "task-a",
     passed: true,
     score: 1,
@@ -49,6 +52,7 @@ const SAMPLE_DATA: TrialResult[] = [
   },
   {
     agent: "codex",
+    model: "openai/gpt-5.2-codex",
     task_id: "task-b",
     passed: true,
     score: 1,
@@ -72,6 +76,8 @@ describe("computeAgentSummary", () => {
     expect(codexSummary).toBeDefined();
     expect(muxSummary).toBeDefined();
 
+    expect(codexSummary?.model).toBe("openai/gpt-5.2-codex");
+    expect(muxSummary?.model).toBe("anthropic/claude-sonnet-4-5");
     expect(codexSummary?.tasks).toBe(2);
     expect(codexSummary?.passes).toBe(2);
     expect(codexSummary?.passRatePct).toBeCloseTo(100);
@@ -100,10 +106,14 @@ describe("table generators", () => {
     const table = generateSummaryTable(summaries);
 
     expect(table).toContain(
-      "| Agent | Tasks | Pass Rate | Avg Cost (USD) | Avg Tokens | Avg Duration (s) |",
+      "| Agent | Model | Tasks | Pass Rate | Avg Cost (USD) | Avg Tokens | Avg Duration (s) |"
     );
-    expect(table).toContain("| codex | 2 | 100.0% | $0.1000 | 1,500 | 25.0 |");
-    expect(table).toContain("| mux | 2 | 50.0% | $0.1500 | 1,500 | 35.0 |");
+    expect(table).toContain(
+      "| codex | openai/gpt-5.2-codex | 2 | 100.0% | $0.1000 | 1,500 | 25.0 |"
+    );
+    expect(table).toContain(
+      "| mux | anthropic/claude-sonnet-4-5 | 2 | 50.0% | $0.1500 | 1,500 | 35.0 |"
+    );
   });
 
   test("generates per-task comparison matrix", () => {
@@ -118,9 +128,7 @@ describe("table generators", () => {
     const summaries = computeAgentSummary(SAMPLE_DATA);
     const table = generateEfficiencyTable(summaries);
 
-    expect(table).toContain(
-      "| Agent | Tokens / Dollar | Passes / Dollar | Tokens / Second |",
-    );
+    expect(table).toContain("| Agent | Tokens / Dollar | Passes / Dollar | Tokens / Second |");
     expect(table).toContain("| codex | 15000.00 | 10.00 | 60.00 |");
     expect(table).toContain("| mux | 10000.00 | 3.33 | 42.86 |");
   });
@@ -144,11 +152,7 @@ describe("report assembly", () => {
     const outputDir = mkdtempSync(join(tmpdir(), "benchmark-report-"));
 
     try {
-      writeFileSync(
-        join(outputDir, "data.json"),
-        JSON.stringify(SAMPLE_DATA, null, 2),
-        "utf8",
-      );
+      writeFileSync(join(outputDir, "data.json"), JSON.stringify(SAMPLE_DATA, null, 2), "utf8");
 
       let renderCalls = 0;
       const mockSvg = "<svg><text>mock chart</text></svg>";
@@ -163,9 +167,7 @@ describe("report assembly", () => {
       expect(readFileSync(join(outputDir, "pass_rate.svg"), "utf8")).toBe(mockSvg);
       expect(readFileSync(join(outputDir, "token_usage.svg"), "utf8")).toBe(mockSvg);
       expect(readFileSync(join(outputDir, "cost_comparison.svg"), "utf8")).toBe(mockSvg);
-      expect(readFileSync(join(outputDir, "duration_comparison.svg"), "utf8")).toBe(
-        mockSvg,
-      );
+      expect(readFileSync(join(outputDir, "duration_comparison.svg"), "utf8")).toBe(mockSvg);
 
       const report = readFileSync(join(outputDir, "report.md"), "utf8");
       expect(report).toContain("# Benchmark Comparison Report");

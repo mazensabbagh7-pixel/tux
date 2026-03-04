@@ -84,12 +84,20 @@ for agent in "${selected_agents[@]}"; do
   timing_json="${agent_dir}/timing.json"
   mkdir -p "${agent_dir}"
 
+  original_model="${AGENT_MODELS[$agent]}"
+  model="${original_model}"
+  if [[ "${agent}" == "claude-code" ]]; then
+    # Claude Code CLI rejects provider prefixes like "anthropic/" and "openai/".
+    model="${model#anthropic/}"
+    model="${model#openai/}"
+  fi
+
   command=(
     uvx harbor run
     --dataset "${DATASET}"
     --n-concurrent "${CONCURRENCY}"
     --env "${RUN_ENV}"
-    -m "${AGENT_MODELS[$agent]}"
+    -m "${model}"
     --jobs-dir "${agent_dir}"
   )
 
@@ -135,6 +143,7 @@ for agent in "${selected_agents[@]}"; do
   cat >"${timing_json}" <<TIMING_JSON
 {
   "agent": "${agent}",
+  "model": "${original_model}",
   "started_at": "${start_iso}",
   "finished_at": "${end_iso}",
   "duration_sec": ${duration_sec},
