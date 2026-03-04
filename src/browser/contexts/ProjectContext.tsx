@@ -10,6 +10,7 @@ import {
 } from "react";
 import { useAPI } from "@/browser/contexts/API";
 import type { ProjectConfig, SectionConfig } from "@/common/types/project";
+import type { SectionRule } from "@/common/schemas/project";
 import type { BranchListResult } from "@/common/orpc/types";
 import type { z } from "zod";
 import type { ProjectRemoveErrorSchema } from "@/common/orpc/schemas/errors";
@@ -98,7 +99,7 @@ export interface ProjectContext {
   updateSection: (
     projectPath: string,
     sectionId: string,
-    updates: { name?: string; color?: string }
+    updates: { name?: string; color?: string; rules?: SectionRule[] }
   ) => Promise<Result<void>>;
   removeSection: (projectPath: string, sectionId: string) => Promise<Result<void>>;
   reorderSections: (projectPath: string, sectionIds: string[]) => Promise<Result<void>>;
@@ -476,7 +477,7 @@ export function ProjectProvider(props: { children: ReactNode }) {
     async (
       projectPath: string,
       sectionId: string,
-      updates: { name?: string; color?: string }
+      updates: { name?: string; color?: string; rules?: SectionRule[] }
     ): Promise<Result<void>> => {
       if (!api) return { success: false, error: "API not connected" };
       const result = await api.projects.sections.update({ projectPath, sectionId, ...updates });

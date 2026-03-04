@@ -1710,6 +1710,9 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
                                         onChangeColor={(color) => {
                                           void updateSection(projectPath, section.id, { color });
                                         }}
+                                        onUpdateRules={(rules) => {
+                                          void updateSection(projectPath, section.id, { rules });
+                                        }}
                                         onDelete={(e) => {
                                           void handleRemoveSection(
                                             projectPath,

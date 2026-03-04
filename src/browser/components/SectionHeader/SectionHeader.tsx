@@ -1,10 +1,12 @@
 import React, { useState, useRef, useEffect } from "react";
 import { cn } from "@/common/lib/utils";
-import { ChevronRight, Pencil, Trash2, Palette } from "lucide-react";
+import { ChevronRight, Pencil, Trash2, Palette, ListFilter } from "lucide-react";
 import type { SectionConfig } from "@/common/types/project";
+import type { SectionRule } from "@/common/schemas/project";
 import { Tooltip, TooltipTrigger, TooltipContent } from "../Tooltip/Tooltip";
 import { resolveSectionColor, SECTION_COLOR_PALETTE } from "@/common/constants/ui";
 import { HexColorPicker } from "react-colorful";
+import { SectionRuleEditor } from "./SectionRuleEditor";
 
 interface SectionHeaderProps {
   section: SectionConfig;
@@ -14,6 +16,7 @@ interface SectionHeaderProps {
   onAddWorkspace: () => void;
   onRename: (name: string) => void;
   onChangeColor: (color: string) => void;
+  onUpdateRules: (rules: SectionRule[]) => void;
   onDelete: (event: React.MouseEvent<HTMLButtonElement>) => void;
 }
 
@@ -25,11 +28,13 @@ export const SectionHeader: React.FC<SectionHeaderProps> = ({
   onAddWorkspace,
   onRename,
   onChangeColor,
+  onUpdateRules,
   onDelete,
 }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState(section.name);
   const [showColorPicker, setShowColorPicker] = useState(false);
+  const [showRuleEditor, setShowRuleEditor] = useState(false);
   const [hexInputValue, setHexInputValue] = useState(section.color ?? "");
   const inputRef = useRef<HTMLInputElement>(null);
   const colorPickerRef = useRef<HTMLDivElement>(null);
@@ -64,6 +69,7 @@ export const SectionHeader: React.FC<SectionHeaderProps> = ({
   };
 
   const sectionColor = resolveSectionColor(section.color);
+  const hasRules = (section.rules?.length ?? 0) > 0;
 
   // Sync hex input when color changes from picker or presets
   useEffect(() => {
@@ -123,15 +129,54 @@ export const SectionHeader: React.FC<SectionHeaderProps> = ({
         </button>
       )}
 
+      {/* Persistent indicator for sections with active auto-assignment rules. */}
+      {hasRules && !showRuleEditor && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              onClick={() => {
+                setShowColorPicker(false);
+                setShowRuleEditor(true);
+              }}
+              className="text-muted hover:text-foreground hover:bg-hover flex h-5 w-5 cursor-pointer items-center justify-center rounded border-none bg-transparent p-0 transition-colors"
+              aria-label="Section has auto-assign rules"
+            >
+              <ListFilter size={12} />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>Auto-assign rules active</TooltipContent>
+        </Tooltip>
+      )}
+
       {/* Action buttons stay hover-only on desktop, hide on the narrow touch sidebar,
           and stay visible on wider touch screens so they never become invisible tap targets. */}
       <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 [@media(max-width:768px)_and_(hover:none)_and_(pointer:coarse)]:pointer-events-none [@media(min-width:769px)_and_(hover:none)_and_(pointer:coarse)]:opacity-100">
+        {/* Rules */}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              onClick={() => {
+                setShowColorPicker(false);
+                setShowRuleEditor((previous) => !previous);
+              }}
+              className="text-muted hover:text-foreground hover:bg-hover flex h-5 w-5 cursor-pointer items-center justify-center rounded border-none bg-transparent p-0 transition-colors"
+              aria-label="Auto-assign rules"
+            >
+              <ListFilter size={12} />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>Auto-assign rules</TooltipContent>
+        </Tooltip>
+
         {/* Color Picker */}
         <div className="relative" ref={colorPickerRef}>
           <Tooltip>
             <TooltipTrigger asChild>
               <button
-                onClick={() => setShowColorPicker(!showColorPicker)}
+                onClick={() => {
+                  setShowRuleEditor(false);
+                  setShowColorPicker(!showColorPicker);
+                }}
                 className="text-muted hover:text-foreground hover:bg-hover flex h-5 w-5 cursor-pointer items-center justify-center rounded border-none bg-transparent p-0 transition-colors"
                 aria-label="Change color"
               >
@@ -217,6 +262,17 @@ export const SectionHeader: React.FC<SectionHeaderProps> = ({
           <TooltipContent>Delete section</TooltipContent>
         </Tooltip>
       </div>
+
+      {showRuleEditor && (
+        <SectionRuleEditor
+          rules={section.rules ?? []}
+          onSave={(rules) => {
+            onUpdateRules(rules);
+            setShowRuleEditor(false);
+          }}
+          onClose={() => setShowRuleEditor(false)}
+        />
+      )}
 
       {/* Add Workspace — always visible on touch devices */}
       <Tooltip>
