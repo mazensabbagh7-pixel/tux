@@ -612,7 +612,7 @@ describe("Config", () => {
       // User's intentional [] should win over system defaults
       expect(loaded.hiddenModels).toEqual([]);
     });
-    it("type-mismatched user values do not displace system defaults", () => {
+    it("type-mismatched user values fall back to system via normalization", () => {
       writeSystemConfig({
         mdnsAdvertisementEnabled: true,
         updateChannel: "stable",
@@ -629,10 +629,45 @@ describe("Config", () => {
 
       const loaded = config.loadConfigOrDefault();
 
-      // System defaults survive because type-mismatched user values are rejected
+      // System defaults survive: fb() falls back for booleans/strings,
+      // inline type check falls back for raw objects (featureFlagOverrides)
       expect(loaded.mdnsAdvertisementEnabled).toBe(true);
       expect(loaded.updateChannel).toBe("stable");
       expect(loaded.featureFlagOverrides).toEqual({ flagA: "on" });
+    });
+
+    it("valid user overrides win even when system has wrong type", () => {
+      writeSystemConfig({
+        // Admin typo: "true" (string) instead of true (boolean)
+        mdnsAdvertisementEnabled: "true" as unknown as boolean,
+        projects: [],
+      });
+      writeUserConfig({
+        // User has the correct type — should not be blocked
+        mdnsAdvertisementEnabled: false,
+        projects: [],
+      });
+
+      const loaded = config.loadConfigOrDefault();
+
+      // User's valid boolean wins over system's malformed string
+      expect(loaded.mdnsAdvertisementEnabled).toBe(false);
+    });
+    it("non-object user value does not displace system object (runtimeEnablement)", () => {
+      writeSystemConfig({
+        runtimeEnablement: { docker: false },
+        projects: [],
+      });
+      writeUserConfig({
+        // Malformed: string instead of object
+        runtimeEnablement: "oops" as unknown as Record<string, unknown>,
+        projects: [],
+      });
+
+      const loaded = config.loadConfigOrDefault();
+
+      // System object survives — merge rejects non-object user value for object fields
+      expect(loaded.runtimeEnablement).toEqual({ docker: false });
     });
 
     it("same-type but invalid user values fall back to system via normalization", () => {

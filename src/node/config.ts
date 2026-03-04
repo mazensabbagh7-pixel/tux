@@ -336,33 +336,26 @@ export class Config {
       if (userVal === undefined) continue;
 
       const systemVal = systemRecord[key];
-
-      // Type guard: reject user values whose JSON type fundamentally differs
-      // from the system default. Without this, a user value like "oops" for a
-      // boolean field would overwrite the valid system boolean, only to be
-      // stripped to undefined by normalization — silently losing the baseline.
-      if (systemVal !== undefined) {
-        const sysIsArr = Array.isArray(systemVal);
-        const usrIsArr = Array.isArray(userVal);
-        if (sysIsArr !== usrIsArr || (!sysIsArr && typeof systemVal !== typeof userVal)) {
-          continue;
+      // For scalar/primitive fields, no type guard here — fb()/fbArray() in
+      // the normalization section reject invalid merged values and fall back
+      // to the raw system value. A blanket type guard would block valid user
+      // overrides when the system config itself has a typo (e.g., system
+      // "true" string vs user true boolean).
+      //
+      // For object fields, we protect the system object from being replaced
+      // by a non-object user value (e.g., runtimeEnablement: "oops"). This
+      // is safe because a non-object can never be a valid override for an
+      // object-valued setting.
+      if (systemVal != null && typeof systemVal === "object" && !Array.isArray(systemVal)) {
+        if (userVal != null && typeof userVal === "object" && !Array.isArray(userVal)) {
+          // LIMITATION: This is a shallow key-level merge — user sub-values replace
+          // system sub-values without per-value validation. E.g., a user setting
+          // featureFlagOverrides.flagA = "bogus" overwrites the admin's "on". This
+          // is accepted because validation lives in consumers (getFeatureFlagOverride),
+          // not the config merge layer, and the set of valid values varies per key.
+          mergedRecord[key] = { ...systemVal, ...userVal };
         }
-      }
-
-      if (
-        systemVal != null &&
-        typeof systemVal === "object" &&
-        !Array.isArray(systemVal) &&
-        userVal != null &&
-        typeof userVal === "object" &&
-        !Array.isArray(userVal)
-      ) {
-        // LIMITATION: This is a shallow key-level merge — user sub-values replace
-        // system sub-values without per-value validation. E.g., a user setting
-        // featureFlagOverrides.flagA = "bogus" overwrites the admin's "on". This
-        // is accepted because validation lives in consumers (getFeatureFlagOverride),
-        // not the config merge layer, and the set of valid values varies per key.
-        mergedRecord[key] = { ...systemVal, ...userVal };
+        // else: user value is non-object — skip it, system object survives.
       } else {
         mergedRecord[key] = userVal;
       }
@@ -618,7 +611,11 @@ export class Config {
             parsed.mdnsServiceName,
             systemParsed?.mdnsServiceName
           ),
-          serverSshHost: parsed.serverSshHost,
+          serverSshHost: fb(
+            parseOptionalNonEmptyString,
+            parsed.serverSshHost,
+            systemParsed?.serverSshHost
+          ),
           serverAuthGithubOwner: fb(
             parseOptionalNonEmptyString,
             parsed.serverAuthGithubOwner,
@@ -629,7 +626,11 @@ export class Config {
             parsed.defaultProjectDir,
             systemParsed?.defaultProjectDir
           ),
-          viewedSplashScreens: parsed.viewedSplashScreens,
+          viewedSplashScreens: fbArray(
+            parseOptionalStringArray,
+            parsed.viewedSplashScreens,
+            systemParsed?.viewedSplashScreens
+          ),
           layoutPresets,
           taskSettings,
           muxGatewayEnabled,
@@ -639,7 +640,14 @@ export class Config {
           agentAiDefaults,
           // Legacy fields are still parsed and returned for downgrade compatibility.
           subagentAiDefaults: legacySubagentAiDefaults,
-          featureFlagOverrides: parsed.featureFlagOverrides,
+          // featureFlagOverrides is a raw pass-through (no normalizer) — validate
+          // that the merged value is actually a plain object before accepting it.
+          featureFlagOverrides:
+            parsed.featureFlagOverrides != null &&
+            typeof parsed.featureFlagOverrides === "object" &&
+            !Array.isArray(parsed.featureFlagOverrides)
+              ? parsed.featureFlagOverrides
+              : systemParsed?.featureFlagOverrides,
           useSSH2Transport: fb(
             parseOptionalBoolean,
             parsed.useSSH2Transport,
