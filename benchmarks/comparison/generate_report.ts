@@ -7,13 +7,13 @@ import * as vl from "vega-lite";
 export interface TrialResult {
   agent: string;
   task_id: string;
-  passed: boolean;
-  score: number;
-  n_input_tokens: number;
-  n_output_tokens: number;
-  total_tokens: number;
-  cost_usd: number;
-  duration_sec: number;
+  passed: boolean | null;
+  score: number | null;
+  n_input_tokens: number | null;
+  n_output_tokens: number | null;
+  total_tokens: number | null;
+  cost_usd: number | null;
+  duration_sec: number | null;
 }
 
 export interface AgentSummary {
@@ -115,6 +115,10 @@ function formatInteger(value: number): string {
   return Math.round(value).toLocaleString("en-US");
 }
 
+function isNumberOrNull(v: unknown): v is number | null {
+  return v === null || typeof v === "number";
+}
+
 function isTrialResult(value: unknown): value is TrialResult {
   if (value === null || typeof value !== "object") {
     return false;
@@ -125,13 +129,13 @@ function isTrialResult(value: unknown): value is TrialResult {
   return (
     typeof candidate.agent === "string" &&
     typeof candidate.task_id === "string" &&
-    typeof candidate.passed === "boolean" &&
-    typeof candidate.score === "number" &&
-    typeof candidate.n_input_tokens === "number" &&
-    typeof candidate.n_output_tokens === "number" &&
-    typeof candidate.total_tokens === "number" &&
-    typeof candidate.cost_usd === "number" &&
-    typeof candidate.duration_sec === "number"
+    (typeof candidate.passed === "boolean" || candidate.passed === null) &&
+    isNumberOrNull(candidate.score) &&
+    isNumberOrNull(candidate.n_input_tokens) &&
+    isNumberOrNull(candidate.n_output_tokens) &&
+    isNumberOrNull(candidate.total_tokens) &&
+    isNumberOrNull(candidate.cost_usd) &&
+    isNumberOrNull(candidate.duration_sec)
   );
 }
 
@@ -186,17 +190,15 @@ export function computeAgentSummary(data: TrialResult[]): AgentSummary[] {
     .map(([agent, trials]) => {
       const tasks = trials.length;
       const passes = trials.reduce((count, trial) => count + (trial.passed ? 1 : 0), 0);
-      const totalInputTokens = trials.reduce(
-        (sum, trial) => sum + trial.n_input_tokens,
-        0,
-      );
+      // Treat null metrics as 0 so sums stay numeric
+      const totalInputTokens = trials.reduce((sum, trial) => sum + (trial.n_input_tokens ?? 0), 0);
       const totalOutputTokens = trials.reduce(
-        (sum, trial) => sum + trial.n_output_tokens,
-        0,
+        (sum, trial) => sum + (trial.n_output_tokens ?? 0),
+        0
       );
-      const totalTokens = trials.reduce((sum, trial) => sum + trial.total_tokens, 0);
-      const totalCostUsd = trials.reduce((sum, trial) => sum + trial.cost_usd, 0);
-      const totalDurationSec = trials.reduce((sum, trial) => sum + trial.duration_sec, 0);
+      const totalTokens = trials.reduce((sum, trial) => sum + (trial.total_tokens ?? 0), 0);
+      const totalCostUsd = trials.reduce((sum, trial) => sum + (trial.cost_usd ?? 0), 0);
+      const totalDurationSec = trials.reduce((sum, trial) => sum + (trial.duration_sec ?? 0), 0);
 
       const passRatePct = tasks === 0 ? 0 : (passes / tasks) * 100;
       const avgCostUsd = tasks === 0 ? 0 : totalCostUsd / tasks;
@@ -204,7 +206,9 @@ export function computeAgentSummary(data: TrialResult[]): AgentSummary[] {
       const avgOutputTokens = tasks === 0 ? 0 : totalOutputTokens / tasks;
       const avgTokens = tasks === 0 ? 0 : totalTokens / tasks;
       const avgDurationSec = tasks === 0 ? 0 : totalDurationSec / tasks;
-      const medianDurationSec = median(trials.map((trial) => trial.duration_sec));
+      const medianDurationSec = median(
+        trials.map((trial) => trial.duration_sec).filter((v): v is number => v != null)
+      );
       const tokensPerDollar = totalCostUsd > 0 ? totalTokens / totalCostUsd : 0;
       const passesPerDollar = totalCostUsd > 0 ? passes / totalCostUsd : 0;
       const tokensPerSecond = totalDurationSec > 0 ? totalTokens / totalDurationSec : 0;
@@ -233,12 +237,11 @@ export function computeAgentSummary(data: TrialResult[]): AgentSummary[] {
 }
 
 export function generateSummaryTable(summaries: AgentSummary[]): string {
-  const header =
-    "| Agent | Tasks | Pass Rate | Avg Cost (USD) | Avg Tokens | Avg Duration (s) |";
+  const header = "| Agent | Tasks | Pass Rate | Avg Cost (USD) | Avg Tokens | Avg Duration (s) |";
   const separator = "| --- | ---: | ---: | ---: | ---: | ---: |";
   const rows = summaries.map(
     (summary) =>
-      `| ${summary.agent} | ${summary.tasks} | ${summary.passRatePct.toFixed(1)}% | $${summary.avgCostUsd.toFixed(4)} | ${formatInteger(summary.avgTokens)} | ${summary.avgDurationSec.toFixed(1)} |`,
+      `| ${summary.agent} | ${summary.tasks} | ${summary.passRatePct.toFixed(1)}% | $${summary.avgCostUsd.toFixed(4)} | ${formatInteger(summary.avgTokens)} | ${summary.avgDurationSec.toFixed(1)} |`
   );
 
   return [header, separator, ...rows].join("\n");
@@ -246,16 +249,16 @@ export function generateSummaryTable(summaries: AgentSummary[]): string {
 
 export function generatePerTaskTable(data: TrialResult[]): string {
   const agents = [...new Set(data.map((result) => result.agent))].sort((left, right) =>
-    left.localeCompare(right),
+    left.localeCompare(right)
   );
   const tasks = [...new Set(data.map((result) => result.task_id))].sort((left, right) =>
-    left.localeCompare(right),
+    left.localeCompare(right)
   );
 
-  const taskToAgentOutcome = new Map<string, Map<string, boolean>>();
+  const taskToAgentOutcome = new Map<string, Map<string, boolean | null>>();
 
   for (const result of data) {
-    const row = taskToAgentOutcome.get(result.task_id) ?? new Map<string, boolean>();
+    const row = taskToAgentOutcome.get(result.task_id) ?? new Map<string, boolean | null>();
     row.set(result.agent, result.passed);
     taskToAgentOutcome.set(result.task_id, row);
   }
@@ -269,6 +272,9 @@ export function generatePerTaskTable(data: TrialResult[]): string {
       const outcome = outcomes?.get(agent);
       if (outcome === undefined) {
         return "N/A";
+      }
+      if (outcome === null) {
+        return "Unknown";
       }
 
       return outcome ? "Pass" : "Fail";
@@ -285,16 +291,13 @@ export function generateEfficiencyTable(summaries: AgentSummary[]): string {
   const separator = "| --- | ---: | ---: | ---: |";
   const rows = summaries.map(
     (summary) =>
-      `| ${summary.agent} | ${summary.tokensPerDollar.toFixed(2)} | ${summary.passesPerDollar.toFixed(2)} | ${summary.tokensPerSecond.toFixed(2)} |`,
+      `| ${summary.agent} | ${summary.tokensPerDollar.toFixed(2)} | ${summary.passesPerDollar.toFixed(2)} | ${summary.tokensPerSecond.toFixed(2)} |`
   );
 
   return [header, separator, ...rows].join("\n");
 }
 
-export function assembleReportMarkdown(
-  data: TrialResult[],
-  summaries: AgentSummary[],
-): string {
+export function assembleReportMarkdown(data: TrialResult[], summaries: AgentSummary[]): string {
   return [
     "# Benchmark Comparison Report",
     "",
@@ -330,7 +333,7 @@ export function renderChart(vlSpec: vl.TopLevelSpec): Promise<string> {
 
 export async function generateReportWithRenderer(
   outputDir: string,
-  chartRenderer: ChartRenderer,
+  chartRenderer: ChartRenderer
 ): Promise<void> {
   const resolvedOutputDir = resolve(outputDir);
   const rawData = await fs.readFile(join(resolvedOutputDir, "data.json"), "utf8");
@@ -339,10 +342,7 @@ export async function generateReportWithRenderer(
 
   for (const definition of CHART_DEFINITIONS) {
     const baseSpec = await loadChartSpec(definition.specFile);
-    const specWithValues = withDataValues(
-      baseSpec,
-      definition.valuesFromSummaries(summaries),
-    );
+    const specWithValues = withDataValues(baseSpec, definition.valuesFromSummaries(summaries));
     const svg = await chartRenderer(specWithValues);
 
     await fs.writeFile(join(resolvedOutputDir, definition.outputFile), svg, "utf8");
@@ -360,9 +360,7 @@ if (import.meta.main) {
   const outputDir = process.argv[2];
 
   if (!outputDir) {
-    console.error(
-      "Usage: bun benchmarks/comparison/generate_report.ts <output_dir>",
-    );
+    console.error("Usage: bun benchmarks/comparison/generate_report.ts <output_dir>");
     process.exit(1);
   }
 

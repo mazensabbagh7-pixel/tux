@@ -17,7 +17,8 @@ from benchmarks.comparison.collect_results import (
 
 
 def _write_trial(base: Path, agent: str, trial: str, payload: dict) -> Path:
-    trial_dir = base / agent / "jobs" / trial
+    """Write a trial under agent/<job_timestamp>/<trial>/result.json (Harbor layout)."""
+    trial_dir = base / agent / "2026-01-01__00-00-00" / trial
     trial_dir.mkdir(parents=True, exist_ok=True)
     (trial_dir / "result.json").write_text(json.dumps(payload), encoding="utf-8")
     return trial_dir
@@ -225,3 +226,50 @@ def test_main_handles_empty_output_directory(
     assert main([str(tmp_path)]) == 0
     assert json.loads((tmp_path / "data.json").read_text(encoding="utf-8")) == []
     assert "Collected 0 trial(s) across 0 agent(s)." in capsys.readouterr().out
+
+
+def _write_trial_harbor_layout(
+    base: Path, agent: str, job_ts: str, trial: str, payload: dict
+) -> Path:
+    """Write a trial using the real Harbor directory layout:
+    <agent>/<job_timestamp>/<trial_name>/result.json"""
+    trial_dir = base / agent / job_ts / trial
+    trial_dir.mkdir(parents=True, exist_ok=True)
+    (trial_dir / "result.json").write_text(json.dumps(payload), encoding="utf-8")
+    return trial_dir
+
+
+def test_collect_results_with_real_harbor_layout(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Verify the collector finds trials in Harbor's actual layout:
+    <agent>/<job_timestamp>/<trial_name>/result.json (no jobs/ prefix)."""
+    _write_trial_harbor_layout(
+        tmp_path,
+        "mux",
+        "2026-03-04__02-51-00",
+        "chess-best-move__Z5rUCVE",
+        {
+            "verifier_result": {"rewards": {"reward": 0.0}},
+            "agent_execution": {
+                "started_at": "2026-03-04T02:52:18.984626Z",
+                "finished_at": "2026-03-04T02:52:19.269006Z",
+            },
+            "agent_result": {
+                "n_input_tokens": None,
+                "n_output_tokens": None,
+                "cost_usd": None,
+            },
+        },
+    )
+    # Also write harbor.log and timing.json siblings (should be ignored)
+    (tmp_path / "mux" / "harbor.log").write_text("log", encoding="utf-8")
+    (tmp_path / "mux" / "timing.json").write_text("{}", encoding="utf-8")
+
+    assert main([str(tmp_path)]) == 0
+    rows = json.loads((tmp_path / "data.json").read_text(encoding="utf-8"))
+    assert len(rows) == 1
+    assert rows[0]["agent"] == "mux"
+    assert rows[0]["task_id"] == "chess-best-move"
+    assert rows[0]["passed"] is False
+    assert "Collected 1 trial(s)" in capsys.readouterr().out

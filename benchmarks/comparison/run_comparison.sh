@@ -16,6 +16,9 @@ CODEX_MODEL="${CODEX_MODEL:-openai/gpt-5.2-codex}"
 DRY_RUN="${DRY_RUN:-}"
 AGENTS="${AGENTS:-mux claude-code codex}"
 
+# Harbor requires Python ≥3.12; ensure uv uses it
+export UV_PYTHON="${UV_PYTHON:-3.12}"
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPORTS_DIR="${SCRIPT_DIR}/reports"
 TIMESTAMP="$(date +"%Y-%m-%d__%H-%M-%S")"
@@ -74,10 +77,10 @@ for agent in "${selected_agents[@]}"; do
   command=(
     uvx harbor run
     --dataset "${DATASET}"
-    --concurrency "${CONCURRENCY}"
+    --n-concurrent "${CONCURRENCY}"
     --env "${RUN_ENV}"
-    --model "${AGENT_MODELS[$agent]}"
-    --output-dir "${agent_dir}"
+    -m "${AGENT_MODELS[$agent]}"
+    --jobs-dir "${agent_dir}"
   )
 
   target="${AGENT_TARGETS[$agent]}"

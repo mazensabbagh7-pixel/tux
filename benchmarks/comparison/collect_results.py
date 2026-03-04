@@ -166,16 +166,37 @@ def parse_trial_result(agent: str, trial_dir: Path) -> dict[str, Any] | None:
 
 
 def collect_agent_results(agent_dir: Path) -> list[dict[str, Any]]:
-    jobs_dir = agent_dir / "jobs"
-    if not jobs_dir.is_dir():
-        return []
+    """Scan an agent output directory for trial results.
 
+    Harbor writes trials as:
+        <agent_dir>/<job_timestamp>/<trial_name>/result.json
+
+    Each job_timestamp directory is a separate Harbor run; within it
+    each subdirectory is a trial (task).  We also support a legacy
+    ``jobs/`` prefix for older layouts.
+    """
     rows: list[dict[str, Any]] = []
-    for trial_dir in sorted(jobs_dir.glob("*")):
-        if trial_dir.is_dir():
-            row = parse_trial_result(agent_dir.name, trial_dir)
-            if row is not None:
-                rows.append(row)
+
+    # Candidate job root dirs: Harbor default (<agent_dir>/<timestamp>/)
+    # or legacy (<agent_dir>/jobs/<timestamp>/).
+    job_roots: list[Path] = []
+    jobs_dir = agent_dir / "jobs"
+    if jobs_dir.is_dir():
+        job_roots.extend(
+            d for d in sorted(jobs_dir.iterdir()) if d.is_dir()
+        )
+    # Also scan direct children that look like timestamped run dirs.
+    for child in sorted(agent_dir.iterdir()):
+        if child.is_dir() and child.name not in ("jobs",) and not child.name.startswith("."):
+            # Skip files like harbor.log, timing.json via is_dir()
+            job_roots.append(child)
+
+    for job_dir in job_roots:
+        for trial_dir in sorted(job_dir.iterdir()):
+            if trial_dir.is_dir():
+                row = parse_trial_result(agent_dir.name, trial_dir)
+                if row is not None:
+                    rows.append(row)
     return rows
 
 
