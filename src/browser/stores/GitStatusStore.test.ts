@@ -417,6 +417,40 @@ describe("GitStatusStore", () => {
     });
   });
 
+  test("invalidateSectionEvaluationCache re-sends cached git context", async () => {
+    // Seed cached git states as if previous polling already happened.
+    // @ts-expect-error - Accessing private field for testing
+    store.statusCache.set("ws1", {
+      branch: "main",
+      ahead: 0,
+      behind: 0,
+      dirty: true,
+      outgoingAdditions: 0,
+      outgoingDeletions: 0,
+      incomingAdditions: 0,
+      incomingDeletions: 0,
+    });
+    // @ts-expect-error - Accessing private field for testing
+    store.statusCache.set("ws2", null);
+
+    // Seed dedupe state to verify invalidation clears/overrides it.
+    // @ts-expect-error - Accessing private field for testing
+    store.lastEvaluatedDirty.set("ws1", true);
+    // @ts-expect-error - Accessing private field for testing
+    store.pendingEvaluatedDirty.set("ws1", true);
+
+    mockEvaluateWorkspace.mockClear();
+
+    store.invalidateSectionEvaluationCache();
+    await Promise.resolve();
+
+    expect(mockEvaluateWorkspace).toHaveBeenCalledTimes(1);
+    expect(mockEvaluateWorkspace).toHaveBeenCalledWith({
+      workspaceId: "ws1",
+      gitDirty: true,
+    });
+  });
+
   test("triggers section reevaluation only when git dirty state changes", async () => {
     const metadata = {
       id: "ws1",

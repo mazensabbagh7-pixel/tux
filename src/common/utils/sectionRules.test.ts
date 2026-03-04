@@ -424,12 +424,40 @@ describe("evaluateSectionRules", () => {
     );
   });
 
-  it("marks rule inconclusive when any condition is inconclusive", () => {
+  it("treats AND rule with known-false condition as conclusive non-match", () => {
     const sections = [
       makeSection("mixed", [
         {
           conditions: [
-            makeCondition({ field: "streaming", op: "eq", value: false }),
+            makeCondition({ field: "streaming", op: "eq", value: true }),
+            makeCondition({ field: "prState", op: "eq", value: "OPEN" }),
+          ],
+        },
+      ]),
+    ];
+
+    expectResult(
+      evaluateSectionRules(
+        sections,
+        makeCtx({
+          streaming: false,
+          availableFields: new Set(["streaming"]),
+        })
+      ),
+      {
+        targetSectionId: undefined,
+        hasInconclusiveRules: false,
+        currentSectionInconclusive: false,
+      }
+    );
+  });
+
+  it("marks AND rule inconclusive when known conditions pass but one field is unavailable", () => {
+    const sections = [
+      makeSection("mixed", [
+        {
+          conditions: [
+            makeCondition({ field: "streaming", op: "eq", value: true }),
             makeCondition({ field: "prState", op: "eq", value: "OPEN" }),
           ],
         },
@@ -441,7 +469,7 @@ describe("evaluateSectionRules", () => {
         sections,
         makeCtx({
           streaming: true,
-          availableFields: new Set(["agentMode", "streaming", "taskStatus", "hasAgentStatus"]),
+          availableFields: new Set(["streaming"]),
         })
       ),
       {

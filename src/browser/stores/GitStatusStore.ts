@@ -149,6 +149,13 @@ export class GitStatusStore {
   invalidateSectionEvaluationCache(): void {
     this.lastEvaluatedDirty.clear();
     this.pendingEvaluatedDirty.clear();
+
+    // Re-send git context for all cached workspaces so rules re-evaluate after section config changes.
+    for (const [workspaceId, status] of this.statusCache) {
+      if (status) {
+        this.maybeReevaluateWorkspaceSection(workspaceId, null, status);
+      }
+    }
   }
 
   /**

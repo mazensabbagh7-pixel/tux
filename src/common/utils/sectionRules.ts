@@ -144,29 +144,31 @@ export function evaluateSectionRules(
 
     for (const rule of rules) {
       let ruleHasInconclusiveCondition = false;
-      let allConditionsPass = true;
+      let hasKnownFalseCondition = false;
+      let allKnownConditionsPass = true;
 
       for (const condition of rule.conditions) {
         const conditionResult = evaluateCondition(condition, ctx);
         if (conditionResult === "inconclusive") {
           ruleHasInconclusiveCondition = true;
-          allConditionsPass = false;
+          // Unknown is not false: keep evaluating other conditions so known false still wins for AND.
           continue;
         }
 
         if (!conditionResult) {
-          allConditionsPass = false;
+          hasKnownFalseCondition = true;
+          allKnownConditionsPass = false;
         }
       }
 
-      if (ruleHasInconclusiveCondition) {
+      if (ruleHasInconclusiveCondition && !hasKnownFalseCondition) {
         hasInconclusiveRules = true;
         if (isCurrentSection) {
           currentSectionInconclusive = true;
         }
       }
 
-      if (allConditionsPass) {
+      if (allKnownConditionsPass && !ruleHasInconclusiveCondition) {
         return {
           targetSectionId: section.id,
           hasInconclusiveRules,
