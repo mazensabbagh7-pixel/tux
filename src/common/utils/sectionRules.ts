@@ -1,12 +1,11 @@
 import type { SectionConfig, SectionRuleCondition } from "@/common/schemas/project";
-import assert from "@/common/utils/assert";
 import { assertNever } from "@/common/utils/assertNever";
 
 export interface WorkspaceRuleContext {
   workspaceId: string;
   agentMode: string | undefined;
   streaming: boolean;
-  prState: "OPEN" | "CLOSED" | "MERGED" | "none";
+  prState: "OPEN" | "CLOSED" | "MERGED" | "none" | undefined;
   prMergeStatus: string | undefined;
   prIsDraft: boolean | undefined;
   prHasFailedChecks: boolean | undefined;
@@ -16,6 +15,19 @@ export interface WorkspaceRuleContext {
   gitDirty: boolean | undefined;
   currentSectionId: string | undefined;
   pinnedToSection: boolean;
+  /**
+   * Fields whose values are known for this evaluation pass.
+   *
+   * When omitted, all fields are assumed to be known.
+   */
+  availableFields?: Set<SectionRuleCondition["field"]>;
+}
+
+export interface SectionRuleEvaluationResult {
+  /** The section ID to assign to, or undefined when no conclusive match was found. */
+  targetSectionId: string | undefined;
+  /** True when at least one rule could not be fully evaluated due to unknown fields. */
+  hasInconclusiveRules: boolean;
 }
 
 /** Map condition field names to context values. Record mapping keeps field handling exhaustive. */
@@ -48,7 +60,11 @@ function getFieldValue(
 export function evaluateCondition(
   condition: SectionRuleCondition,
   ctx: WorkspaceRuleContext
-): boolean {
+): boolean | "inconclusive" {
+  if (ctx.availableFields && !ctx.availableFields.has(condition.field)) {
+    return "inconclusive";
+  }
+
   const actual = getFieldValue(condition.field, ctx);
 
   switch (condition.op) {
@@ -71,16 +87,17 @@ export function evaluateCondition(
         return false;
       }
 
-      assert(
-        Array.isArray(parsedAllowedValues),
-        `"in" operator value must be a JSON array, got: ${condition.value}`
-      );
-      assert(
-        parsedAllowedValues.every(
+      if (!Array.isArray(parsedAllowedValues)) {
+        return false;
+      }
+
+      if (
+        !parsedAllowedValues.every(
           (value) => typeof value === "string" || typeof value === "boolean"
-        ),
-        `"in" operator array entries must be string|boolean, got: ${condition.value}`
-      );
+        )
+      ) {
+        return false;
+      }
 
       return parsedAllowedValues.includes(actual);
     }
@@ -98,14 +115,20 @@ export function evaluateCondition(
  * - Pinned workspaces are not auto-assigned.
  * - Rules within a section are OR'd (any rule can match).
  * - Conditions within a rule are AND'd (all conditions must match).
+ * - Rules with unknown field values are marked inconclusive.
  */
 export function evaluateSectionRules(
   sections: SectionConfig[],
   ctx: WorkspaceRuleContext
-): string | undefined {
+): SectionRuleEvaluationResult {
   if (ctx.pinnedToSection) {
-    return undefined;
+    return {
+      targetSectionId: undefined,
+      hasInconclusiveRules: false,
+    };
   }
+
+  let hasInconclusiveRules = false;
 
   for (const section of sections) {
     const rules = section.rules;
@@ -113,14 +136,38 @@ export function evaluateSectionRules(
       continue;
     }
 
-    const sectionMatches = rules.some((rule) =>
-      rule.conditions.every((condition) => evaluateCondition(condition, ctx))
-    );
+    for (const rule of rules) {
+      let ruleHasInconclusiveCondition = false;
+      let allConditionsPass = true;
 
-    if (sectionMatches) {
-      return section.id;
+      for (const condition of rule.conditions) {
+        const conditionResult = evaluateCondition(condition, ctx);
+        if (conditionResult === "inconclusive") {
+          ruleHasInconclusiveCondition = true;
+          allConditionsPass = false;
+          continue;
+        }
+
+        if (!conditionResult) {
+          allConditionsPass = false;
+        }
+      }
+
+      if (ruleHasInconclusiveCondition) {
+        hasInconclusiveRules = true;
+      }
+
+      if (allConditionsPass) {
+        return {
+          targetSectionId: section.id,
+          hasInconclusiveRules,
+        };
+      }
     }
   }
 
-  return undefined;
+  return {
+    targetSectionId: undefined,
+    hasInconclusiveRules,
+  };
 }

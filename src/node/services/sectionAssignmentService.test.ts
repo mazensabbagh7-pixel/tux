@@ -135,7 +135,7 @@ describe("SectionAssignmentService", () => {
     expect(refreshAndEmitMetadataMock).not.toHaveBeenCalled();
   });
 
-  it("preserves current frontend-only section when reevaluating without frontend context", async () => {
+  it("preserves current section when all candidate rules are inconclusive", async () => {
     getInfoMock.mockResolvedValueOnce(makeMetadata({ sectionId: "open-pr" }));
 
     listSectionsMock.mockReturnValueOnce([
@@ -161,12 +161,12 @@ describe("SectionAssignmentService", () => {
 
     await service.evaluateWorkspace("ws-1");
 
-    expect(getActivityListMock).not.toHaveBeenCalled();
+    expect(getActivityListMock).toHaveBeenCalledTimes(1);
     expect(assignWorkspaceToSectionMock).not.toHaveBeenCalled();
     expect(refreshAndEmitMetadataMock).not.toHaveBeenCalled();
   });
 
-  it("skips frontend-only sections when frontend context is unavailable", async () => {
+  it("does not let missing PR fields influence git-only reevaluation", async () => {
     listSectionsMock.mockReturnValueOnce([
       {
         id: "not-open-pr",
@@ -178,60 +178,58 @@ describe("SectionAssignmentService", () => {
         ],
       },
       {
-        id: "non-streaming",
-        name: "Non-streaming",
+        id: "dirty",
+        name: "Dirty",
         rules: [
           {
-            conditions: [{ field: "streaming", op: "eq", value: false }],
+            conditions: [{ field: "gitDirty", op: "eq", value: true }],
           },
         ],
       },
     ]);
 
-    await service.evaluateWorkspace("ws-1");
+    await service.evaluateWorkspace("ws-1", { gitDirty: true });
 
     expect(assignWorkspaceToSectionMock).toHaveBeenCalledTimes(1);
     expect(assignWorkspaceToSectionMock).toHaveBeenCalledWith(
       "/project/demo",
       "ws-1",
-      "non-streaming",
+      "dirty",
       false
     );
-    expect(refreshAndEmitMetadataMock).toHaveBeenCalledTimes(1);
   });
 
-  it("evaluates frontend-only sections during explicit reevaluation without frontend context", async () => {
+  it("does not let missing git fields influence PR-only reevaluation", async () => {
     listSectionsMock.mockReturnValueOnce([
       {
-        id: "not-open-pr",
-        name: "Not Open PR",
+        id: "not-dirty",
+        name: "Not Dirty",
         rules: [
           {
-            conditions: [{ field: "prState", op: "neq", value: "OPEN" }],
+            conditions: [{ field: "gitDirty", op: "neq", value: true }],
           },
         ],
       },
       {
-        id: "non-streaming",
-        name: "Non-streaming",
+        id: "open-pr",
+        name: "Open PR",
         rules: [
           {
-            conditions: [{ field: "streaming", op: "eq", value: false }],
+            conditions: [{ field: "prState", op: "eq", value: "OPEN" }],
           },
         ],
       },
     ]);
 
-    await service.evaluateWorkspace("ws-1", undefined, "explicit");
+    await service.evaluateWorkspace("ws-1", { prState: "OPEN" });
 
     expect(assignWorkspaceToSectionMock).toHaveBeenCalledTimes(1);
     expect(assignWorkspaceToSectionMock).toHaveBeenCalledWith(
       "/project/demo",
       "ws-1",
-      "not-open-pr",
+      "open-pr",
       false
     );
-    expect(refreshAndEmitMetadataMock).toHaveBeenCalledTimes(1);
   });
 
   it("re-evaluates only workspaces from the requested project", async () => {
@@ -246,8 +244,8 @@ describe("SectionAssignmentService", () => {
     await service.evaluateProject("/project/demo");
 
     expect(evaluateWorkspaceSpy).toHaveBeenCalledTimes(2);
-    expect(evaluateWorkspaceSpy).toHaveBeenNthCalledWith(1, "ws-1", undefined, "explicit");
-    expect(evaluateWorkspaceSpy).toHaveBeenNthCalledWith(2, "ws-3", undefined, "explicit");
+    expect(evaluateWorkspaceSpy).toHaveBeenNthCalledWith(1, "ws-1");
+    expect(evaluateWorkspaceSpy).toHaveBeenNthCalledWith(2, "ws-3");
   });
 
   it("debounces rapid stream/activity events into a single evaluation", async () => {

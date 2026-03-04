@@ -2,7 +2,12 @@ import { describe, expect, it } from "bun:test";
 
 import type { SectionConfig, SectionRule, SectionRuleCondition } from "@/common/schemas/project";
 
-import { evaluateCondition, evaluateSectionRules, type WorkspaceRuleContext } from "./sectionRules";
+import {
+  evaluateCondition,
+  evaluateSectionRules,
+  type SectionRuleEvaluationResult,
+  type WorkspaceRuleContext,
+} from "./sectionRules";
 
 function makeCtx(overrides: Partial<WorkspaceRuleContext> = {}): WorkspaceRuleContext {
   return {
@@ -36,6 +41,13 @@ function makeCondition(overrides: Partial<SectionRuleCondition>): SectionRuleCon
   };
 }
 
+function expectResult(
+  actual: SectionRuleEvaluationResult,
+  expected: SectionRuleEvaluationResult
+): void {
+  expect(actual).toEqual(expected);
+}
+
 describe("evaluateCondition", () => {
   it("matches eq for string fields", () => {
     const condition = makeCondition({ field: "agentMode", op: "eq", value: "plan" });
@@ -52,19 +64,13 @@ describe("evaluateCondition", () => {
     expect(evaluateCondition(condition, makeCtx({ prState: "none" }))).toBe(true);
   });
 
-  it("matches eq for boolean fields", () => {
-    const condition = makeCondition({ field: "streaming", op: "eq", value: true });
-    expect(evaluateCondition(condition, makeCtx({ streaming: true }))).toBe(true);
-  });
+  it("returns inconclusive when the condition field is unavailable", () => {
+    const condition = makeCondition({ field: "prState", op: "eq", value: "OPEN" });
+    const ctx = makeCtx({
+      availableFields: new Set(["agentMode", "streaming", "taskStatus", "hasAgentStatus"]),
+    });
 
-  it("handles undefined fields for eq", () => {
-    const condition = makeCondition({ field: "prMergeStatus", op: "eq", value: "CLEAN" });
-    expect(evaluateCondition(condition, makeCtx({ prMergeStatus: undefined }))).toBe(false);
-  });
-
-  it("handles undefined fields for neq", () => {
-    const condition = makeCondition({ field: "prMergeStatus", op: "neq", value: "CLEAN" });
-    expect(evaluateCondition(condition, makeCtx({ prMergeStatus: undefined }))).toBe(true);
+    expect(evaluateCondition(condition, ctx)).toBe("inconclusive");
   });
 
   it("matches in when value is in set", () => {
@@ -102,12 +108,26 @@ describe("evaluateCondition", () => {
     });
     expect(evaluateCondition(condition, makeCtx({ taskStatus: "running" }))).toBe(false);
   });
+
+  it("returns false for in when parsed value is not an array", () => {
+    const condition = makeCondition({
+      field: "taskStatus",
+      op: "in",
+      value: '{"status":"running"}',
+    });
+
+    expect(evaluateCondition(condition, makeCtx({ taskStatus: "running" }))).toBe(false);
+  });
 });
 
 describe("evaluateSectionRules", () => {
-  it("returns undefined when no sections have rules", () => {
+  it("returns no target when no sections have rules", () => {
     const sections = [makeSection("a"), makeSection("b")];
-    expect(evaluateSectionRules(sections, makeCtx())).toBeUndefined();
+
+    expectResult(evaluateSectionRules(sections, makeCtx()), {
+      targetSectionId: undefined,
+      hasInconclusiveRules: false,
+    });
   });
 
   it("returns section id for single matching rule", () => {
@@ -119,10 +139,13 @@ describe("evaluateSectionRules", () => {
       ]),
     ];
 
-    expect(evaluateSectionRules(sections, makeCtx({ agentMode: "plan" }))).toBe("a");
+    expectResult(evaluateSectionRules(sections, makeCtx({ agentMode: "plan" })), {
+      targetSectionId: "a",
+      hasInconclusiveRules: false,
+    });
   });
 
-  it("returns undefined when single rule does not match", () => {
+  it("returns no target when single rule does not match", () => {
     const sections = [
       makeSection("a", [
         {
@@ -131,7 +154,10 @@ describe("evaluateSectionRules", () => {
       ]),
     ];
 
-    expect(evaluateSectionRules(sections, makeCtx({ agentMode: "exec" }))).toBeUndefined();
+    expectResult(evaluateSectionRules(sections, makeCtx({ agentMode: "exec" })), {
+      targetSectionId: undefined,
+      hasInconclusiveRules: false,
+    });
   });
 
   it("matches multi-condition rules when all conditions pass (AND)", () => {
@@ -146,15 +172,19 @@ describe("evaluateSectionRules", () => {
       ]),
     ];
 
-    expect(
+    expectResult(
       evaluateSectionRules(
         sections,
         makeCtx({
           agentMode: "plan",
           streaming: true,
         })
-      )
-    ).toBe("a");
+      ),
+      {
+        targetSectionId: "a",
+        hasInconclusiveRules: false,
+      }
+    );
   });
 
   it("does not match multi-condition rules when one condition fails", () => {
@@ -169,15 +199,19 @@ describe("evaluateSectionRules", () => {
       ]),
     ];
 
-    expect(
+    expectResult(
       evaluateSectionRules(
         sections,
         makeCtx({
           agentMode: "plan",
           streaming: false,
         })
-      )
-    ).toBeUndefined();
+      ),
+      {
+        targetSectionId: undefined,
+        hasInconclusiveRules: false,
+      }
+    );
   });
 
   it("matches section when any rule matches (OR)", () => {
@@ -192,7 +226,10 @@ describe("evaluateSectionRules", () => {
       ]),
     ];
 
-    expect(evaluateSectionRules(sections, makeCtx({ streaming: true }))).toBe("a");
+    expectResult(evaluateSectionRules(sections, makeCtx({ streaming: true })), {
+      targetSectionId: "a",
+      hasInconclusiveRules: false,
+    });
   });
 
   it("returns the first matching section across sections", () => {
@@ -209,7 +246,10 @@ describe("evaluateSectionRules", () => {
       ]),
     ];
 
-    expect(evaluateSectionRules(sections, makeCtx({ streaming: true }))).toBe("first");
+    expectResult(evaluateSectionRules(sections, makeCtx({ streaming: true })), {
+      targetSectionId: "first",
+      hasInconclusiveRules: false,
+    });
   });
 
   it("skips auto-assignment for pinned workspaces", () => {
@@ -221,23 +261,100 @@ describe("evaluateSectionRules", () => {
       ]),
     ];
 
-    expect(
+    expectResult(
       evaluateSectionRules(
         sections,
         makeCtx({
           agentMode: "plan",
           pinnedToSection: true,
         })
-      )
-    ).toBeUndefined();
+      ),
+      {
+        targetSectionId: undefined,
+        hasInconclusiveRules: false,
+      }
+    );
   });
 
-  it("ignores sections with empty rules arrays", () => {
-    const sections = [makeSection("a", [])];
-    expect(evaluateSectionRules(sections, makeCtx({ agentMode: "plan" }))).toBeUndefined();
+  it("marks rule evaluation inconclusive when a field is unavailable", () => {
+    const sections = [
+      makeSection("open-pr", [
+        {
+          conditions: [makeCondition({ field: "prState", op: "eq", value: "OPEN" })],
+        },
+      ]),
+    ];
+
+    expectResult(
+      evaluateSectionRules(
+        sections,
+        makeCtx({
+          currentSectionId: "open-pr",
+          availableFields: new Set(["agentMode", "streaming", "taskStatus", "hasAgentStatus"]),
+        })
+      ),
+      {
+        targetSectionId: undefined,
+        hasInconclusiveRules: true,
+      }
+    );
   });
 
-  it("returns undefined when a previously assigned workspace no longer matches any rule", () => {
+  it("returns first conclusive match even when prior rules were inconclusive", () => {
+    const sections = [
+      makeSection("mixed", [
+        {
+          conditions: [makeCondition({ field: "prState", op: "eq", value: "OPEN" })],
+        },
+        {
+          conditions: [makeCondition({ field: "streaming", op: "eq", value: true })],
+        },
+      ]),
+    ];
+
+    expectResult(
+      evaluateSectionRules(
+        sections,
+        makeCtx({
+          streaming: true,
+          availableFields: new Set(["agentMode", "streaming", "taskStatus", "hasAgentStatus"]),
+        })
+      ),
+      {
+        targetSectionId: "mixed",
+        hasInconclusiveRules: true,
+      }
+    );
+  });
+
+  it("marks rule inconclusive when any condition is inconclusive", () => {
+    const sections = [
+      makeSection("mixed", [
+        {
+          conditions: [
+            makeCondition({ field: "streaming", op: "eq", value: false }),
+            makeCondition({ field: "prState", op: "eq", value: "OPEN" }),
+          ],
+        },
+      ]),
+    ];
+
+    expectResult(
+      evaluateSectionRules(
+        sections,
+        makeCtx({
+          streaming: true,
+          availableFields: new Set(["agentMode", "streaming", "taskStatus", "hasAgentStatus"]),
+        })
+      ),
+      {
+        targetSectionId: undefined,
+        hasInconclusiveRules: true,
+      }
+    );
+  });
+
+  it("returns no target when a previously assigned workspace no longer matches any conclusive rule", () => {
     const sections = [
       makeSection("a", [
         {
@@ -246,14 +363,18 @@ describe("evaluateSectionRules", () => {
       ]),
     ];
 
-    expect(
+    expectResult(
       evaluateSectionRules(
         sections,
         makeCtx({
           currentSectionId: "a",
           agentMode: "exec",
         })
-      )
-    ).toBeUndefined();
+      ),
+      {
+        targetSectionId: undefined,
+        hasInconclusiveRules: false,
+      }
+    );
   });
 });

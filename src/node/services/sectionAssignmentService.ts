@@ -1,42 +1,52 @@
-import assert from "@/common/utils/assert";
 import type { SectionRuleCondition } from "@/common/schemas/project";
 import type { StreamEndEvent } from "@/common/types/stream";
 import type { SectionConfig } from "@/common/types/project";
+import assert from "@/common/utils/assert";
 import { evaluateSectionRules, type WorkspaceRuleContext } from "@/common/utils/sectionRules";
 import { sortSectionsByLinkedList } from "@/common/utils/sections";
 import { log } from "@/node/services/log";
+
 import type { AIService } from "./aiService";
 import type { ProjectService } from "./projectService";
 import type { WorkspaceService } from "./workspaceService";
 
 const DEBOUNCE_MS = 300;
 
-const FRONTEND_ONLY_FIELDS = new Set<SectionRuleCondition["field"]>([
-  "prState",
-  "prMergeStatus",
-  "prIsDraft",
-  "prHasFailedChecks",
-  "prHasPendingChecks",
-  "gitDirty",
+const BACKEND_AVAILABLE_FIELDS: ReadonlySet<SectionRuleCondition["field"]> = new Set([
+  "agentMode",
+  "streaming",
+  "taskStatus",
+  "hasAgentStatus",
 ]);
 
-function sectionHasFrontendOnlyRules(section: SectionConfig): boolean {
-  return (
-    section.rules?.some((rule) =>
-      rule.conditions.some((condition) => FRONTEND_ONLY_FIELDS.has(condition.field))
-    ) ?? false
-  );
+const FRONTEND_CONTEXT_FIELD_MAP: Array<{
+  frontendKey: keyof FrontendProvidedContext;
+  field: SectionRuleCondition["field"];
+}> = [
+  { frontendKey: "prState", field: "prState" },
+  { frontendKey: "prMergeStatus", field: "prMergeStatus" },
+  { frontendKey: "prIsDraft", field: "prIsDraft" },
+  { frontendKey: "prHasFailedChecks", field: "prHasFailedChecks" },
+  { frontendKey: "prHasPendingChecks", field: "prHasPendingChecks" },
+  { frontendKey: "gitDirty", field: "gitDirty" },
+];
+
+function buildAvailableFields(
+  frontendContext: FrontendProvidedContext | undefined
+): Set<SectionRuleCondition["field"]> {
+  const availableFields = new Set<SectionRuleCondition["field"]>(BACKEND_AVAILABLE_FIELDS);
+
+  for (const { frontendKey, field } of FRONTEND_CONTEXT_FIELD_MAP) {
+    if (frontendContext?.[frontendKey] !== undefined) {
+      availableFields.add(field);
+    }
+  }
+
+  return availableFields;
 }
 
-function hasFrontendOnlyContext(frontendContext: FrontendProvidedContext | undefined): boolean {
-  return (
-    frontendContext?.prState !== undefined ||
-    frontendContext?.prMergeStatus !== undefined ||
-    frontendContext?.prIsDraft !== undefined ||
-    frontendContext?.prHasFailedChecks !== undefined ||
-    frontendContext?.prHasPendingChecks !== undefined ||
-    frontendContext?.gitDirty !== undefined
-  );
+function hasRules(sections: SectionConfig[]): boolean {
+  return sections.some((section) => (section.rules?.length ?? 0) > 0);
 }
 
 export interface FrontendProvidedContext {
@@ -47,8 +57,6 @@ export interface FrontendProvidedContext {
   prHasPendingChecks?: boolean;
   gitDirty?: boolean;
 }
-
-export type SectionEvaluationSource = "auto" | "explicit";
 
 export class SectionAssignmentService {
   private pendingEvaluations = new Map<string, ReturnType<typeof setTimeout>>();
@@ -97,14 +105,12 @@ export class SectionAssignmentService {
 
   async evaluateWorkspace(
     workspaceId: string,
-    frontendContext?: FrontendProvidedContext,
-    source: SectionEvaluationSource = "auto"
+    frontendContext?: FrontendProvidedContext
   ): Promise<void> {
     assert(
       typeof workspaceId === "string" && workspaceId.trim().length > 0,
       "workspaceId is required"
     );
-    assert(source === "auto" || source === "explicit", "invalid section evaluation source");
 
     const metadata = await this.workspaceService.getInfo(workspaceId);
     if (!metadata) {
@@ -117,23 +123,7 @@ export class SectionAssignmentService {
 
     const projectPath = metadata.projectPath;
     const sortedSections = sortSectionsByLinkedList(this.projectService.listSections(projectPath));
-    const frontendContextAvailable = hasFrontendOnlyContext(frontendContext);
-    const skipFrontendOnlyRules = source === "auto" && !frontendContextAvailable;
-
-    if (skipFrontendOnlyRules && metadata.sectionId) {
-      const currentSection = sortedSections.find((section) => section.id === metadata.sectionId);
-      if (currentSection && sectionHasFrontendOnlyRules(currentSection)) {
-        // Preserve assignment when backend-triggered reevaluation lacks frontend-only PR/git context.
-        return;
-      }
-    }
-
-    const sectionsToEvaluate = skipFrontendOnlyRules
-      ? sortedSections.filter((section) => !sectionHasFrontendOnlyRules(section))
-      : sortedSections;
-
-    const hasRules = sectionsToEvaluate.some((section) => (section.rules?.length ?? 0) > 0);
-    if (!hasRules) {
+    if (!hasRules(sortedSections)) {
       return;
     }
 
@@ -144,7 +134,7 @@ export class SectionAssignmentService {
       workspaceId,
       agentMode: metadata.agentId,
       streaming: activity?.streaming ?? false,
-      prState: frontendContext?.prState ?? "none",
+      prState: frontendContext?.prState,
       prMergeStatus: frontendContext?.prMergeStatus,
       prIsDraft: frontendContext?.prIsDraft,
       prHasFailedChecks: frontendContext?.prHasFailedChecks,
@@ -154,17 +144,45 @@ export class SectionAssignmentService {
       gitDirty: frontendContext?.gitDirty,
       currentSectionId: metadata.sectionId,
       pinnedToSection: false,
+      availableFields: buildAvailableFields(frontendContext),
     };
 
-    const nextSectionId = evaluateSectionRules(sectionsToEvaluate, context);
-    if (nextSectionId === metadata.sectionId) {
+    const evaluationResult = evaluateSectionRules(sortedSections, context);
+
+    if (evaluationResult.targetSectionId !== undefined) {
+      if (evaluationResult.targetSectionId === metadata.sectionId) {
+        return;
+      }
+
+      const assignResult = await this.projectService.assignWorkspaceToSection(
+        projectPath,
+        workspaceId,
+        evaluationResult.targetSectionId,
+        false
+      );
+
+      if (!assignResult.success) {
+        log.warn("Failed to auto-assign workspace to section", {
+          workspaceId,
+          projectPath,
+          error: assignResult.error,
+        });
+        return;
+      }
+
+      await this.workspaceService.refreshAndEmitMetadata(workspaceId);
+      return;
+    }
+
+    if (evaluationResult.hasInconclusiveRules || metadata.sectionId == null) {
+      // Preserve current assignment while some rule fields remain unknown.
       return;
     }
 
     const assignResult = await this.projectService.assignWorkspaceToSection(
       projectPath,
       workspaceId,
-      nextSectionId ?? null,
+      null,
       false
     );
 
@@ -194,8 +212,7 @@ export class SectionAssignmentService {
       }
 
       try {
-        // Rule edits are explicit user actions, so reevaluate all rule fields (including PR/git).
-        await this.evaluateWorkspace(workspace.id, undefined, "explicit");
+        await this.evaluateWorkspace(workspace.id);
       } catch (error) {
         log.error("Failed to evaluate workspace during project section assignment", {
           workspaceId: workspace.id,
