@@ -281,6 +281,40 @@ describe("SectionAssignmentService", () => {
     );
   });
 
+  it("combines PR and git context from independent frontend updates", async () => {
+    listSectionsMock.mockReturnValue([
+      {
+        id: "open-and-dirty",
+        name: "Open and Dirty",
+        rules: [
+          {
+            conditions: [
+              { field: "prState", op: "eq", value: "OPEN" },
+              { field: "gitDirty", op: "eq", value: true },
+            ],
+          },
+        ],
+      },
+    ]);
+
+    await service.evaluateWorkspace("ws-1", { prState: "OPEN" });
+
+    expect(assignWorkspaceToSectionMock).not.toHaveBeenCalled();
+    expect(refreshAndEmitMetadataMock).not.toHaveBeenCalled();
+
+    await service.evaluateWorkspace("ws-1", { gitDirty: true });
+
+    expect(assignWorkspaceToSectionMock).toHaveBeenCalledTimes(1);
+    expect(assignWorkspaceToSectionMock).toHaveBeenCalledWith(
+      "/project/demo",
+      "ws-1",
+      "open-and-dirty",
+      false
+    );
+    expect(refreshAndEmitMetadataMock).toHaveBeenCalledTimes(1);
+    expect(refreshAndEmitMetadataMock).toHaveBeenCalledWith("ws-1");
+  });
+
   it("re-evaluates only workspaces from the requested project", async () => {
     listWorkspacesMock.mockResolvedValueOnce([
       makeMetadata({ id: "ws-1", projectPath: "/project/demo" }),
