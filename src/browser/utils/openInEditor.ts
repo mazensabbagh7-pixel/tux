@@ -117,7 +117,9 @@ export async function openInEditor(args: {
           updatePersistedState(VS_CODE_EXTENSION_INSTALL_ATTEMPTED_KEY, true);
         }
       )
-      ?.catch(() => {});
+      ?.catch(() => {
+        /* silently ignore background install errors */
+      });
   }
 
   const isSSH = isSSHRuntime(args.runtimeConfig);

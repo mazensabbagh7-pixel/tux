@@ -211,13 +211,12 @@ describe("EditorService", () => {
             installLogPath: join(cliDir, "install.log"),
           }),
         async () => {
-          await expect(editorService.installVsCodeExtension("vscode")).resolves.toEqual(
-            expect.objectContaining({
-              installed: false,
-              alreadyInstalled: false,
-              error: expect.any(String),
-            })
-          );
+          const result = await editorService.installVsCodeExtension("vscode");
+
+          expect(result.installed).toBe(false);
+          expect(result.alreadyInstalled).toBe(false);
+          expect(result.error).toBeDefined();
+          expect(typeof result.error).toBe("string");
         }
       );
     });
