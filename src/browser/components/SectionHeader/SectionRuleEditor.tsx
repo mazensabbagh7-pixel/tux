@@ -123,7 +123,9 @@ function coerceFieldValue(
     return byString.value;
   }
 
-  return options[0].value;
+  // Preserve unknown values instead of coercing to the first option.
+  // A future version may introduce new field values that this editor does not recognize yet.
+  return value;
 }
 
 function getConditionPrimitiveValue(condition: SectionRuleCondition): string | boolean {
