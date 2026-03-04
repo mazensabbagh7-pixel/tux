@@ -265,11 +265,16 @@ class MuxAgent(BaseInstalledAgent):
                 timeout_sec=exec_input.timeout_sec,
             )
 
-            (command_dir / "return-code.txt").write_text(str(result.return_code))
-            if result.stdout:
-                (command_dir / "stdout.txt").write_text(result.stdout)
-            if result.stderr:
-                (command_dir / "stderr.txt").write_text(result.stderr)
+            for filename, content in [
+                ("return-code.txt", str(result.return_code)),
+                ("stdout.txt", result.stdout),
+                ("stderr.txt", result.stderr),
+            ]:
+                if content:
+                    try:
+                        (command_dir / filename).write_text(content)
+                    except OSError as exc:
+                        print(f"Warning: failed to write {command_dir / filename}: {exc}")
 
         # Download token file from container BEFORE populating context
         # Clear any stale token file first to avoid reading outdated data if download fails
@@ -295,3 +300,39 @@ class MuxAgent(BaseInstalledAgent):
                     context.cost_usd = data["cost_usd"]
             except Exception:
                 pass  # Token/cost extraction is best-effort
+
+        # Fallback: extract tokens from run-complete event in stdout
+        if context.n_input_tokens is None:
+            self._extract_tokens_from_stdout(context)
+
+    def _extract_tokens_from_stdout(self, context: AgentContext) -> None:
+        """Best-effort fallback token extraction from command stdout logs."""
+        stdout_file = self.logs_dir / "command-0" / "stdout.txt"
+        if not stdout_file.exists():
+            return
+
+        try:
+            for line in stdout_file.read_text().splitlines():
+                if '"run-complete"' not in line:
+                    continue
+
+                try:
+                    payload = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+
+                if payload.get("type") != "run-complete":
+                    continue
+
+                usage = payload.get("usage")
+                if isinstance(usage, dict):
+                    if usage.get("inputTokens") is not None:
+                        context.n_input_tokens = usage["inputTokens"]
+                    if usage.get("outputTokens") is not None:
+                        context.n_output_tokens = usage["outputTokens"]
+
+                if payload.get("cost_usd") is not None:
+                    context.cost_usd = payload["cost_usd"]
+                break
+        except Exception:
+            pass
