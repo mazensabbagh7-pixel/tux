@@ -357,6 +357,11 @@ export class Config {
         typeof userVal === "object" &&
         !Array.isArray(userVal)
       ) {
+        // LIMITATION: This is a shallow key-level merge — user sub-values replace
+        // system sub-values without per-value validation. E.g., a user setting
+        // featureFlagOverrides.flagA = "bogus" overwrites the admin's "on". This
+        // is accepted because validation lives in consumers (getFeatureFlagOverride),
+        // not the config merge layer, and the set of valid values varies per key.
         mergedRecord[key] = { ...systemVal, ...userVal };
       } else {
         mergedRecord[key] = userVal;
@@ -516,12 +521,28 @@ export class Config {
           sysVal: unknown
         ): T | undefined => normalize(mergedVal) ?? normalize(sysVal);
 
+        // Array-aware fallback: array normalizers return [] (not undefined)
+        // when filtering strips all entries, so `fb` alone won't trigger
+        // fallback. Detect "all entries stripped" (raw non-empty → normalized
+        // empty) and fall back to system defaults; preserve intentional [].
+        const fbArray = <T>(
+          normalize: (v: unknown) => T[] | undefined,
+          mergedVal: unknown,
+          sysVal: unknown
+        ): T[] | undefined => {
+          const result = normalize(mergedVal);
+          if (result?.length === 0 && Array.isArray(mergedVal) && mergedVal.length > 0) {
+            return normalize(sysVal) ?? result;
+          }
+          return result ?? normalize(sysVal);
+        };
+
         const muxGatewayEnabled = fb(
           parseOptionalBoolean,
           parsed.muxGatewayEnabled,
           systemParsed?.muxGatewayEnabled
         );
-        const muxGatewayModels = fb(
+        const muxGatewayModels = fbArray(
           parseOptionalStringArray,
           parsed.muxGatewayModels,
           systemParsed?.muxGatewayModels
@@ -532,21 +553,11 @@ export class Config {
           parsed.defaultModel,
           systemParsed?.defaultModel
         );
-        // For model arrays, normalizeOptionalModelStringArray returns [] (not
-        // undefined) when all entries are invalid, so ?? alone won't trigger
-        // fallback. Detect "all entries stripped" (raw non-empty → normalized
-        // empty) and fall back to system defaults; preserve intentional [].
-        const hiddenModelsNormalized = normalizeOptionalModelStringArray(parsed.hiddenModels);
-        const hiddenModelsAllStripped =
-          hiddenModelsNormalized?.length === 0 &&
-          Array.isArray(parsed.hiddenModels) &&
-          parsed.hiddenModels.length > 0;
-        const hiddenModels =
-          hiddenModelsNormalized == null || hiddenModelsAllStripped
-            ? systemParsed
-              ? normalizeOptionalModelStringArray(systemParsed.hiddenModels)
-              : hiddenModelsNormalized
-            : hiddenModelsNormalized;
+        const hiddenModels = fbArray(
+          normalizeOptionalModelStringArray,
+          parsed.hiddenModels,
+          systemParsed?.hiddenModels
+        );
         const legacySubagentAiDefaults = normalizeSubagentAiDefaults(parsed.subagentAiDefaults);
 
         // Default ON: store `false` only so config.json stays minimal.

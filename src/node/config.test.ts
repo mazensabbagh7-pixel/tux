@@ -651,6 +651,22 @@ describe("Config", () => {
       // Normalization rejects "garbage", fb helper falls back to system "stable"
       expect(loaded.updateChannel).toBe("stable");
     });
+    it("system muxGatewayModels fallback when all user entries are invalid", () => {
+      writeSystemConfig({
+        muxGatewayModels: ["model-a", "model-b"],
+        projects: [],
+      });
+      writeUserConfig({
+        // All entries are non-strings — parseOptionalStringArray strips to []
+        muxGatewayModels: [123, 456] as unknown as string[],
+        projects: [],
+      });
+
+      const loaded = config.loadConfigOrDefault();
+
+      // Should fall back to system models, not empty array
+      expect(loaded.muxGatewayModels).toEqual(["model-a", "model-b"]);
+    });
 
     it("system object defaults are stripped key-by-key on save", async () => {
       writeSystemConfig({
