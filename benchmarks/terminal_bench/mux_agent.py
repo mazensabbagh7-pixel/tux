@@ -37,6 +37,7 @@ class MuxAgent(BaseInstalledAgent):
 
     _PROVIDER_ENV_KEYS: Sequence[str] = (
         "ANTHROPIC_API_KEY",
+        "ANTHROPIC_AUTH_TOKEN",
         "ANTHROPIC_BASE_URL",
         "OPENAI_API_KEY",
         "OPENAI_BASE_URL",

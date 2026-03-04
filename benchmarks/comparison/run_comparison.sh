@@ -19,6 +19,10 @@ AGENTS="${AGENTS:-mux claude-code codex}"
 # Harbor requires Python ≥3.12; ensure uv uses it
 export UV_PYTHON="${UV_PYTHON:-3.12}"
 
+# Host-side MUX_PROJECT_PATH values point to paths that do not exist inside Harbor
+# Docker containers. Unset it so mux-run.sh resolves from in-container fallback candidates.
+unset MUX_PROJECT_PATH
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPORTS_DIR="${SCRIPT_DIR}/reports"
 TIMESTAMP="$(date +"%Y-%m-%d__%H-%M-%S")"
