@@ -5,6 +5,7 @@ import {
   Boxes,
   Briefcase,
   Command as CommandIcon,
+  Download,
   Server,
   Sparkles,
 } from "lucide-react";
@@ -532,6 +533,74 @@ export function OnboardingWizardSplash(props: { onDismiss: () => void }) {
     setHasConfiguredProvidersAtStart(configuredProviders.length > 0);
   }, [configuredProviders.length, hasConfiguredProvidersAtStart, providersLoading]);
 
+  // ---- Key Discovery ----
+  type DiscoveredKeyEntry = { provider: string; source: string; keyPreview: string };
+  const [discoveredKeys, setDiscoveredKeys] = useState<DiscoveredKeyEntry[]>([]);
+  const [discoveredKeysLoading, setDiscoveredKeysLoading] = useState(false);
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
+  const [importingKeys, setImportingKeys] = useState(false);
+  const [importResults, setImportResults] = useState<Record<string, "success" | "error">>({});
+
+  useEffect(() => {
+    // Only discover when no providers are configured at start
+    if (hasConfiguredProvidersAtStart !== false || !api) {
+      return;
+    }
+
+    let cancelled = false;
+    setDiscoveredKeysLoading(true);
+    api.keyDiscovery
+      .discover()
+      .then((keys) => {
+        if (!cancelled) {
+          setDiscoveredKeys(keys);
+          // Pre-select all discovered keys
+          setSelectedKeys(new Set(keys.map((k) => `${k.provider}:${k.source}`)));
+        }
+      })
+      .catch(() => {
+        // Non-fatal — user can configure manually
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setDiscoveredKeysLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [api, hasConfiguredProvidersAtStart]);
+
+  const handleImportKeys = useCallback(async () => {
+    if (!api || selectedKeys.size === 0) {
+      return;
+    }
+
+    setImportingKeys(true);
+    const results: Record<string, "success" | "error"> = {};
+
+    for (const key of discoveredKeys) {
+      const id = `${key.provider}:${key.source}`;
+      if (!selectedKeys.has(id)) {
+        continue;
+      }
+
+      try {
+        const result = await api.keyDiscovery.import({
+          provider: key.provider,
+          source: key.source,
+        });
+        results[id] = result.success ? "success" : "error";
+      } catch {
+        results[id] = "error";
+      }
+    }
+
+    setImportResults(results);
+    setImportingKeys(false);
+  }, [api, discoveredKeys, selectedKeys]);
+
   const commandPaletteShortcut = formatKeybind(KEYBINDS.OPEN_COMMAND_PALETTE);
   const commandPaletteActionsShortcut = formatKeybind(KEYBINDS.OPEN_COMMAND_PALETTE_ACTIONS);
   const agentPickerShortcut = formatKeybind(KEYBINDS.TOGGLE_AGENT);
@@ -688,6 +757,109 @@ export function OnboardingWizardSplash(props: { onDismiss: () => void }) {
               </button>
               .
             </p>
+          </>
+        ),
+      });
+    }
+
+    // Key discovery step — only shown when keys were found from other tools
+    if (hasConfiguredProvidersAtStart === false && discoveredKeys.length > 0 && !discoveredKeysLoading) {
+      const importedCount = Object.values(importResults).filter((r) => r === "success").length;
+
+      nextSteps.push({
+        key: "key-discovery",
+        title: "Import keys from other tools",
+        icon: <Download className="h-4 w-4" />,
+        body: (
+          <>
+            <p>
+              We found API keys from other AI tools on your system. Would you like to import them
+              into Mux?
+            </p>
+
+            <p className="text-muted mt-2 text-xs">
+              Keys are read from config files of other tools and stored in{" "}
+              <code className="text-accent">~/.mux/providers.jsonc</code> with restricted
+              permissions. No data is sent externally.
+            </p>
+
+            <div className="mt-3 space-y-1.5">
+              {discoveredKeys.map((dk) => {
+                const id = `${dk.provider}:${dk.source}`;
+                const isSelected = selectedKeys.has(id);
+                const result = importResults[id];
+                const displayName =
+                  PROVIDER_DISPLAY_NAMES[dk.provider as keyof typeof PROVIDER_DISPLAY_NAMES] ??
+                  dk.provider;
+
+                return (
+                  <label
+                    key={id}
+                    className={`bg-background-secondary border-border-medium flex cursor-pointer items-center gap-2 rounded-md border px-3 py-2 text-xs select-none ${
+                      result === "success" ? "opacity-60" : ""
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      className="accent-accent"
+                      checked={isSelected}
+                      disabled={importingKeys || result === "success"}
+                      onChange={() => {
+                        setSelectedKeys((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(id)) {
+                            next.delete(id);
+                          } else {
+                            next.add(id);
+                          }
+                          return next;
+                        });
+                      }}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="text-foreground font-medium">
+                        {displayName}
+                        {result === "success" && (
+                          <span className="ml-1.5 text-green-500">✓ Imported</span>
+                        )}
+                        {result === "error" && (
+                          <span className="text-destructive ml-1.5">Failed</span>
+                        )}
+                      </div>
+                      <div className="text-muted mt-0.5 flex items-center gap-2">
+                        <span className="truncate">{dk.source}</span>
+                        <code className="bg-background shrink-0 rounded px-1 font-mono">
+                          {dk.keyPreview}
+                        </code>
+                      </div>
+                    </div>
+                  </label>
+                );
+              })}
+            </div>
+
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <Button
+                onClick={() => {
+                  void handleImportKeys();
+                }}
+                disabled={
+                  importingKeys ||
+                  selectedKeys.size === 0 ||
+                  importedCount === discoveredKeys.length
+                }
+              >
+                {importingKeys
+                  ? "Importing..."
+                  : importedCount > 0
+                    ? `Import selected (${importedCount}/${discoveredKeys.length} done)`
+                    : `Import ${selectedKeys.size} key${selectedKeys.size === 1 ? "" : "s"}`}
+              </Button>
+
+              {importedCount > 0 && importedCount === discoveredKeys.length && (
+                <span className="text-xs text-green-500">All keys imported!</span>
+              )}
+            </div>
           </>
         ),
       });
@@ -948,7 +1120,12 @@ export function OnboardingWizardSplash(props: { onDismiss: () => void }) {
     configuredProviders.length,
     configuredProvidersSummary,
     cycleAgentShortcut,
+    discoveredKeys,
+    discoveredKeysLoading,
+    handleImportKeys,
     hasConfiguredProvidersAtStart,
+    importingKeys,
+    importResults,
     muxGatewayAccountError,
     muxGatewayAccountLoading,
     muxGatewayAccountStatus,
@@ -961,6 +1138,7 @@ export function OnboardingWizardSplash(props: { onDismiss: () => void }) {
     userProjects.size,
     providersConfig,
     refreshMuxGatewayAccountStatus,
+    selectedKeys,
     startMuxGatewayLogin,
     visibleProviders,
   ]);
