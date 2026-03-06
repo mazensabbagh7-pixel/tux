@@ -139,14 +139,25 @@ export function evaluateSectionRules(
 
   let hasInconclusiveRules = false;
   let currentSectionInconclusive = false;
+  let pendingTargetSectionId: string | undefined;
+  let currentSectionEvaluated = ctx.currentSectionId === undefined;
 
   for (const section of sections) {
     const rules = section.rules;
+    const isCurrentSection = section.id === ctx.currentSectionId;
     if (!rules || rules.length === 0) {
+      if (isCurrentSection) {
+        currentSectionEvaluated = true;
+      }
+      if (pendingTargetSectionId !== undefined && currentSectionEvaluated) {
+        return {
+          targetSectionId: pendingTargetSectionId,
+          hasInconclusiveRules,
+          currentSectionInconclusive,
+        };
+      }
       continue;
     }
-
-    const isCurrentSection = section.id === ctx.currentSectionId;
 
     for (const rule of rules) {
       let ruleHasInconclusiveCondition = false;
@@ -175,17 +186,32 @@ export function evaluateSectionRules(
       }
 
       if (allKnownConditionsPass && !ruleHasInconclusiveCondition) {
-        return {
-          targetSectionId: section.id,
-          hasInconclusiveRules,
-          currentSectionInconclusive,
-        };
+        if (currentSectionEvaluated) {
+          return {
+            targetSectionId: section.id,
+            hasInconclusiveRules,
+            currentSectionInconclusive,
+          };
+        }
+        pendingTargetSectionId ??= section.id;
+        break;
       }
+    }
+
+    if (isCurrentSection) {
+      currentSectionEvaluated = true;
+    }
+    if (pendingTargetSectionId !== undefined && currentSectionEvaluated) {
+      return {
+        targetSectionId: pendingTargetSectionId,
+        hasInconclusiveRules,
+        currentSectionInconclusive,
+      };
     }
   }
 
   return {
-    targetSectionId: undefined,
+    targetSectionId: pendingTargetSectionId,
     hasInconclusiveRules,
     currentSectionInconclusive,
   };

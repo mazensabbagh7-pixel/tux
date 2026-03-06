@@ -401,6 +401,37 @@ describe("evaluateSectionRules", () => {
     );
   });
 
+  it("tracks current section inconclusive state before returning an earlier match", () => {
+    const sections = [
+      makeSection("matched-first", [
+        {
+          conditions: [makeCondition({ field: "streaming", op: "eq", value: false })],
+        },
+      ]),
+      makeSection("current-later", [
+        {
+          conditions: [makeCondition({ field: "prState", op: "eq", value: "OPEN" })],
+        },
+      ]),
+    ];
+
+    expectResult(
+      evaluateSectionRules(
+        sections,
+        makeCtx({
+          currentSectionId: "current-later",
+          streaming: false,
+          availableFields: new Set(["streaming"]),
+        })
+      ),
+      {
+        targetSectionId: "matched-first",
+        hasInconclusiveRules: true,
+        currentSectionInconclusive: true,
+      }
+    );
+  });
+
   it("returns first conclusive match even when prior rules were inconclusive", () => {
     const sections = [
       makeSection("mixed", [

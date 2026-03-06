@@ -141,6 +141,28 @@ async function resolveAgentDiscoveryContext(
   return { runtime, discoveryPath: input.projectPath! };
 }
 
+async function evaluateProjectSectionsBestEffort(params: {
+  context: ORPCContext;
+  projectPath: string;
+  mutationName: string;
+}): Promise<void> {
+  const sectionAssignmentService = params.context.sectionAssignmentService;
+  if (!sectionAssignmentService) {
+    return;
+  }
+
+  try {
+    await sectionAssignmentService.evaluateProject(params.projectPath);
+  } catch (error) {
+    // Why best-effort: section config changes are already persisted, so follow-up re-evaluation
+    // must not turn a successful mutation into an RPC failure.
+    log.warn(`${params.mutationName}: project section re-evaluation failed`, {
+      projectPath: params.projectPath,
+      error: getErrorMessage(error),
+    });
+  }
+}
+
 function isErrnoWithCode(error: unknown, code: string): boolean {
   return Boolean(error && typeof error === "object" && "code" in error && error.code === code);
 }
@@ -2608,8 +2630,12 @@ export const router = (authToken?: string) => {
               }
             );
 
-            if (result.success && input.rules !== undefined && context.sectionAssignmentService) {
-              await context.sectionAssignmentService.evaluateProject(input.projectPath);
+            if (result.success && input.rules !== undefined) {
+              await evaluateProjectSectionsBestEffort({
+                context,
+                projectPath: input.projectPath,
+                mutationName: "projects.sections.update",
+              });
             }
 
             return result;
@@ -2622,8 +2648,12 @@ export const router = (authToken?: string) => {
               input.projectPath,
               input.sectionId
             );
-            if (result.success && context.sectionAssignmentService) {
-              await context.sectionAssignmentService.evaluateProject(input.projectPath);
+            if (result.success) {
+              await evaluateProjectSectionsBestEffort({
+                context,
+                projectPath: input.projectPath,
+                mutationName: "projects.sections.remove",
+              });
             }
             return result;
           }),
@@ -2635,8 +2665,12 @@ export const router = (authToken?: string) => {
               input.projectPath,
               input.sectionIds
             );
-            if (result.success && context.sectionAssignmentService) {
-              await context.sectionAssignmentService.evaluateProject(input.projectPath);
+            if (result.success) {
+              await evaluateProjectSectionsBestEffort({
+                context,
+                projectPath: input.projectPath,
+                mutationName: "projects.sections.reorder",
+              });
             }
             return result;
           }),
