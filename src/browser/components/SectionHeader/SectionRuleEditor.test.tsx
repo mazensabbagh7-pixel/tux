@@ -74,6 +74,30 @@ describe("SectionRuleEditor", () => {
     expect(view.getByText("No rules yet. Add a rule or start from a preset.")).toBeTruthy();
   });
 
+  test("Merge-ready preset requires a non-draft clean PR with passing checks", () => {
+    const onSave = mock((_: SectionRule[]) => undefined);
+    const view = render(<SectionRuleEditor rules={[]} onSave={onSave} onClose={noop} />);
+
+    fireEvent.change(view.getByTestId("rule-preset-select"), {
+      target: { value: "2" },
+    });
+    fireEvent.click(view.getByTestId("save-rules-button"));
+
+    expect(onSave).toHaveBeenCalledTimes(1);
+    const [savedRules] = onSave.mock.calls[0] as [SectionRule[]];
+    expect(savedRules).toEqual([
+      {
+        conditions: [
+          { field: "prState", op: "eq", value: "OPEN" },
+          { field: "prIsDraft", op: "eq", value: false },
+          { field: "prMergeStatus", op: "eq", value: "CLEAN" },
+          { field: "prHasFailedChecks", op: "eq", value: false },
+          { field: "prHasPendingChecks", op: "eq", value: false },
+        ],
+      },
+    ]);
+  });
+
   test("save calls onSave with the edited rules", () => {
     const onSave = mock((_: SectionRule[]) => undefined);
     const view = render(<SectionRuleEditor rules={[]} onSave={onSave} onClose={noop} />);

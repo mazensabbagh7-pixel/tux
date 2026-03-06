@@ -10,7 +10,7 @@ import type { StreamEndEvent } from "@/common/types/stream";
 
 import type { AIService } from "./aiService";
 import type { ProjectService } from "./projectService";
-import { SectionAssignmentService } from "./sectionAssignmentService";
+import { SectionAssignmentService, type FrontendProvidedContext } from "./sectionAssignmentService";
 import type { WorkspaceService } from "./workspaceService";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -39,6 +39,16 @@ function makeActivity(
     lastThinkingLevel: null,
     ...overrides,
   };
+}
+
+function getLastKnownFrontendContext(
+  service: SectionAssignmentService
+): Map<string, FrontendProvidedContext> {
+  return (
+    service as unknown as {
+      lastKnownFrontendContext: Map<string, FrontendProvidedContext>;
+    }
+  ).lastKnownFrontendContext;
 }
 
 describe("SectionAssignmentService", () => {
@@ -313,6 +323,36 @@ describe("SectionAssignmentService", () => {
     );
     expect(refreshAndEmitMetadataMock).toHaveBeenCalledTimes(1);
     expect(refreshAndEmitMetadataMock).toHaveBeenCalledWith("ws-1");
+  });
+
+  it("purges cached frontend context when a workspace is removed", async () => {
+    const lastKnownFrontendContext = getLastKnownFrontendContext(service);
+
+    await service.evaluateWorkspace("ws-1", { prState: "OPEN", gitDirty: true });
+
+    expect(lastKnownFrontendContext.get("ws-1")).toEqual({ prState: "OPEN", gitDirty: true });
+
+    const evaluateWorkspaceSpy = spyOn(service, "evaluateWorkspace").mockResolvedValue(undefined);
+    workspaceService.emit("metadata", { workspaceId: "ws-1", metadata: null });
+
+    expect(lastKnownFrontendContext.has("ws-1")).toBe(false);
+
+    await sleep(350);
+    expect(evaluateWorkspaceSpy).not.toHaveBeenCalled();
+  });
+
+  it("purges cached frontend context when metadata lookup fails", async () => {
+    const lastKnownFrontendContext = getLastKnownFrontendContext(service);
+
+    await service.evaluateWorkspace("ws-1", { prState: "OPEN", gitDirty: true });
+
+    expect(lastKnownFrontendContext.get("ws-1")).toEqual({ prState: "OPEN", gitDirty: true });
+
+    getInfoMock.mockResolvedValueOnce(null);
+
+    await service.evaluateWorkspace("ws-1");
+
+    expect(lastKnownFrontendContext.has("ws-1")).toBe(false);
   });
 
   it("re-evaluates only workspaces from the requested project", async () => {

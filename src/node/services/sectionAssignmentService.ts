@@ -77,6 +77,29 @@ export class SectionAssignmentService {
 
   private lastKnownFrontendContext = new Map<string, FrontendProvidedContext>();
 
+  private purgeWorkspaceState(workspaceId: string): void {
+    assert(
+      typeof workspaceId === "string" && workspaceId.trim().length > 0,
+      "workspaceId is required"
+    );
+
+    const existingTimer = this.pendingEvaluations.get(workspaceId);
+    if (existingTimer) {
+      clearTimeout(existingTimer);
+      this.pendingEvaluations.delete(workspaceId);
+    }
+
+    this.lastKnownFrontendContext.delete(workspaceId);
+  }
+
+  private purgeMissingWorkspaceState(workspaceIds: ReadonlySet<string>): void {
+    for (const workspaceId of this.lastKnownFrontendContext.keys()) {
+      if (!workspaceIds.has(workspaceId)) {
+        this.purgeWorkspaceState(workspaceId);
+      }
+    }
+  }
+
   constructor(
     private readonly projectService: ProjectService,
     private readonly workspaceService: WorkspaceService,
@@ -90,9 +113,17 @@ export class SectionAssignmentService {
       this.scheduleEvaluation(event.workspaceId);
     });
 
-    this.workspaceService.on("metadata", (event) => {
-      this.scheduleEvaluation(event.workspaceId);
-    });
+    this.workspaceService.on(
+      "metadata",
+      (event: { workspaceId: string; metadata: WorkspaceMetadata | null }) => {
+        if (event.metadata == null) {
+          this.purgeWorkspaceState(event.workspaceId);
+          return;
+        }
+
+        this.scheduleEvaluation(event.workspaceId);
+      }
+    );
 
     this.workspaceService.on("activity", (event: { workspaceId: string }) => {
       this.scheduleEvaluation(event.workspaceId);
@@ -136,6 +167,7 @@ export class SectionAssignmentService {
 
     const metadata = existingMetadata ?? (await this.workspaceService.getInfo(workspaceId));
     if (!metadata) {
+      this.purgeWorkspaceState(workspaceId);
       return;
     }
 
@@ -262,6 +294,7 @@ export class SectionAssignmentService {
     );
 
     const workspaces = await this.workspaceService.list();
+    this.purgeMissingWorkspaceState(new Set(workspaces.map((workspace) => workspace.id)));
     const activityMap = await this.workspaceService.getActivityList();
 
     for (const workspace of workspaces) {

@@ -35,6 +35,8 @@ const RULE_PRESETS = [
     rule: {
       conditions: [
         { field: "prState", op: "eq", value: "OPEN" },
+        { field: "prIsDraft", op: "eq", value: false },
+        { field: "prMergeStatus", op: "eq", value: "CLEAN" },
         { field: "prHasFailedChecks", op: "eq", value: false },
         { field: "prHasPendingChecks", op: "eq", value: false },
       ],
