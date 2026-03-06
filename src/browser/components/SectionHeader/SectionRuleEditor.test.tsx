@@ -98,6 +98,22 @@ describe("SectionRuleEditor", () => {
     ]);
   });
 
+  test("save preserves unchanged multi-value `in` conditions", () => {
+    const onSave = mock((_: SectionRule[]) => undefined);
+    const rules: SectionRule[] = [
+      {
+        conditions: [{ field: "taskStatus", op: "in", value: '["queued","running"]' }],
+      },
+    ];
+    const view = render(<SectionRuleEditor rules={rules} onSave={onSave} onClose={noop} />);
+
+    fireEvent.click(view.getByTestId("save-rules-button"));
+
+    expect(onSave).toHaveBeenCalledTimes(1);
+    const [savedRules] = onSave.mock.calls[0] as [SectionRule[]];
+    expect(savedRules).toEqual(rules);
+  });
+
   test("save calls onSave with the edited rules", () => {
     const onSave = mock((_: SectionRule[]) => undefined);
     const view = render(<SectionRuleEditor rules={[]} onSave={onSave} onClose={noop} />);

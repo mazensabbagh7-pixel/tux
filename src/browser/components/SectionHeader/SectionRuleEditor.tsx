@@ -93,22 +93,26 @@ function isRulePrimitive(value: unknown): value is string | boolean {
   return typeof value === "string" || typeof value === "boolean";
 }
 
-function parseInValue(value: string): string | boolean | undefined {
+function parseInValues(value: string): Array<string | boolean> | undefined {
   try {
     const parsed: unknown = JSON.parse(value);
     if (!Array.isArray(parsed) || parsed.length === 0) {
       return undefined;
     }
 
-    const firstValue = parsed[0] as unknown;
-    if (isRulePrimitive(firstValue)) {
-      return firstValue;
+    if (!parsed.every((item) => isRulePrimitive(item))) {
+      return undefined;
     }
 
-    return undefined;
+    return parsed;
   } catch {
     return undefined;
   }
+}
+
+function parseInValue(value: string): string | boolean | undefined {
+  const parsed = parseInValues(value);
+  return parsed?.[0];
 }
 
 function coerceFieldValue(
@@ -145,10 +149,28 @@ function getConditionPrimitiveValue(condition: SectionRuleCondition): string | b
 function getValueForOperator(
   field: SectionRuleCondition["field"],
   op: SectionRuleCondition["op"],
-  value: string | boolean
+  value: string | boolean,
+  previousCondition?: SectionRuleCondition
 ): string | boolean {
   const normalized = coerceFieldValue(field, value);
   if (op === "in") {
+    if (previousCondition?.field === field && previousCondition.op === "in") {
+      assert(
+        typeof previousCondition.value === "string",
+        "Section rule `in` conditions must persist a serialized array string"
+      );
+      const previousValues = parseInValues(previousCondition.value);
+      const previousFirstValue = previousValues?.[0];
+      if (
+        previousFirstValue != null &&
+        coerceFieldValue(field, previousFirstValue) === normalized
+      ) {
+        // Preserve the full serialized array when the user has not changed the selected value.
+        // The editor only exposes a single-select control today, so silently rewriting `in`
+        // conditions here would drop any additional persisted values on save.
+        return previousCondition.value;
+      }
+    }
     return JSON.stringify([normalized]);
   }
   return normalized;
@@ -216,7 +238,8 @@ function ConditionRow(props: {
           const nextValue = getValueForOperator(
             props.condition.field,
             nextOp,
-            getConditionPrimitiveValue(props.condition)
+            getConditionPrimitiveValue(props.condition),
+            props.condition
           );
           props.onChange({
             ...props.condition,
@@ -249,7 +272,8 @@ function ConditionRow(props: {
             value: getValueForOperator(
               props.condition.field,
               props.condition.op,
-              selectedOption.value
+              selectedOption.value,
+              props.condition
             ),
           });
         }}
