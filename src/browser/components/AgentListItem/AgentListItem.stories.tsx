@@ -19,6 +19,7 @@ import {
   getStatusStateKey,
   getWorkspaceLastReadKey,
 } from "@/common/constants/storage";
+import type { AgentRowRenderMeta } from "@/browser/utils/ui/workspaceFiltering";
 
 const meta: Meta<typeof AgentListItem> = {
   title: "Components/AgentListItem",
@@ -306,6 +307,51 @@ function renderDraftState() {
   );
 }
 
+const SUB_AGENT_ROW_META_BASE = {
+  depth: 1,
+  rowKind: "subagent",
+  hasHiddenCompletedChildren: false,
+  visibleCompletedChildrenCount: 0,
+} as const satisfies Omit<AgentRowRenderMeta, "connectorPosition">;
+
+function createSubAgentRowRenderMeta(
+  connectorPosition: AgentRowRenderMeta["connectorPosition"]
+): AgentRowRenderMeta {
+  return {
+    ...SUB_AGENT_ROW_META_BASE,
+    connectorPosition,
+  };
+}
+
+function renderWorkspaceWithRowMeta(options: {
+  workspaceIndex: number;
+  rowRenderMeta: AgentRowRenderMeta;
+  isSelected?: boolean;
+  completedChildrenExpanded?: boolean;
+  onToggleCompletedChildren?: (workspaceId: string) => void;
+  activeWorkspaceId?: string;
+}) {
+  const workspace = STORY_WORKSPACES[options.workspaceIndex];
+  return (
+    <StoryScaffold activeWorkspaceId={options.activeWorkspaceId}>
+      <AgentListItem
+        metadata={workspace}
+        projectPath={PROJECT_PATH}
+        projectName={PROJECT_NAME}
+        depth={options.rowRenderMeta.depth}
+        rowRenderMeta={options.rowRenderMeta}
+        completedChildrenExpanded={options.completedChildrenExpanded}
+        onToggleCompletedChildren={options.onToggleCompletedChildren}
+        isSelected={options.isSelected ?? false}
+        onSelectWorkspace={() => undefined}
+        onForkWorkspace={() => Promise.resolve()}
+        onArchiveWorkspace={() => Promise.resolve()}
+        onCancelCreation={() => Promise.resolve()}
+      />
+    </StoryScaffold>
+  );
+}
+
 export const FigmaStates: Story = {
   args: undefined as never,
   render: renderFigmaStates,
@@ -351,6 +397,91 @@ export const Draft: Story = {
   render: renderDraftState,
 };
 
+const PRIMARY_ROW_META_WITH_HIDDEN_COMPLETED_CHILDREN = {
+  depth: 0,
+  rowKind: "primary",
+  connectorPosition: "single",
+  hasHiddenCompletedChildren: true,
+  visibleCompletedChildrenCount: 0,
+} as const satisfies AgentRowRenderMeta;
+
+const noopToggleCompletedChildren = () => undefined;
+
+export const SubAgentMiddle: Story = {
+  args: undefined as never,
+  name: "SubAgent States/SubAgent Middle",
+  render: () =>
+    renderWorkspaceWithRowMeta({
+      workspaceIndex: 2,
+      rowRenderMeta: createSubAgentRowRenderMeta("middle"),
+    }),
+};
+
+export const SubAgentLast: Story = {
+  args: undefined as never,
+  name: "SubAgent States/SubAgent Last",
+  render: () =>
+    renderWorkspaceWithRowMeta({
+      workspaceIndex: 2,
+      rowRenderMeta: createSubAgentRowRenderMeta("last"),
+    }),
+};
+
+export const SubAgentSingle: Story = {
+  args: undefined as never,
+  name: "SubAgent States/SubAgent Single",
+  render: () =>
+    renderWorkspaceWithRowMeta({
+      workspaceIndex: 2,
+      rowRenderMeta: createSubAgentRowRenderMeta("single"),
+    }),
+};
+
+export const SubAgentMiddleSelected: Story = {
+  args: undefined as never,
+  name: "SubAgent States/SubAgent Middle Selected",
+  render: () =>
+    renderWorkspaceWithRowMeta({
+      workspaceIndex: 2,
+      rowRenderMeta: createSubAgentRowRenderMeta("middle"),
+      isSelected: true,
+    }),
+};
+
+export const SubAgentWithStatusText: Story = {
+  args: undefined as never,
+  name: "SubAgent States/SubAgent With Status Text",
+  render: () =>
+    renderWorkspaceWithRowMeta({
+      workspaceIndex: 1,
+      rowRenderMeta: createSubAgentRowRenderMeta("middle"),
+      activeWorkspaceId: "ws-active",
+    }),
+};
+
+export const ParentWithCompletedChildrenCollapsed: Story = {
+  args: undefined as never,
+  name: "SubAgent States/Parent With Completed Children Collapsed",
+  render: () =>
+    renderWorkspaceWithRowMeta({
+      workspaceIndex: 2,
+      rowRenderMeta: PRIMARY_ROW_META_WITH_HIDDEN_COMPLETED_CHILDREN,
+      completedChildrenExpanded: false,
+      onToggleCompletedChildren: noopToggleCompletedChildren,
+    }),
+};
+
+export const ParentWithCompletedChildrenExpanded: Story = {
+  args: undefined as never,
+  name: "SubAgent States/Parent With Completed Children Expanded",
+  render: () =>
+    renderWorkspaceWithRowMeta({
+      workspaceIndex: 2,
+      rowRenderMeta: PRIMARY_ROW_META_WITH_HIDDEN_COMPLETED_CHILDREN,
+      completedChildrenExpanded: true,
+      onToggleCompletedChildren: noopToggleCompletedChildren,
+    }),
+};
 export const ClickKebabButton: Story = {
   args: undefined as never,
   render: () => renderSingleWorkspaceState(1),
