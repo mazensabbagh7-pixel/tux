@@ -3660,7 +3660,7 @@ describe("TaskService", () => {
       expect.objectContaining({ workspaceId: childId })
     );
 
-    expect(remove).toHaveBeenCalled();
+    expect(remove).not.toHaveBeenCalled();
     expect(sendMessage).toHaveBeenCalledWith(
       parentId,
       expect.stringContaining("sub-agent task(s) have completed"),
@@ -3804,9 +3804,7 @@ describe("TaskService", () => {
       if (artifact?.status === "ready") {
         try {
           await fsPromises.stat(patchPath);
-          if (remove.mock.calls.length > 0) {
-            break;
-          }
+          break;
         } catch {
           // Keep polling until the patch file exists.
         }
@@ -3818,7 +3816,7 @@ describe("TaskService", () => {
 
       if (Date.now() - start > 20_000) {
         throw new Error(
-          `Timed out waiting for patch artifact generation (removeCalled=${remove.mock.calls.length > 0}, lastArtifact=${JSON.stringify(lastArtifact)})`
+          `Timed out waiting for patch artifact generation (lastArtifact=${JSON.stringify(lastArtifact)})`
         );
       }
 
@@ -3829,7 +3827,7 @@ describe("TaskService", () => {
     expect(artifact?.status).toBe("ready");
 
     await fsPromises.stat(patchPath);
-    expect(remove).toHaveBeenCalled();
+    expect(remove).not.toHaveBeenCalled();
   }, 20_000);
 
   test("agent_report generates git format-patch artifact for exec-derived custom tasks", async () => {
@@ -3975,9 +3973,7 @@ describe("TaskService", () => {
       if (artifact?.status === "ready") {
         try {
           await fsPromises.stat(patchPath);
-          if (remove.mock.calls.length > 0) {
-            break;
-          }
+          break;
         } catch {
           // Keep polling until the patch file exists.
         }
@@ -3989,7 +3985,7 @@ describe("TaskService", () => {
 
       if (Date.now() - start > 20_000) {
         throw new Error(
-          `Timed out waiting for patch artifact generation (removeCalled=${remove.mock.calls.length > 0}, lastArtifact=${JSON.stringify(lastArtifact)})`
+          `Timed out waiting for patch artifact generation (lastArtifact=${JSON.stringify(lastArtifact)})`
         );
       }
 
@@ -4000,7 +3996,7 @@ describe("TaskService", () => {
     expect(artifact?.status).toBe("ready");
 
     await fsPromises.stat(patchPath);
-    expect(remove).toHaveBeenCalled();
+    expect(remove).not.toHaveBeenCalled();
   }, 20_000);
   test("agent_report updates queued/running task tool output in parent history", async () => {
     const config = await createTestConfig(rootDir);
@@ -4126,7 +4122,7 @@ describe("TaskService", () => {
       expect(text).toContain(childId);
     }
 
-    expect(remove).toHaveBeenCalled();
+    expect(remove).not.toHaveBeenCalled();
     expect(sendMessageMock).toHaveBeenCalledWith(
       parentId,
       expect.stringContaining("sub-agent task(s) have completed"),
@@ -4255,7 +4251,7 @@ describe("TaskService", () => {
       .find((w) => w.id === childId);
     expect(ws?.taskStatus).toBe("reported");
 
-    expect(remove).toHaveBeenCalled();
+    expect(remove).not.toHaveBeenCalled();
     // Parent auto-resume fires after the child report is finalized at stream-end.
     expect(sendMessage).toHaveBeenCalled();
   });
@@ -4392,7 +4388,7 @@ describe("TaskService", () => {
       .find((w) => w.id === childId);
     expect(ws?.taskStatus).toBe("reported");
 
-    expect(remove).toHaveBeenCalled();
+    expect(remove).not.toHaveBeenCalled();
     // Parent auto-resume now uses sendMessage instead of resumeStream
     expect(sendMessage).toHaveBeenCalledWith(
       parentId,
@@ -4940,7 +4936,7 @@ describe("TaskService", () => {
     expect(childEntry?.runtimeConfig?.type).toBe("worktree");
   }, 20_000);
 
-  test("sibling reported task blocks parent deletion during cleanup", async () => {
+  test("reported leaf cleanup retains sibling and parent metadata in config", async () => {
     const config = await createTestConfig(rootDir);
 
     const projectPath = path.join(rootDir, "repo");
@@ -5009,15 +5005,20 @@ describe("TaskService", () => {
       parts: [],
     });
 
-    expect(remove).toHaveBeenCalledWith(childTaskAId, true);
+    expect(remove).not.toHaveBeenCalled();
 
-    const removedWorkspaceIds = (
-      remove as unknown as { mock: { calls: Array<[string, boolean]> } }
-    ).mock.calls.map((call) => call[0]);
-    expect(removedWorkspaceIds).not.toContain(parentTaskId);
+    const postCfg = config.loadConfigOrDefault();
+    const remainingWorkspaceIds = new Set(
+      Array.from(postCfg.projects.values())
+        .flatMap((project) => project.workspaces)
+        .map((workspace) => workspace.id)
+    );
+    expect(remainingWorkspaceIds.has(parentTaskId)).toBe(true);
+    expect(remainingWorkspaceIds.has(childTaskAId)).toBe(true);
+    expect(remainingWorkspaceIds.has(childTaskBId)).toBe(true);
   });
 
-  test("parent deletes only after all sibling children are cleaned up", async () => {
+  test("reported sibling cleanup rechecks keep all reported task metadata", async () => {
     const config = await createTestConfig(rootDir);
 
     const projectPath = path.join(rootDir, "repo");
@@ -5094,10 +5095,17 @@ describe("TaskService", () => {
       parts: [],
     });
 
-    expect(remove).toHaveBeenCalledTimes(3);
-    expect(remove).toHaveBeenNthCalledWith(1, childTaskAId, true);
-    expect(remove).toHaveBeenNthCalledWith(2, childTaskBId, true);
-    expect(remove).toHaveBeenNthCalledWith(3, parentTaskId, true);
+    expect(remove).not.toHaveBeenCalled();
+
+    const postCfg = config.loadConfigOrDefault();
+    const reportedWorkspacesById = new Map(
+      Array.from(postCfg.projects.values())
+        .flatMap((project) => project.workspaces)
+        .map((workspace) => [workspace.id, workspace.taskStatus])
+    );
+    expect(reportedWorkspacesById.get(parentTaskId)).toBe("reported");
+    expect(reportedWorkspacesById.get(childTaskAId)).toBe("reported");
+    expect(reportedWorkspacesById.get(childTaskBId)).toBe("reported");
   });
 
   describe("parent auto-resume flood protection", () => {

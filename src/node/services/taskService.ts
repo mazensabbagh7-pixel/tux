@@ -710,7 +710,8 @@ export class TaskService {
 
     // Restart-safety for git patch artifacts:
     // - If mux crashed mid-generation, patch artifacts can be left "pending".
-    // - Reported tasks are auto-deleted once they're leaves; defer deletion while patches are pending.
+    // - Reported tasks remain in config so the sidebar can show completed sub-agents.
+    //   We still run best-effort runtime cleanup for reported leaves once patches are ready.
     const reportedTasks = this.listAgentTaskWorkspaces(config).filter(
       (t) => t.taskStatus === "reported" && typeof t.id === "string" && t.id.length > 0
     );
@@ -732,7 +733,7 @@ export class TaskService {
       }
     }
 
-    // Best-effort cleanup of reported leaf tasks (will no-op when patch artifacts are pending).
+    // Best-effort runtime cleanup of reported leaf task directories/worktrees.
     for (const task of reportedTasks) {
       if (!task.id) continue;
       await this.cleanupReportedLeafTask(task.id);
@@ -3518,7 +3519,10 @@ export class TaskService {
 
   private async canCleanupReportedTask(
     workspaceId: string
-  ): Promise<{ ok: true; parentWorkspaceId: string } | { ok: false; reason: string }> {
+  ): Promise<
+    | { ok: true; entry: { projectPath: string; workspace: WorkspaceConfigEntry } }
+    | { ok: false; reason: string }
+  > {
     assert(workspaceId.length > 0, "canCleanupReportedTask: workspaceId must be non-empty");
 
     const config = this.config.loadConfigOrDefault();
@@ -3537,16 +3541,15 @@ export class TaskService {
     }
 
     if (this.aiService.isStreaming(workspaceId)) {
-      log.debug("cleanupReportedLeafTask: deferring auto-delete; stream still active", {
+      log.debug("cleanupReportedLeafTask: deferring runtime cleanup; stream still active", {
         workspaceId,
         parentWorkspaceId,
       });
       return { ok: false, reason: "still_streaming" };
     }
 
-    // Topology gate: a reported task can only be cleaned up when it is a structural leaf
-    // (has no child agent tasks in config). This is status-agnostic — even reported children
-    // block parent deletion, ensuring artifact rollup always targets an existing parent path.
+    // Topology gate: keep runtime cleanup leaf-only. Descendant tasks must retain a stable
+    // parent lineage while they are still present in config.
     const index = this.buildAgentTaskIndex(config);
     if (this.hasChildAgentTasks(index, workspaceId)) {
       return { ok: false, reason: "has_child_tasks" };
@@ -3555,52 +3558,71 @@ export class TaskService {
     const parentSessionDir = this.config.getSessionDir(parentWorkspaceId);
     const patchArtifact = await readSubagentGitPatchArtifact(parentSessionDir, workspaceId);
     if (patchArtifact?.status === "pending") {
-      log.debug("cleanupReportedLeafTask: deferring auto-delete; patch artifact pending", {
+      log.debug("cleanupReportedLeafTask: deferring runtime cleanup; patch artifact pending", {
         workspaceId,
         parentWorkspaceId,
       });
       return { ok: false, reason: "patch_pending" };
     }
 
-    return { ok: true, parentWorkspaceId };
+    return { ok: true, entry };
+  }
+
+  private async cleanupReportedTaskWorkspaceRuntime(entry: {
+    projectPath: string;
+    workspace: WorkspaceConfigEntry;
+  }): Promise<void> {
+    const workspaceName = coerceNonEmptyString(entry.workspace.name) ?? entry.workspace.id;
+    const workspaceId = coerceNonEmptyString(entry.workspace.id) ?? workspaceName;
+    if (!workspaceName || !workspaceId) {
+      return;
+    }
+
+    const runtime = createRuntimeForWorkspace({
+      runtimeConfig: entry.workspace.runtimeConfig ?? DEFAULT_RUNTIME_CONFIG,
+      projectPath: entry.projectPath,
+      name: workspaceName,
+    });
+
+    const config = this.config.loadConfigOrDefault();
+    const trusted = config.projects.get(stripTrailingSlashes(entry.projectPath))?.trusted ?? false;
+
+    try {
+      const deleteResult = await runtime.deleteWorkspace(
+        entry.projectPath,
+        workspaceName,
+        true,
+        undefined,
+        trusted
+      );
+      if (!deleteResult.success) {
+        log.debug(
+          "cleanupReportedLeafTask: runtime cleanup failed; preserving reported workspace metadata",
+          {
+            workspaceId,
+            error: deleteResult.error,
+          }
+        );
+      }
+    } catch (error: unknown) {
+      log.debug(
+        "cleanupReportedLeafTask: runtime cleanup threw; preserving reported workspace metadata",
+        {
+          workspaceId,
+          error: getErrorMessage(error),
+        }
+      );
+    }
   }
 
   private async cleanupReportedLeafTask(workspaceId: string): Promise<void> {
     assert(workspaceId.length > 0, "cleanupReportedLeafTask: workspaceId must be non-empty");
 
-    // Lineage reduction: each iteration removes exactly one leaf node, then re-evaluates
-    // the parent on fresh config. The structural-leaf gate in canCleanupReportedTask ensures
-    // parents are only removed after all children are gone.
-    let currentWorkspaceId = workspaceId;
-    const visited = new Set<string>();
-    for (let depth = 0; depth < 32; depth++) {
-      if (visited.has(currentWorkspaceId)) {
-        log.error("cleanupReportedLeafTask: possible parentWorkspaceId cycle", {
-          workspaceId: currentWorkspaceId,
-        });
-        return;
-      }
-      visited.add(currentWorkspaceId);
-
-      const cleanupEligibility = await this.canCleanupReportedTask(currentWorkspaceId);
-      if (!cleanupEligibility.ok) {
-        return;
-      }
-
-      const removeResult = await this.workspaceService.remove(currentWorkspaceId, true);
-      if (!removeResult.success) {
-        log.error("Failed to auto-delete reported task workspace", {
-          workspaceId: currentWorkspaceId,
-          error: removeResult.error,
-        });
-        return;
-      }
-
-      currentWorkspaceId = cleanupEligibility.parentWorkspaceId;
+    const cleanupEligibility = await this.canCleanupReportedTask(workspaceId);
+    if (!cleanupEligibility.ok) {
+      return;
     }
 
-    log.error("cleanupReportedLeafTask: exceeded max parent traversal depth", {
-      workspaceId,
-    });
+    await this.cleanupReportedTaskWorkspaceRuntime(cleanupEligibility.entry);
   }
 }
