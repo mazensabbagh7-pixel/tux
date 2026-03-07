@@ -710,8 +710,8 @@ export class TaskService {
 
     // Restart-safety for git patch artifacts:
     // - If mux crashed mid-generation, patch artifacts can be left "pending".
-    // - Reported tasks remain in config so the sidebar can show completed sub-agents.
-    //   We still run best-effort runtime cleanup for reported leaves once patches are ready.
+    // - Reported tasks remain in config and keep their runtime on disk so completed sub-agents
+    //   stay visible/selectable in the sidebar.
     const reportedTasks = this.listAgentTaskWorkspaces(config).filter(
       (t) => t.taskStatus === "reported" && typeof t.id === "string" && t.id.length > 0
     );
@@ -733,7 +733,7 @@ export class TaskService {
       }
     }
 
-    // Best-effort runtime cleanup of reported leaf task directories/worktrees.
+    // Best-effort reported-task ancestor recheck after restart.
     for (const task of reportedTasks) {
       if (!task.id) continue;
       await this.cleanupReportedLeafTask(task.id);
@@ -2064,13 +2064,22 @@ export class TaskService {
   }
 
   /**
-   * Topology predicate: does this workspace still have child agent-task nodes in config?
-   * Unlike hasActiveDescendantAgentTasks (which checks runtime activity for scheduling),
-   * this checks structural tree shape — any child node blocks parent deletion regardless
-   * of its status.
+   * Topology predicate for reported-task cleanup: does this workspace still have child agent
+   * tasks that are not reported yet?
+   *
+   * Reported children should not block ancestor rechecks. Once every child has reported, the
+   * cleanup walk can continue upward and evaluate that ancestor as a reported leaf.
    */
-  private hasChildAgentTasks(index: AgentTaskIndex, workspaceId: string): boolean {
-    return (index.childrenByParent.get(workspaceId)?.length ?? 0) > 0;
+  private hasNonReportedChildAgentTasks(index: AgentTaskIndex, workspaceId: string): boolean {
+    const childIds = index.childrenByParent.get(workspaceId) ?? [];
+    for (const childId of childIds) {
+      const childStatus: AgentTaskStatus = index.byId.get(childId)?.taskStatus ?? "running";
+      if (childStatus !== "reported") {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   private getTaskDepth(
@@ -3519,10 +3528,7 @@ export class TaskService {
 
   private async canCleanupReportedTask(
     workspaceId: string
-  ): Promise<
-    | { ok: true; entry: { projectPath: string; workspace: WorkspaceConfigEntry } }
-    | { ok: false; reason: string }
-  > {
+  ): Promise<{ ok: true; parentWorkspaceId: string } | { ok: false; reason: string }> {
     assert(workspaceId.length > 0, "canCleanupReportedTask: workspaceId must be non-empty");
 
     const config = this.config.loadConfigOrDefault();
@@ -3541,88 +3547,63 @@ export class TaskService {
     }
 
     if (this.aiService.isStreaming(workspaceId)) {
-      log.debug("cleanupReportedLeafTask: deferring runtime cleanup; stream still active", {
+      log.debug("cleanupReportedLeafTask: deferring reported-task retention; stream still active", {
         workspaceId,
         parentWorkspaceId,
       });
       return { ok: false, reason: "still_streaming" };
     }
 
-    // Topology gate: keep runtime cleanup leaf-only. Descendant tasks must retain a stable
-    // parent lineage while they are still present in config.
+    // Reported-task topology gate: children only block ancestor walk-up while they are still
+    // active. Once all children are reported, this workspace is treated as a reported leaf.
     const index = this.buildAgentTaskIndex(config);
-    if (this.hasChildAgentTasks(index, workspaceId)) {
-      return { ok: false, reason: "has_child_tasks" };
+    if (this.hasNonReportedChildAgentTasks(index, workspaceId)) {
+      return { ok: false, reason: "has_non_reported_child_tasks" };
     }
 
     const parentSessionDir = this.config.getSessionDir(parentWorkspaceId);
     const patchArtifact = await readSubagentGitPatchArtifact(parentSessionDir, workspaceId);
     if (patchArtifact?.status === "pending") {
-      log.debug("cleanupReportedLeafTask: deferring runtime cleanup; patch artifact pending", {
-        workspaceId,
-        parentWorkspaceId,
-      });
+      log.debug(
+        "cleanupReportedLeafTask: deferring reported-task retention; patch artifact pending",
+        {
+          workspaceId,
+          parentWorkspaceId,
+        }
+      );
       return { ok: false, reason: "patch_pending" };
     }
 
-    return { ok: true, entry };
-  }
-
-  private async cleanupReportedTaskWorkspaceRuntime(entry: {
-    projectPath: string;
-    workspace: WorkspaceConfigEntry;
-  }): Promise<void> {
-    const workspaceName = coerceNonEmptyString(entry.workspace.name) ?? entry.workspace.id;
-    const workspaceId = coerceNonEmptyString(entry.workspace.id) ?? workspaceName;
-    if (!workspaceName || !workspaceId) {
-      return;
-    }
-
-    const runtime = createRuntimeForWorkspace({
-      runtimeConfig: entry.workspace.runtimeConfig ?? DEFAULT_RUNTIME_CONFIG,
-      projectPath: entry.projectPath,
-      name: workspaceName,
-    });
-
-    const config = this.config.loadConfigOrDefault();
-    const trusted = config.projects.get(stripTrailingSlashes(entry.projectPath))?.trusted ?? false;
-
-    try {
-      const deleteResult = await runtime.deleteWorkspace(
-        entry.projectPath,
-        workspaceName,
-        true,
-        undefined,
-        trusted
-      );
-      if (!deleteResult.success) {
-        log.debug(
-          "cleanupReportedLeafTask: runtime cleanup failed; preserving reported workspace metadata",
-          {
-            workspaceId,
-            error: deleteResult.error,
-          }
-        );
-      }
-    } catch (error: unknown) {
-      log.debug(
-        "cleanupReportedLeafTask: runtime cleanup threw; preserving reported workspace metadata",
-        {
-          workspaceId,
-          error: getErrorMessage(error),
-        }
-      );
-    }
+    return { ok: true, parentWorkspaceId };
   }
 
   private async cleanupReportedLeafTask(workspaceId: string): Promise<void> {
     assert(workspaceId.length > 0, "cleanupReportedLeafTask: workspaceId must be non-empty");
 
-    const cleanupEligibility = await this.canCleanupReportedTask(workspaceId);
-    if (!cleanupEligibility.ok) {
-      return;
+    // Keep reported task metadata + runtime intact so completed tasks remain visible and
+    // selectable in the sidebar. We still walk ancestors so reported parents get re-evaluated
+    // once every descendant has reported.
+    let currentWorkspaceId = workspaceId;
+    const visited = new Set<string>();
+    for (let depth = 0; depth < 32; depth++) {
+      if (visited.has(currentWorkspaceId)) {
+        log.error("cleanupReportedLeafTask: possible parentWorkspaceId cycle", {
+          workspaceId: currentWorkspaceId,
+        });
+        return;
+      }
+      visited.add(currentWorkspaceId);
+
+      const cleanupEligibility = await this.canCleanupReportedTask(currentWorkspaceId);
+      if (!cleanupEligibility.ok) {
+        return;
+      }
+
+      currentWorkspaceId = cleanupEligibility.parentWorkspaceId;
     }
 
-    await this.cleanupReportedTaskWorkspaceRuntime(cleanupEligibility.entry);
+    log.error("cleanupReportedLeafTask: exceeded max parent traversal depth", {
+      workspaceId,
+    });
   }
 }
