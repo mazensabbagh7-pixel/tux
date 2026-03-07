@@ -4,6 +4,9 @@ import {
   formatDaysThreshold,
   AGE_THRESHOLDS_DAYS,
   buildSortedWorkspacesByProject,
+  computeWorkspaceDepthMap,
+  computeAgentRowRenderMeta,
+  filterVisibleAgentRows,
   partitionWorkspacesBySection,
   sortSectionsByLinkedList,
 } from "./workspaceFiltering";
@@ -407,6 +410,166 @@ describe("buildSortedWorkspacesByProject", () => {
     const result = buildSortedWorkspacesByProject(projects, metadata, {});
 
     expect(result.get("/project/a")).toHaveLength(0);
+  });
+});
+
+describe("sub-agent row render metadata", () => {
+  const createWorkspace = (
+    id: string,
+    options?: {
+      parentWorkspaceId?: string;
+      taskStatus?: FrontendWorkspaceMetadata["taskStatus"];
+    }
+  ): FrontendWorkspaceMetadata => ({
+    id,
+    name: `workspace-${id}`,
+    projectName: "test-project",
+    projectPath: "/test/project",
+    namedWorkspacePath: `/test/project/workspace-${id}`,
+    runtimeConfig: DEFAULT_RUNTIME_CONFIG,
+    parentWorkspaceId: options?.parentWorkspaceId,
+    taskStatus: options?.taskStatus,
+  });
+
+  it("assigns middle/last connector positions for a parent with three active children", () => {
+    const flattened = [
+      createWorkspace("parent"),
+      createWorkspace("child-1", { parentWorkspaceId: "parent", taskStatus: "running" }),
+      createWorkspace("child-2", { parentWorkspaceId: "parent", taskStatus: "queued" }),
+      createWorkspace("child-3", { parentWorkspaceId: "parent", taskStatus: "awaiting_report" }),
+    ];
+
+    const depthByWorkspaceId = computeWorkspaceDepthMap(flattened);
+    const metadataByWorkspaceId = computeAgentRowRenderMeta(flattened, depthByWorkspaceId);
+
+    expect(metadataByWorkspaceId.get("child-1")?.connectorPosition).toBe("middle");
+    expect(metadataByWorkspaceId.get("child-2")?.connectorPosition).toBe("middle");
+    expect(metadataByWorkspaceId.get("child-3")?.connectorPosition).toBe("last");
+
+    expect(metadataByWorkspaceId.get("child-1")?.depth).toBe(1);
+    expect(metadataByWorkspaceId.get("child-1")?.rowKind).toBe("subagent");
+    expect(metadataByWorkspaceId.get("parent")?.rowKind).toBe("primary");
+  });
+
+  it("assigns single connector position for an only child", () => {
+    const flattened = [
+      createWorkspace("parent"),
+      createWorkspace("only-child", { parentWorkspaceId: "parent", taskStatus: "running" }),
+    ];
+
+    const depthByWorkspaceId = computeWorkspaceDepthMap(flattened);
+    const metadataByWorkspaceId = computeAgentRowRenderMeta(flattened, depthByWorkspaceId);
+
+    expect(metadataByWorkspaceId.get("only-child")?.connectorPosition).toBe("single");
+  });
+
+  it("hides reported children by default when parent is not expanded", () => {
+    const flattened = [
+      createWorkspace("parent"),
+      createWorkspace("active-child", { parentWorkspaceId: "parent", taskStatus: "running" }),
+      createWorkspace("reported-child-1", { parentWorkspaceId: "parent", taskStatus: "reported" }),
+      createWorkspace("reported-child-2", { parentWorkspaceId: "parent", taskStatus: "reported" }),
+    ];
+
+    const visible = filterVisibleAgentRows(flattened);
+    expect(visible.map((workspace) => workspace.id)).toEqual(["parent", "active-child"]);
+
+    const depthByWorkspaceId = computeWorkspaceDepthMap(flattened);
+    const metadataByWorkspaceId = computeAgentRowRenderMeta(flattened, depthByWorkspaceId);
+
+    expect(metadataByWorkspaceId.has("reported-child-1")).toBe(false);
+    expect(metadataByWorkspaceId.get("parent")?.hasHiddenCompletedChildren).toBe(true);
+    expect(metadataByWorkspaceId.get("parent")?.visibleCompletedChildrenCount).toBe(0);
+  });
+
+  it("shows reported children when parent is expanded", () => {
+    const flattened = [
+      createWorkspace("parent"),
+      createWorkspace("active-child", { parentWorkspaceId: "parent", taskStatus: "running" }),
+      createWorkspace("reported-child-1", { parentWorkspaceId: "parent", taskStatus: "reported" }),
+      createWorkspace("reported-child-2", { parentWorkspaceId: "parent", taskStatus: "reported" }),
+    ];
+
+    const expandedParentIds = new Set<string>(["parent"]);
+    const visible = filterVisibleAgentRows(flattened, expandedParentIds);
+    expect(visible.map((workspace) => workspace.id)).toEqual([
+      "parent",
+      "active-child",
+      "reported-child-1",
+      "reported-child-2",
+    ]);
+
+    const depthByWorkspaceId = computeWorkspaceDepthMap(flattened);
+    const metadataByWorkspaceId = computeAgentRowRenderMeta(
+      flattened,
+      depthByWorkspaceId,
+      expandedParentIds
+    );
+
+    expect(metadataByWorkspaceId.get("parent")?.hasHiddenCompletedChildren).toBe(false);
+    expect(metadataByWorkspaceId.get("parent")?.visibleCompletedChildrenCount).toBe(2);
+  });
+
+  it("tracks hidden-completed state correctly across collapsed and expanded parent rows", () => {
+    const flattened = [
+      createWorkspace("parent"),
+      createWorkspace("reported-child", { parentWorkspaceId: "parent", taskStatus: "reported" }),
+    ];
+
+    const depthByWorkspaceId = computeWorkspaceDepthMap(flattened);
+    const collapsedMeta = computeAgentRowRenderMeta(flattened, depthByWorkspaceId);
+    expect(collapsedMeta.get("parent")?.hasHiddenCompletedChildren).toBe(true);
+    expect(collapsedMeta.get("parent")?.visibleCompletedChildrenCount).toBe(0);
+
+    const expandedMeta = computeAgentRowRenderMeta(
+      flattened,
+      depthByWorkspaceId,
+      new Set<string>(["parent"])
+    );
+    expect(expandedMeta.get("parent")?.hasHiddenCompletedChildren).toBe(false);
+    expect(expandedMeta.get("parent")?.visibleCompletedChildrenCount).toBe(1);
+  });
+
+  it("preserves mixed active+reported child ordering while filtering", () => {
+    const flattened = [
+      createWorkspace("parent"),
+      createWorkspace("active-1", { parentWorkspaceId: "parent", taskStatus: "running" }),
+      createWorkspace("reported-1", { parentWorkspaceId: "parent", taskStatus: "reported" }),
+      createWorkspace("active-2", { parentWorkspaceId: "parent", taskStatus: "running" }),
+      createWorkspace("reported-2", { parentWorkspaceId: "parent", taskStatus: "reported" }),
+    ];
+
+    const collapsedVisible = filterVisibleAgentRows(flattened);
+    expect(collapsedVisible.map((workspace) => workspace.id)).toEqual([
+      "parent",
+      "active-1",
+      "active-2",
+    ]);
+
+    const depthByWorkspaceId = computeWorkspaceDepthMap(flattened);
+    const collapsedMeta = computeAgentRowRenderMeta(flattened, depthByWorkspaceId);
+    expect(collapsedMeta.get("active-1")?.connectorPosition).toBe("middle");
+    expect(collapsedMeta.get("active-2")?.connectorPosition).toBe("last");
+
+    const expandedParentIds = new Set<string>(["parent"]);
+    const expandedVisible = filterVisibleAgentRows(flattened, expandedParentIds);
+    expect(expandedVisible.map((workspace) => workspace.id)).toEqual([
+      "parent",
+      "active-1",
+      "reported-1",
+      "active-2",
+      "reported-2",
+    ]);
+
+    const expandedMeta = computeAgentRowRenderMeta(
+      flattened,
+      depthByWorkspaceId,
+      expandedParentIds
+    );
+    expect(expandedMeta.get("active-1")?.connectorPosition).toBe("middle");
+    expect(expandedMeta.get("reported-1")?.connectorPosition).toBe("middle");
+    expect(expandedMeta.get("active-2")?.connectorPosition).toBe("middle");
+    expect(expandedMeta.get("reported-2")?.connectorPosition).toBe("last");
   });
 });
 
