@@ -45,6 +45,8 @@ import {
   formatDaysThreshold,
   AGE_THRESHOLDS_DAYS,
   computeWorkspaceDepthMap,
+  filterVisibleAgentRows,
+  computeAgentRowRenderMeta,
   findNextNonEmptyTier,
   getTierKey,
   getSectionExpandedKey,
@@ -622,6 +624,11 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
     "expandedSections",
     {}
   );
+
+  // Track parent workspaces whose reported child tasks are expanded.
+  const [expandedCompletedSubAgents, setExpandedCompletedSubAgents] = usePersistedState<
+    Record<string, boolean>
+  >("expandedCompletedSubAgents", {});
 
   const [archivingWorkspaceIds, setArchivingWorkspaceIds] = useState<Set<string>>(new Set());
   const [removingWorkspaceIds, setRemovingWorkspaceIds] = useState<Set<string>>(new Set());
@@ -1242,8 +1249,22 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
                               const workspacesForNormalRendering = allWorkspaces.filter(
                                 (workspace) => !promotedWorkspaceIds.has(workspace.id)
                               );
+                              const expandedParentIds = new Set(
+                                Object.entries(expandedCompletedSubAgents)
+                                  .filter(([, expanded]) => expanded)
+                                  .map(([workspaceId]) => workspaceId)
+                              );
                               const sections = sortSectionsByLinkedList(config.sections ?? []);
                               const depthByWorkspaceId = computeWorkspaceDepthMap(allWorkspaces);
+                              const visibleWorkspacesForNormalRendering = filterVisibleAgentRows(
+                                workspacesForNormalRendering,
+                                expandedParentIds
+                              );
+                              const rowMetaByWorkspaceId = computeAgentRowRenderMeta(
+                                workspacesForNormalRendering,
+                                depthByWorkspaceId,
+                                expandedParentIds
+                              );
                               const sortedDrafts = draftsForProject
                                 .slice()
                                 .sort((a, b) => b.createdAt - a.createdAt);
@@ -1284,26 +1305,42 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
                               const renderWorkspace = (
                                 metadata: FrontendWorkspaceMetadata,
                                 sectionId?: string
-                              ) => (
-                                <AgentListItem
-                                  key={metadata.id}
-                                  metadata={metadata}
-                                  projectPath={projectPath}
-                                  projectName={projectName}
-                                  isSelected={selectedWorkspace?.workspaceId === metadata.id}
-                                  isArchiving={archivingWorkspaceIds.has(metadata.id)}
-                                  isRemoving={
-                                    removingWorkspaceIds.has(metadata.id) ||
-                                    metadata.isRemoving === true
-                                  }
-                                  onSelectWorkspace={handleSelectWorkspace}
-                                  onForkWorkspace={handleForkWorkspace}
-                                  onArchiveWorkspace={handleArchiveWorkspace}
-                                  onCancelCreation={handleCancelWorkspaceCreation}
-                                  depth={depthByWorkspaceId[metadata.id] ?? 0}
-                                  sectionId={sectionId}
-                                />
-                              );
+                              ) => {
+                                const rowRenderMeta = rowMetaByWorkspaceId.get(metadata.id);
+
+                                return (
+                                  <AgentListItem
+                                    key={metadata.id}
+                                    metadata={metadata}
+                                    projectPath={projectPath}
+                                    projectName={projectName}
+                                    isSelected={selectedWorkspace?.workspaceId === metadata.id}
+                                    isArchiving={archivingWorkspaceIds.has(metadata.id)}
+                                    isRemoving={
+                                      removingWorkspaceIds.has(metadata.id) ||
+                                      metadata.isRemoving === true
+                                    }
+                                    onSelectWorkspace={handleSelectWorkspace}
+                                    onForkWorkspace={handleForkWorkspace}
+                                    onArchiveWorkspace={handleArchiveWorkspace}
+                                    onCancelCreation={handleCancelWorkspaceCreation}
+                                    depth={
+                                      rowRenderMeta?.depth ?? depthByWorkspaceId[metadata.id] ?? 0
+                                    }
+                                    sectionId={sectionId}
+                                    rowRenderMeta={rowRenderMeta}
+                                    completedChildrenExpanded={
+                                      expandedCompletedSubAgents[metadata.id] ?? false
+                                    }
+                                    onToggleCompletedChildren={(workspaceId) => {
+                                      setExpandedCompletedSubAgents((prev) => ({
+                                        ...prev,
+                                        [workspaceId]: !prev[workspaceId],
+                                      }));
+                                    }}
+                                  />
+                                );
+                              };
 
                               const renderDraft = (
                                 draft: (typeof sortedDrafts)[number]
@@ -1453,9 +1490,10 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
                                 );
                               };
 
-                              // Partition workspaces by section
+                              // Filter completed child rows before section partitioning so every
+                              // section view stays in sync with the same visible hierarchy.
                               const { unsectioned, bySectionId } = partitionWorkspacesBySection(
-                                workspacesForNormalRendering,
+                                visibleWorkspacesForNormalRendering,
                                 sections
                               );
 

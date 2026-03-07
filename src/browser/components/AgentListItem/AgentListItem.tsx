@@ -1,5 +1,6 @@
 import { useTitleEdit } from "@/browser/contexts/WorkspaceTitleEditContext";
 import { stopKeyboardPropagation } from "@/browser/utils/events";
+import type { AgentRowRenderMeta } from "@/browser/utils/ui/workspaceFiltering";
 import { cn } from "@/common/lib/utils";
 import { useGitStatus } from "@/browser/stores/GitStatusStore";
 import { useWorkspaceUnread } from "@/browser/hooks/useWorkspaceUnread";
@@ -11,6 +12,7 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useDrag } from "react-dnd";
 import { getEmptyImage } from "react-dnd-html5-backend";
 import { GitStatusIndicator } from "../GitStatusIndicator/GitStatusIndicator";
+import { SubAgentListItem } from "./SubAgentListItem";
 
 import { Tooltip, TooltipTrigger, TooltipContent } from "../Tooltip/Tooltip";
 import { Popover, PopoverContent, PopoverTrigger, PopoverAnchor } from "../Popover/Popover";
@@ -24,6 +26,7 @@ import {
   Sparkles,
   PenLine,
   MessageCircleQuestionMark,
+  ChevronRight,
 } from "lucide-react";
 import { WorkspaceStatusIndicator } from "../WorkspaceStatusIndicator/WorkspaceStatusIndicator";
 import { ArchiveIcon } from "../icons/ArchiveIcon/ArchiveIcon";
@@ -74,6 +77,9 @@ export interface AgentListItemProps extends AgentListItemBaseProps {
   isRemoving?: boolean;
   /** Section ID this workspace belongs to (for drag-drop targeting) */
   sectionId?: string;
+  rowRenderMeta?: AgentRowRenderMeta;
+  completedChildrenExpanded?: boolean;
+  onToggleCompletedChildren?: (workspaceId: string) => void;
   onSelectWorkspace: (selection: WorkspaceSelection) => void;
   onForkWorkspace: (workspaceId: string, button: HTMLElement) => Promise<void>;
   onArchiveWorkspace: (workspaceId: string, button: HTMLElement) => Promise<void>;
@@ -304,6 +310,9 @@ function RegularAgentListItemInner(props: AgentListItemProps) {
     isRemoving: isRemovingProp,
     depth,
     sectionId,
+    rowRenderMeta,
+    completedChildrenExpanded,
+    onToggleCompletedChildren,
     onSelectWorkspace,
     onForkWorkspace,
     onArchiveWorkspace,
@@ -469,6 +478,11 @@ function RegularAgentListItemInner(props: AgentListItemProps) {
   // Note: we intentionally render the secondary row even while the workspace is still
   // initializing so users can see early streaming/status information immediately.
   const hasSecondaryRow = isArchiving === true || hasStatusText;
+  const hasCompletedChildren =
+    (rowRenderMeta?.hasHiddenCompletedChildren ?? false) ||
+    (rowRenderMeta?.visibleCompletedChildrenCount ?? 0) > 0;
+  const canToggleCompletedChildren = hasCompletedChildren && onToggleCompletedChildren != null;
+  const isCompletedChildrenExpanded = completedChildrenExpanded ?? false;
 
   const paddingLeft = getItemPaddingLeft(depth);
 
@@ -716,21 +730,57 @@ function RegularAgentListItemInner(props: AgentListItemProps) {
                 data-workspace-id={workspaceId}
               />
             ) : (
-              <span
-                className={cn(
-                  "text-foreground block truncate text-left text-[14px] leading-6 transition-colors duration-200",
-                  !isDisabled && "cursor-pointer",
-                  isGeneratingTitle && "italic",
-                  !isSelected && visualState === "seen" && "text-secondary"
+              <div className="flex min-w-0 items-center gap-1">
+                {canToggleCompletedChildren && (
+                  <button
+                    type="button"
+                    // Keep expansion toggles local to this button so row click/selection
+                    // behavior remains unchanged.
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      if (isDisabled) {
+                        return;
+                      }
+                      onToggleCompletedChildren?.(workspaceId);
+                    }}
+                    onKeyDown={stopKeyboardPropagation}
+                    aria-label={
+                      isCompletedChildrenExpanded
+                        ? `Collapse completed sub-agents for ${displayTitle}`
+                        : `Expand completed sub-agents for ${displayTitle}`
+                    }
+                    aria-expanded={isCompletedChildrenExpanded}
+                    disabled={isDisabled}
+                    className={cn(
+                      "text-muted inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border-none bg-transparent p-0 transition-colors duration-200",
+                      !isDisabled && "cursor-pointer hover:text-foreground",
+                      isDisabled && "cursor-default opacity-60"
+                    )}
+                  >
+                    <ChevronRight
+                      className={cn(
+                        "h-3 w-3 transition-transform duration-200 ease-in-out",
+                        isCompletedChildrenExpanded && "rotate-90"
+                      )}
+                    />
+                  </button>
                 )}
-                onDoubleClick={(e) => {
-                  if (isDisabled) return;
-                  e.stopPropagation();
-                  startEditing();
-                }}
-              >
-                {displayTitle}
-              </span>
+                <span
+                  className={cn(
+                    "text-foreground min-w-0 flex-1 truncate text-left text-[14px] leading-6 transition-colors duration-200",
+                    !isDisabled && "cursor-pointer",
+                    isGeneratingTitle && "italic",
+                    !isSelected && visualState === "seen" && "text-secondary"
+                  )}
+                  onDoubleClick={(e) => {
+                    if (isDisabled) return;
+                    e.stopPropagation();
+                    startEditing();
+                  }}
+                >
+                  {displayTitle}
+                </span>
+              </div>
             )}
 
             {!isInitializing && !isEditing && (
@@ -806,6 +856,21 @@ function AgentListItemInner(props: UnifiedAgentListItemProps) {
   if (props.variant === "draft") {
     return <DraftAgentListItemInner {...props} />;
   }
+
+  const rowMeta = props.rowRenderMeta;
+  if (rowMeta?.rowKind === "subagent") {
+    // Connector geometry is driven by render metadata so visible siblings keep
+    // consistent single/middle/last shapes as parents expand/collapse children.
+    return (
+      <SubAgentListItem
+        connectorPosition={rowMeta.connectorPosition}
+        indentLeft={getItemPaddingLeft(props.depth)}
+      >
+        <RegularAgentListItemInner {...props} />
+      </SubAgentListItem>
+    );
+  }
+
   return <RegularAgentListItemInner {...props} />;
 }
 
