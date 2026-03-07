@@ -57,7 +57,7 @@ import { ConfirmationModal } from "../ConfirmationModal/ConfirmationModal";
 import { ProjectDeleteConfirmationModal } from "../ProjectDeleteConfirmationModal/ProjectDeleteConfirmationModal";
 import { useSettings } from "@/browser/contexts/SettingsContext";
 
-import { WorkspaceListItem, type WorkspaceSelection } from "../WorkspaceListItem/WorkspaceListItem";
+import { AgentListItem, type WorkspaceSelection } from "../AgentListItem/AgentListItem";
 import { WorkspaceStatusIndicator } from "../WorkspaceStatusIndicator/WorkspaceStatusIndicator";
 import { TitleEditProvider, useTitleEdit } from "@/browser/contexts/WorkspaceTitleEditContext";
 import { useConfirmDialog } from "@/browser/contexts/ConfirmDialogContext";
@@ -80,7 +80,7 @@ import { getErrorMessage } from "@/common/utils/errors";
 import { getProjectWorkspaceCounts } from "@/common/utils/projectRemoval";
 
 // Re-export WorkspaceSelection for backwards compatibility
-export type { WorkspaceSelection } from "../WorkspaceListItem/WorkspaceListItem";
+export type { WorkspaceSelection } from "../AgentListItem/AgentListItem";
 
 // Draggable project item moved to module scope to avoid remounting on every parent render.
 // Defining components inside another component causes a new function identity each render,
@@ -207,10 +207,10 @@ const DraggableProjectItem = React.memo(
     (prev["aria-expanded"] ?? false) === (next["aria-expanded"] ?? false)
 );
 /**
- * Wrapper that fetches draft data from localStorage and renders via unified WorkspaceListItem.
+ * Wrapper that fetches draft data from localStorage and renders via unified AgentListItem.
  * Keeps data-fetching logic colocated with sidebar while delegating rendering to shared component.
  */
-interface DraftWorkspaceListItemWrapperProps {
+interface DraftAgentListItemWrapperProps {
   projectPath: string;
   draftId: string;
   draftNumber: number;
@@ -223,7 +223,7 @@ interface DraftWorkspaceListItemWrapperProps {
 // Prevents constant re-renders while still providing timely feedback.
 const DRAFT_PREVIEW_DEBOUNCE_MS = 1000;
 
-function DraftWorkspaceListItemWrapper(props: DraftWorkspaceListItemWrapperProps) {
+function DraftAgentListItemWrapper(props: DraftAgentListItemWrapperProps) {
   const scopeId = getDraftScopeId(props.projectPath, props.draftId);
 
   const [draftPrompt] = usePersistedState<string>(getInputKey(scopeId), "", {
@@ -247,7 +247,7 @@ function DraftWorkspaceListItemWrapper(props: DraftWorkspaceListItemWrapperProps
   const titleText = workspaceTitle.trim().length > 0 ? workspaceTitle.trim() : "Draft";
 
   return (
-    <WorkspaceListItem
+    <AgentListItem
       variant="draft"
       projectPath={props.projectPath}
       isSelected={props.isSelected}
@@ -598,7 +598,7 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
       onToggleCollapsed();
     }
   }, [onSelectWorkspace, collapsed, onToggleCollapsed, persistMobileSidebarScrollTop]);
-  // Workspace-specific subscriptions moved to WorkspaceListItem component
+  // Workspace-specific subscriptions moved to AgentListItem component
 
   // Store as array in localStorage, convert to Set for usage
   const [expandedProjectsArray, setExpandedProjectsArray] = usePersistedState<string[]>(
@@ -1285,7 +1285,7 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
                                 metadata: FrontendWorkspaceMetadata,
                                 sectionId?: string
                               ) => (
-                                <WorkspaceListItem
+                                <AgentListItem
                                   key={metadata.id}
                                   metadata={metadata}
                                   projectPath={projectPath}
@@ -1325,7 +1325,7 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
                                   pendingNewWorkspaceDraftId === draft.draftId;
 
                                 return (
-                                  <DraftWorkspaceListItemWrapper
+                                  <DraftAgentListItemWrapper
                                     key={draft.draftId}
                                     projectPath={projectPath}
                                     draftId={draft.draftId}

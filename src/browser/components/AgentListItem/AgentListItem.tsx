@@ -58,14 +58,14 @@ export interface DraftWorkspaceData {
 }
 
 /** Base props shared by both workspace and draft items */
-interface WorkspaceListItemBaseProps {
+interface AgentListItemBaseProps {
   projectPath: string;
   isSelected: boolean;
   depth?: number;
 }
 
 /** Props for regular (persisted) workspace items */
-export interface WorkspaceListItemProps extends WorkspaceListItemBaseProps {
+export interface AgentListItemProps extends AgentListItemBaseProps {
   variant?: "workspace";
   metadata: FrontendWorkspaceMetadata;
   projectName: string;
@@ -81,7 +81,7 @@ export interface WorkspaceListItemProps extends WorkspaceListItemBaseProps {
 }
 
 /** Props for draft (UI-only placeholder) items */
-export interface DraftWorkspaceListItemProps extends WorkspaceListItemBaseProps {
+export interface DraftAgentListItemProps extends AgentListItemBaseProps {
   variant: "draft";
   draft: DraftWorkspaceData;
 }
@@ -181,7 +181,7 @@ function ActionButtonWrapper(props: { children: React.ReactNode }) {
 // Draft Workspace Item (UI-only placeholder)
 // ─────────────────────────────────────────────────────────────────────────────
 
-function DraftWorkspaceListItemInner(props: DraftWorkspaceListItemProps) {
+function DraftAgentListItemInner(props: DraftAgentListItemProps) {
   const { projectPath, isSelected, depth, draft } = props;
   const paddingLeft = getItemPaddingLeft(depth);
   const hasPromptPreview = draft.promptPreview.length > 0;
@@ -294,7 +294,7 @@ function DraftWorkspaceListItemInner(props: DraftWorkspaceListItemProps) {
 // Regular Workspace Item (persisted workspace)
 // ─────────────────────────────────────────────────────────────────────────────
 
-function RegularWorkspaceListItemInner(props: WorkspaceListItemProps) {
+function RegularAgentListItemInner(props: AgentListItemProps) {
   const {
     metadata,
     projectPath,
@@ -800,13 +800,13 @@ function RegularWorkspaceListItemInner(props: WorkspaceListItemProps) {
 // Unified Export (dispatches based on variant)
 // ─────────────────────────────────────────────────────────────────────────────
 
-type UnifiedWorkspaceListItemProps = WorkspaceListItemProps | DraftWorkspaceListItemProps;
+type UnifiedAgentListItemProps = AgentListItemProps | DraftAgentListItemProps;
 
-function WorkspaceListItemInner(props: UnifiedWorkspaceListItemProps) {
+function AgentListItemInner(props: UnifiedAgentListItemProps) {
   if (props.variant === "draft") {
-    return <DraftWorkspaceListItemInner {...props} />;
+    return <DraftAgentListItemInner {...props} />;
   }
-  return <RegularWorkspaceListItemInner {...props} />;
+  return <RegularAgentListItemInner {...props} />;
 }
 
-export const WorkspaceListItem = React.memo(WorkspaceListItemInner);
+export const AgentListItem = React.memo(AgentListItemInner);

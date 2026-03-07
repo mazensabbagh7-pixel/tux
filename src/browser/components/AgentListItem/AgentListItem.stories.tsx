@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import type { ReactNode } from "react";
 import { useEffect } from "react";
-import { WorkspaceListItem } from "@/browser/components/WorkspaceListItem/WorkspaceListItem";
+import { AgentListItem } from "@/browser/components/AgentListItem/AgentListItem";
 import { APIProvider } from "@/browser/contexts/API";
 import { TelemetryEnabledProvider } from "@/browser/contexts/TelemetryEnabledContext";
 import { TitleEditProvider } from "@/browser/contexts/WorkspaceTitleEditContext";
@@ -20,9 +20,9 @@ import {
   getWorkspaceLastReadKey,
 } from "@/common/constants/storage";
 
-const meta: Meta<typeof WorkspaceListItem> = {
-  title: "Components/WorkspaceListItem",
-  component: WorkspaceListItem,
+const meta: Meta<typeof AgentListItem> = {
+  title: "Components/AgentListItem",
+  component: AgentListItem,
   parameters: {
     layout: "padded",
   },
@@ -189,7 +189,7 @@ function StoryScaffold(props: { children: ReactNode; activeWorkspaceId?: string 
 function renderFigmaStates() {
   return (
     <StoryScaffold>
-      <WorkspaceListItem
+      <AgentListItem
         metadata={STORY_WORKSPACES[0]}
         projectPath={PROJECT_PATH}
         projectName={PROJECT_NAME}
@@ -199,7 +199,7 @@ function renderFigmaStates() {
         onArchiveWorkspace={() => Promise.resolve()}
         onCancelCreation={() => Promise.resolve()}
       />
-      <WorkspaceListItem
+      <AgentListItem
         metadata={STORY_WORKSPACES[1]}
         projectPath={PROJECT_PATH}
         projectName={PROJECT_NAME}
@@ -209,7 +209,7 @@ function renderFigmaStates() {
         onArchiveWorkspace={() => Promise.resolve()}
         onCancelCreation={() => Promise.resolve()}
       />
-      <WorkspaceListItem
+      <AgentListItem
         metadata={STORY_WORKSPACES[2]}
         projectPath={PROJECT_PATH}
         projectName={PROJECT_NAME}
@@ -219,7 +219,7 @@ function renderFigmaStates() {
         onArchiveWorkspace={() => Promise.resolve()}
         onCancelCreation={() => Promise.resolve()}
       />
-      <WorkspaceListItem
+      <AgentListItem
         metadata={STORY_WORKSPACES[3]}
         projectPath={PROJECT_PATH}
         projectName={PROJECT_NAME}
@@ -229,7 +229,7 @@ function renderFigmaStates() {
         onArchiveWorkspace={() => Promise.resolve()}
         onCancelCreation={() => Promise.resolve()}
       />
-      <WorkspaceListItem
+      <AgentListItem
         metadata={STORY_WORKSPACES[4]}
         projectPath={PROJECT_PATH}
         projectName={PROJECT_NAME}
@@ -239,7 +239,7 @@ function renderFigmaStates() {
         onArchiveWorkspace={() => Promise.resolve()}
         onCancelCreation={() => Promise.resolve()}
       />
-      <WorkspaceListItem
+      <AgentListItem
         variant="draft"
         draft={{
           draftId: "draft-state",
@@ -260,7 +260,7 @@ function renderSingleWorkspaceState(workspaceIndex: number, options?: { isArchiv
   const workspace = STORY_WORKSPACES[workspaceIndex];
   return (
     <StoryScaffold activeWorkspaceId={workspace.id}>
-      <WorkspaceListItem
+      <AgentListItem
         metadata={workspace}
         projectPath={PROJECT_PATH}
         projectName={PROJECT_NAME}
@@ -289,7 +289,7 @@ function renderIdleState(isUnread: boolean) {
 function renderDraftState() {
   return (
     <StoryScaffold>
-      <WorkspaceListItem
+      <AgentListItem
         variant="draft"
         draft={{
           draftId: "draft-state",
