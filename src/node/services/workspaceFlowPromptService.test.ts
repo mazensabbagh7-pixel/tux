@@ -332,6 +332,62 @@ test("shouldEmitUpdate skips repeated clear notifications while deletion is pend
   ).toBe(false);
 });
 
+test("getState waits for an in-flight refresh instead of returning stale state", async () => {
+  const workspaceId = "workspace-1";
+  const staleState = {
+    workspaceId,
+    path: "/tmp/workspace/.mux/prompts/feature.md",
+    exists: true,
+    hasNonEmptyContent: false,
+    modifiedAtMs: 1,
+    contentFingerprint: "stale-fingerprint",
+    lastEnqueuedFingerprint: null,
+    isCurrentVersionEnqueued: false,
+    hasPendingUpdate: false,
+  };
+  const freshState = {
+    ...staleState,
+    hasNonEmptyContent: true,
+    modifiedAtMs: 2,
+    contentFingerprint: "fresh-fingerprint",
+  };
+  const service = new WorkspaceFlowPromptService({
+    getSessionDir: () => "/tmp/flow-prompt-session",
+  } as unknown as Config);
+
+  const monitors = (
+    service as unknown as {
+      monitors: Map<
+        string,
+        {
+          timer: null;
+          stopped: boolean;
+          refreshing: boolean;
+          refreshPromise: Promise<typeof freshState> | null;
+          pendingFingerprint: string | null;
+          lastState: typeof staleState | null;
+          activeChatSubscriptions: number;
+          lastOpenedAtMs: number | null;
+          lastKnownActivityAtMs: number | null;
+        }
+      >;
+    }
+  ).monitors;
+  monitors.set(workspaceId, {
+    timer: null,
+    stopped: false,
+    refreshing: true,
+    refreshPromise: Promise.resolve(freshState),
+    pendingFingerprint: null,
+    lastState: staleState,
+    activeChatSubscriptions: 0,
+    lastOpenedAtMs: null,
+    lastKnownActivityAtMs: null,
+  });
+
+  expect(await service.getState(workspaceId)).toEqual(freshState);
+});
+
 describe("buildFlowPromptUpdateMessage", () => {
   const flowPromptPath = "/tmp/workspace/.mux/prompts/feature-branch.md";
 

@@ -55,6 +55,7 @@ interface FlowPromptMonitor {
   timer: ReturnType<typeof setTimeout> | null;
   stopped: boolean;
   refreshing: boolean;
+  refreshPromise: Promise<FlowPromptState> | null;
   pendingFingerprint: string | null;
   lastState: FlowPromptState | null;
   activeChatSubscriptions: number;
@@ -412,6 +413,7 @@ export class WorkspaceFlowPromptService extends EventEmitter {
       timer: null,
       stopped: false,
       refreshing: false,
+      refreshPromise: null,
       pendingFingerprint: null,
       lastState: null,
       activeChatSubscriptions: 0,
@@ -566,6 +568,9 @@ export class WorkspaceFlowPromptService extends EventEmitter {
   private async refreshMonitor(workspaceId: string, emitEvents: boolean): Promise<FlowPromptState> {
     const monitor = this.monitors.get(workspaceId);
     if (monitor?.refreshing) {
+      if (!emitEvents && monitor.refreshPromise) {
+        return monitor.refreshPromise;
+      }
       return monitor.lastState ?? this.computeStateFromScratch(workspaceId);
     }
 
@@ -573,7 +578,7 @@ export class WorkspaceFlowPromptService extends EventEmitter {
       monitor.refreshing = true;
     }
 
-    try {
+    const refreshPromise = (async () => {
       const snapshot = await this.readPromptSnapshot(workspaceId);
       const persisted = await this.readPersistedState(workspaceId);
 
@@ -613,8 +618,17 @@ export class WorkspaceFlowPromptService extends EventEmitter {
       }
 
       return state;
+    })();
+
+    if (monitor) {
+      monitor.refreshPromise = refreshPromise;
+    }
+
+    try {
+      return await refreshPromise;
     } finally {
       if (monitor) {
+        monitor.refreshPromise = null;
         monitor.refreshing = false;
       }
     }
