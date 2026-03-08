@@ -163,7 +163,11 @@ function StatusDot(props: { state: VisualState; isDraft?: boolean }) {
   return (
     // Keep the dot centered relative to the full row height so multi-line rows
     // (for example while streaming) do not pin the icon to the title line.
-    <div className="relative flex h-4 w-4 shrink-0 items-center justify-center self-center">
+    <div
+      // Keep the status dot above sub-agent connector overlays so branch lines do
+      // not draw across the dot when rows are nested.
+      className="relative z-20 flex h-4 w-4 shrink-0 items-center justify-center self-center"
+    >
       {dot}
     </div>
   );

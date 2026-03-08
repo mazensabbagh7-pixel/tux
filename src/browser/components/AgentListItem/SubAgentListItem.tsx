@@ -10,14 +10,19 @@ interface SubAgentListItemProps {
 
 export function SubAgentListItem(props: SubAgentListItemProps) {
   const connectorLeft = props.indentLeft - 10;
-  const connectorColorClass = props.isSelected ? "bg-border" : "bg-border-light";
+  const connectorFillClass = props.isSelected ? "bg-border" : "bg-border-light";
+  const connectorBorderClass = props.isSelected ? "border-border" : "border-border-light";
+  const connectorTurnSizePx = 6;
+
   // Even when a sub-agent is an only child, we still need the top segment to
   // visually connect it back to the parent row.
   const showTopSegment =
     props.connectorPosition === "middle" ||
     props.connectorPosition === "last" ||
     props.connectorPosition === "single";
-  const showBottomSegment = props.connectorPosition === "middle";
+  // Middle rows must keep the vertical trunk passing through so the connector
+  // continues toward the next sub-agent sibling.
+  const showPassThroughSegment = props.connectorPosition === "middle";
 
   return (
     <div className="relative">
@@ -29,12 +34,30 @@ export function SubAgentListItem(props: SubAgentListItemProps) {
         style={{ left: connectorLeft, width: 14 }}
       >
         {showTopSegment && (
-          <span className={cn(connectorColorClass, "absolute top-0 left-[6px] h-1/2 w-px")} />
+          <span
+            className={cn(
+              connectorFillClass,
+              // Extend upward by half a row so the branch meets the parent row's
+              // status-dot center, then stop before the rounded elbow begins.
+              "absolute -top-1/2 left-[6px] w-px"
+            )}
+            style={{ bottom: `calc(50% + ${connectorTurnSizePx}px)` }}
+          />
         )}
-        {showBottomSegment && (
-          <span className={cn(connectorColorClass, "absolute top-1/2 bottom-0 left-[6px] w-px")} />
+        {showPassThroughSegment && (
+          <span
+            className={cn(connectorFillClass, "absolute bottom-0 left-[6px] w-px")}
+            style={{ top: `calc(50% - ${connectorTurnSizePx}px)` }}
+          />
         )}
-        <span className={cn(connectorColorClass, "absolute top-1/2 left-[6px] h-px w-2.5")} />
+        <span
+          className={cn(
+            connectorBorderClass,
+            // Draw a rounded elbow instead of a hard 90-degree corner where the
+            // vertical connector turns into the sub-agent branch.
+            "absolute top-1/2 left-[6px] h-[6px] w-[10px] -translate-y-full rounded-bl-[6px] border-l border-b"
+          )}
+        />
       </div>
       {props.children}
     </div>
