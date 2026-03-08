@@ -26,8 +26,10 @@ import type { Runtime } from "@/node/runtime/Runtime";
 import { isPlanLikeInResolvedChain } from "@/common/utils/agentTools";
 import { getPlanFilePath } from "@/common/utils/planStorage";
 import { getPlanFileHint, getPlanModeInstruction } from "@/common/utils/ui/modeUtils";
+import { getFlowPromptFileHint } from "@/common/utils/ui/flowPrompting";
+import { getFlowPromptRelativePath } from "@/common/constants/flowPrompting";
 import { hasStartHerePlanSummary } from "@/common/utils/messages/startHerePlanSummary";
-import { readPlanFile } from "@/node/utils/runtime/helpers";
+import { readPlanFile, readFileString } from "@/node/utils/runtime/helpers";
 import {
   readAgentDefinition,
   resolveAgentBody,
@@ -101,6 +103,7 @@ export async function buildPlanInstructions(
     runtime,
     metadata,
     workspaceId,
+    workspacePath,
     effectiveMode,
     effectiveAgentId,
     agentIsPlanLike,
@@ -150,6 +153,22 @@ export async function buildPlanInstructions(
         "Skipping plan file hint: Start Here already includes the plan in chat history."
       );
     }
+  }
+
+  const flowPromptPath = runtime.normalizePath(
+    getFlowPromptRelativePath(metadata.name),
+    workspacePath
+  );
+  try {
+    await readFileString(runtime, flowPromptPath);
+    const flowPromptHint = getFlowPromptFileHint(flowPromptPath, true);
+    if (flowPromptHint) {
+      effectiveAdditionalInstructions = effectiveAdditionalInstructions
+        ? `${flowPromptHint}\n\n${effectiveAdditionalInstructions}`
+        : flowPromptHint;
+    }
+  } catch {
+    // No flow prompt file yet.
   }
 
   if (shouldDisableTaskToolsForDepth) {

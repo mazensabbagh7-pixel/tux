@@ -288,6 +288,17 @@ export class AgentSession {
 
   private idleWaiters: Array<() => void> = [];
   private readonly messageQueue = new MessageQueue();
+  private flowPromptUpdate:
+    | {
+        message: string;
+        options?: SendMessageOptions & { fileParts?: FilePart[] };
+        internal?: {
+          synthetic?: boolean;
+          agentInitiated?: boolean;
+          onAccepted?: () => Promise<void> | void;
+        };
+      }
+    | undefined;
   private readonly compactionHandler: CompactionHandler;
   private readonly compactionMonitor: CompactionMonitor;
 
@@ -1738,6 +1749,7 @@ export class AgentSession {
     internal?: {
       synthetic?: boolean;
       agentInitiated?: boolean;
+      onAccepted?: () => Promise<void> | void;
       onAcceptedPreStreamFailure?: (error: SendMessageError) => Promise<void> | void;
     }
   ): Promise<Result<void, SendMessageError>> {
@@ -2106,6 +2118,8 @@ export class AgentSession {
           return Err(createUnknownSendMessageError(appendCompactionResult.error));
         }
 
+        await internal?.onAccepted?.();
+
         this.emitChatEvent({
           type: "auto-compaction-triggered",
           reason: "on-send",
@@ -2155,6 +2169,7 @@ export class AgentSession {
         // the orphan via the truncation logic that removes preceding snapshots.
         return Err(createUnknownSendMessageError(appendResult.error));
       }
+      await internal?.onAccepted?.();
     }
 
     // Workspace may be tearing down while we await filesystem IO.
@@ -2836,8 +2851,7 @@ export class AgentSession {
       system1Model: options?.system1Model,
       system1ThinkingLevel: options?.system1ThinkingLevel,
       disableWorkspaceAgents: options?.disableWorkspaceAgents,
-      hasQueuedMessage: () =>
-        !this.messageQueue.isEmpty() && this.messageQueue.getQueueDispatchMode() === "tool-end",
+      hasQueuedMessage: () => this.hasToolEndQueuedWork(),
       openaiTruncationModeOverride,
     });
 
@@ -3926,6 +3940,67 @@ export class AgentSession {
     await new Promise<void>((resolve) => this.idleWaiters.push(resolve));
   }
 
+  private hasToolEndQueuedWork(): boolean {
+    return (
+      (!this.messageQueue.isEmpty() && this.messageQueue.getQueueDispatchMode() === "tool-end") ||
+      this.flowPromptUpdate !== undefined
+    );
+  }
+
+  private syncQueuedMessageFlag(): void {
+    this.backgroundProcessManager.setMessageQueued(this.workspaceId, this.hasToolEndQueuedWork());
+  }
+
+  async getFlowPromptSendOptions(): Promise<SendMessageOptions> {
+    const activeOptions = this.activeStreamContext?.options;
+    if (activeOptions?.model) {
+      const restActiveOptions: SendMessageOptions = { ...activeOptions };
+      delete restActiveOptions.editMessageId;
+      delete restActiveOptions.queueDispatchMode;
+      delete restActiveOptions.muxMetadata;
+      return {
+        ...restActiveOptions,
+        model: this.activeStreamContext?.modelString ?? activeOptions.model,
+        agentId: activeOptions.agentId ?? WORKSPACE_DEFAULTS.agentId,
+      };
+    }
+
+    const metadataResult = await this.aiService.getWorkspaceMetadata(this.workspaceId);
+    if (metadataResult.success) {
+      const metadata = metadataResult.data;
+      const agentId = metadata.agentId ?? metadata.agentType ?? WORKSPACE_DEFAULTS.agentId;
+      const agentSettings = metadata.aiSettingsByAgent?.[agentId] ?? metadata.aiSettings;
+      return {
+        model: agentSettings?.model ?? DEFAULT_MODEL,
+        thinkingLevel: agentSettings?.thinkingLevel,
+        agentId,
+      };
+    }
+
+    return {
+      model: DEFAULT_MODEL,
+      agentId: WORKSPACE_DEFAULTS.agentId,
+    };
+  }
+
+  queueFlowPromptUpdate(args: {
+    message: string;
+    options?: SendMessageOptions & { fileParts?: FilePart[] };
+    internal?: {
+      synthetic?: boolean;
+      agentInitiated?: boolean;
+      onAccepted?: () => Promise<void> | void;
+    };
+  }): void {
+    this.assertNotDisposed("queueFlowPromptUpdate");
+    this.flowPromptUpdate = {
+      message: args.message,
+      options: args.options,
+      internal: args.internal,
+    };
+    this.syncQueuedMessageFlag();
+  }
+
   queueMessage(
     message: string,
     options?: SendMessageOptions & { fileParts?: FilePart[] },
@@ -3939,19 +4014,15 @@ export class AgentSession {
     this.emitQueuedMessageChanged();
     // Signal to bash_output that it should return early to process queued messages
     // only for tool-end dispatches.
-    const effectiveDispatchMode = this.messageQueue.getQueueDispatchMode();
-    this.backgroundProcessManager.setMessageQueued(
-      this.workspaceId,
-      effectiveDispatchMode === "tool-end"
-    );
-    return effectiveDispatchMode;
+    this.syncQueuedMessageFlag();
+    return this.messageQueue.getQueueDispatchMode();
   }
 
   clearQueue(): void {
     this.assertNotDisposed("clearQueue");
     this.messageQueue.clear();
     this.emitQueuedMessageChanged();
-    this.backgroundProcessManager.setMessageQueued(this.workspaceId, false);
+    this.syncQueuedMessageFlag();
   }
 
   /**
@@ -4001,32 +4072,51 @@ export class AgentSession {
       return;
     }
 
-    // Clear the queued message flag (even if queue is empty, to handle race conditions)
-    this.backgroundProcessManager.setMessageQueued(this.workspaceId, false);
+    let queuedSend:
+      | {
+          message: string;
+          options?: SendMessageOptions & { fileParts?: FilePart[] };
+          internal?: {
+            synthetic?: boolean;
+            agentInitiated?: boolean;
+            onAccepted?: () => Promise<void> | void;
+          };
+        }
+      | undefined;
 
     if (!this.messageQueue.isEmpty()) {
       const { message, options, internal } = this.messageQueue.produceMessage();
       this.messageQueue.clear();
       this.emitQueuedMessageChanged();
-
-      // Set PREPARING synchronously before the async sendMessage to prevent
-      // incoming messages from bypassing the queue during the await gap.
-      this.setTurnPhase(TurnPhase.PREPARING);
-
-      void this.sendMessage(message, options, internal)
-        .then((result) => {
-          // If sendMessage fails before it can start streaming, ensure we don't
-          // leave the session stuck in PREPARING.
-          if (!result.success && this.turnPhase === TurnPhase.PREPARING) {
-            this.setTurnPhase(TurnPhase.IDLE);
-          }
-        })
-        .catch(() => {
-          if (this.turnPhase === TurnPhase.PREPARING) {
-            this.setTurnPhase(TurnPhase.IDLE);
-          }
-        });
+      queuedSend = { message, options, internal };
+    } else if (this.flowPromptUpdate) {
+      queuedSend = this.flowPromptUpdate;
+      this.flowPromptUpdate = undefined;
     }
+
+    this.syncQueuedMessageFlag();
+
+    if (!queuedSend) {
+      return;
+    }
+
+    // Set PREPARING synchronously before the async sendMessage to prevent
+    // incoming messages from bypassing the queue during the await gap.
+    this.setTurnPhase(TurnPhase.PREPARING);
+
+    void this.sendMessage(queuedSend.message, queuedSend.options, queuedSend.internal)
+      .then((result) => {
+        // If sendMessage fails before it can start streaming, ensure we don't
+        // leave the session stuck in PREPARING.
+        if (!result.success && this.turnPhase === TurnPhase.PREPARING) {
+          this.setTurnPhase(TurnPhase.IDLE);
+        }
+      })
+      .catch(() => {
+        if (this.turnPhase === TurnPhase.PREPARING) {
+          this.setTurnPhase(TurnPhase.IDLE);
+        }
+      });
   }
 
   /** Extract a successful switch_agent tool result from stream-end parts (latest wins). */
@@ -4651,8 +4741,13 @@ export class AgentSession {
       return attachments;
     }
     const runtime = createRuntimeForWorkspace(metadataResult.data);
+    const workspacePath =
+      metadataResult.data.projectPath === metadataResult.data.name
+        ? metadataResult.data.projectPath
+        : runtime.getWorkspacePath(metadataResult.data.projectPath, metadataResult.data.name);
 
     const attachments = await AttachmentService.generatePostCompactionAttachments(
+      workspacePath,
       metadataResult.data.name,
       metadataResult.data.projectName,
       this.workspaceId,
@@ -4662,9 +4757,11 @@ export class AgentSession {
     );
 
     if (todoAttachment) {
-      // Insert TODO after plan (if present), otherwise first.
-      const planIndex = attachments.findIndex((att) => att.type === "plan_file_reference");
-      const insertIndex = planIndex === -1 ? 0 : planIndex + 1;
+      // Insert TODO after the primary prompt context (flow prompt or plan), otherwise first.
+      const primaryContextIndex = attachments.findIndex(
+        (att) => att.type === "flow_prompt_reference" || att.type === "plan_file_reference"
+      );
+      const insertIndex = primaryContextIndex === -1 ? 0 : primaryContextIndex + 1;
       attachments.splice(insertIndex, 0, todoAttachment);
     }
 

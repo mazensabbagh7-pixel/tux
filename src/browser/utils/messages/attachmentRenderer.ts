@@ -1,16 +1,27 @@
 import type {
   PostCompactionAttachment,
+  FlowPromptReferenceAttachment,
   PlanFileReferenceAttachment,
   TodoListAttachment,
   EditedFilesReferenceAttachment,
 } from "@/common/types/attachment";
 import { renderTodoItemsAsMarkdownList } from "@/common/utils/todoList";
+import { getFlowPromptPathMarkerLine } from "@/common/constants/flowPrompting";
 
 const SYSTEM_UPDATE_OPEN = "<system-update>\n";
 const SYSTEM_UPDATE_CLOSE = "\n</system-update>";
 
 function wrapSystemUpdate(content: string): string {
   return `${SYSTEM_UPDATE_OPEN}${content}${SYSTEM_UPDATE_CLOSE}`;
+}
+
+function renderFlowPromptReference(attachment: FlowPromptReferenceAttachment): string {
+  return `${getFlowPromptPathMarkerLine(attachment.flowPromptPath)}
+
+Current flow prompt contents:
+\`\`\`md
+${attachment.flowPromptContent}
+\`\`\``;
 }
 
 /**
@@ -57,6 +68,8 @@ ${fileEntries}`;
  */
 export function renderAttachmentToContent(attachment: PostCompactionAttachment): string {
   switch (attachment.type) {
+    case "flow_prompt_reference":
+      return renderFlowPromptReference(attachment);
     case "plan_file_reference":
       return renderPlanFileReference(attachment);
     case "todo_list":
@@ -67,6 +80,33 @@ export function renderAttachmentToContent(attachment: PostCompactionAttachment):
 }
 
 const PLAN_TRUNCATION_NOTE = "\n\n...(truncated)\n";
+const FLOW_PROMPT_TRUNCATION_NOTE = "\n\n...(truncated)\n";
+
+function renderFlowPromptReferenceWithBudget(
+  attachment: FlowPromptReferenceAttachment,
+  maxChars: number
+): string | null {
+  if (maxChars <= 0) {
+    return null;
+  }
+
+  const prefix = `${getFlowPromptPathMarkerLine(attachment.flowPromptPath)}\n\nCurrent flow prompt contents:\n\`\`\`md\n`;
+  const suffix = "\n```";
+  const availableForContent = maxChars - prefix.length - suffix.length;
+
+  if (availableForContent <= 0) {
+    const minimal = getFlowPromptPathMarkerLine(attachment.flowPromptPath);
+    return minimal.length <= maxChars ? minimal : null;
+  }
+
+  let flowPromptContent = attachment.flowPromptContent;
+  if (flowPromptContent.length > availableForContent) {
+    const sliceLength = Math.max(0, availableForContent - FLOW_PROMPT_TRUNCATION_NOTE.length);
+    flowPromptContent = `${flowPromptContent.slice(0, sliceLength)}${FLOW_PROMPT_TRUNCATION_NOTE}`;
+  }
+
+  return `${prefix}${flowPromptContent}${suffix}`;
+}
 
 function renderPlanFileReferenceWithBudget(
   attachment: PlanFileReferenceAttachment,
@@ -139,9 +179,10 @@ function sortAttachmentsForInjection(
   attachments: PostCompactionAttachment[]
 ): PostCompactionAttachment[] {
   const priority: Record<PostCompactionAttachment["type"], number> = {
-    plan_file_reference: 0,
-    todo_list: 1,
-    edited_files_reference: 2,
+    flow_prompt_reference: 0,
+    plan_file_reference: 1,
+    todo_list: 2,
+    edited_files_reference: 3,
   };
 
   return attachments
@@ -188,6 +229,14 @@ export function renderAttachmentsToContentWithBudget(
 
     if (remainingForContent <= 0) {
       break;
+    }
+
+    if (attachment.type === "flow_prompt_reference") {
+      const content = renderFlowPromptReferenceWithBudget(attachment, remainingForContent);
+      if (content) {
+        addBlock(wrapSystemUpdate(content));
+      }
+      continue;
     }
 
     if (attachment.type === "plan_file_reference") {

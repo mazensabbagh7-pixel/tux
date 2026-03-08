@@ -30,6 +30,7 @@ import { useTutorial } from "@/browser/contexts/TutorialContext";
 import type { TerminalSessionCreateOptions } from "@/browser/utils/terminal";
 import { useOpenTerminal } from "@/browser/hooks/useOpenTerminal";
 import { useOpenInEditor } from "@/browser/hooks/useOpenInEditor";
+import { useFlowPrompt } from "@/browser/hooks/useFlowPrompt";
 import { usePersistedState } from "@/browser/hooks/usePersistedState";
 import { usePopoverError } from "@/browser/hooks/usePopoverError";
 import { isDesktopMode, DESKTOP_TITLEBAR_HEIGHT_CLASS } from "@/browser/hooks/useDesktopTitlebar";
@@ -82,6 +83,7 @@ export const WorkspaceMenuBar: React.FC<WorkspaceMenuBarProps> = ({
   const linkSharingEnabled = useLinkSharingEnabled();
   const openTerminalPopout = useOpenTerminal();
   const openInEditor = useOpenInEditor();
+  const flowPrompt = useFlowPrompt(workspaceId, workspaceName, runtimeConfig);
   const gitStatus = useGitStatus(workspaceId);
   const runtimeStatus = useRuntimeStatus(workspaceId);
   const runtimeStatusStore = useRuntimeStatusStoreRaw();
@@ -629,6 +631,27 @@ export const WorkspaceMenuBar: React.FC<WorkspaceMenuBarProps> = ({
               }
               onEnterImmersiveReview={isTouchMobileScreen ? null : handleEnterImmersiveReview}
               onStopRuntime={isRuntimeRunning ? () => void handleStopRuntime() : null}
+              onEnableFlowPrompt={
+                flowPrompt.state?.exists
+                  ? null
+                  : () => {
+                      void flowPrompt.enableFlowPrompt();
+                    }
+              }
+              onOpenFlowPrompt={
+                flowPrompt.state?.exists
+                  ? () => {
+                      void flowPrompt.openFlowPrompt();
+                    }
+                  : null
+              }
+              onDisableFlowPrompt={
+                flowPrompt.state?.exists
+                  ? () => {
+                      void flowPrompt.disableFlowPrompt();
+                    }
+                  : null
+              }
               onForkChat={(anchorEl) => {
                 void handleForkChat(anchorEl);
               }}

@@ -212,6 +212,7 @@ export {
   devtools,
   uiLayouts,
   debug,
+  FlowPromptStateSchema,
   general,
   menu,
   agentSkills,

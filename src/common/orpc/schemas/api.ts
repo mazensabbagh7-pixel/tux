@@ -134,6 +134,18 @@ export const BackgroundProcessInfoSchema = z.object({
 
 export type BackgroundProcessInfo = z.infer<typeof BackgroundProcessInfoSchema>;
 
+export const FlowPromptStateSchema = z.object({
+  workspaceId: z.string(),
+  path: z.string(),
+  exists: z.boolean(),
+  hasNonEmptyContent: z.boolean(),
+  modifiedAtMs: z.number().nullable(),
+  contentFingerprint: z.string().nullable(),
+  lastEnqueuedFingerprint: z.string().nullable(),
+  isCurrentVersionEnqueued: z.boolean(),
+  hasPendingUpdate: z.boolean(),
+});
+
 // Tokenizer
 export const tokenizer = {
   countTokens: {
@@ -1226,6 +1238,24 @@ export const workspace = {
       }),
       z.string()
     ),
+  },
+  flowPrompt: {
+    getState: {
+      input: z.object({ workspaceId: z.string() }),
+      output: FlowPromptStateSchema,
+    },
+    create: {
+      input: z.object({ workspaceId: z.string() }),
+      output: ResultSchema(FlowPromptStateSchema, z.string()),
+    },
+    delete: {
+      input: z.object({ workspaceId: z.string() }),
+      output: ResultSchema(z.void(), z.string()),
+    },
+    subscribe: {
+      input: z.object({ workspaceId: z.string() }),
+      output: eventIterator(FlowPromptStateSchema),
+    },
   },
   backgroundBashes: {
     /**

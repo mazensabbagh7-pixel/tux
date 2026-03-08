@@ -17,6 +17,7 @@ import type {
   WorkspaceChatMessage,
   WorkspaceStatsSnapshot,
   FrontendWorkspaceMetadataSchemaType,
+  FlowPromptState,
 } from "@/common/orpc/types";
 import type { WorkspaceMetadata } from "@/common/types/workspace";
 import type { SshPromptEvent, SshPromptRequest } from "@/common/orpc/schemas/ssh";
@@ -3382,12 +3383,15 @@ export const router = (authToken?: string) => {
           // crash-stranded compaction follow-ups and then evaluate auto-retry.
           session.scheduleStartupRecovery();
 
+          context.workspaceService.markWorkspaceChatSubscriptionStarted(input.workspaceId);
+
           try {
             yield* queue.iterate();
           } finally {
             signal?.removeEventListener("abort", onAbort);
             queue.end();
             unsubscribe();
+            context.workspaceService.markWorkspaceChatSubscriptionEnded(input.workspaceId);
           }
         }),
       onMetadata: t
@@ -3561,6 +3565,72 @@ export const router = (authToken?: string) => {
           }
           return { success: true as const, data: { content: result.content, path: result.path } };
         }),
+      flowPrompt: {
+        getState: t
+          .input(schemas.workspace.flowPrompt.getState.input)
+          .output(schemas.workspace.flowPrompt.getState.output)
+          .handler(({ context, input }) => {
+            return context.workspaceService.getFlowPromptState(input.workspaceId);
+          }),
+        create: t
+          .input(schemas.workspace.flowPrompt.create.input)
+          .output(schemas.workspace.flowPrompt.create.output)
+          .handler(async ({ context, input }) => {
+            const result = await context.workspaceService.createFlowPrompt(input.workspaceId);
+            if (!result.success) {
+              return { success: false as const, error: result.error };
+            }
+            return { success: true as const, data: result.data };
+          }),
+        delete: t
+          .input(schemas.workspace.flowPrompt.delete.input)
+          .output(schemas.workspace.flowPrompt.delete.output)
+          .handler(async ({ context, input }) => {
+            const result = await context.workspaceService.deleteFlowPrompt(input.workspaceId);
+            if (!result.success) {
+              return { success: false as const, error: result.error };
+            }
+            return { success: true as const, data: undefined };
+          }),
+        subscribe: t
+          .input(schemas.workspace.flowPrompt.subscribe.input)
+          .output(schemas.workspace.flowPrompt.subscribe.output)
+          .handler(async function* ({ context, input, signal }) {
+            const service = context.workspaceService;
+            const { workspaceId } = input;
+
+            if (signal?.aborted) {
+              return;
+            }
+
+            const queue = createAsyncEventQueue<FlowPromptState>();
+
+            const onAbort = () => {
+              queue.end();
+            };
+
+            if (signal) {
+              signal.addEventListener("abort", onAbort, { once: true });
+            }
+
+            const onFlowPrompt = (event: { workspaceId: string; state: FlowPromptState }) => {
+              if (event.workspaceId === workspaceId) {
+                queue.push(event.state);
+              }
+            };
+
+            service.on("flowPrompt", onFlowPrompt);
+
+            try {
+              yield await service.getFlowPromptState(workspaceId);
+              yield* queue.iterate();
+            } finally {
+              signal?.removeEventListener("abort", onAbort);
+              queue.end();
+              service.off("flowPrompt", onFlowPrompt);
+            }
+          }),
+      },
       backgroundBashes: {
         subscribe: t
           .input(schemas.workspace.backgroundBashes.subscribe.input)

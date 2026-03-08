@@ -1,0 +1,21 @@
+import {
+  FLOW_PROMPTS_DIR,
+  getFlowPromptPathMarkerLine,
+  getFlowPromptRelativePath,
+} from "./flowPrompting";
+
+describe("flowPrompting constants", () => {
+  it("builds the repo-local flow prompt path from the workspace name", () => {
+    expect(getFlowPromptRelativePath("feature-branch")).toBe(
+      `${FLOW_PROMPTS_DIR}/feature-branch.md`
+    );
+  });
+
+  it("includes the exact path marker wording for tool calls", () => {
+    const marker = getFlowPromptPathMarkerLine("/tmp/workspace/.mux/prompts/feature-branch.md");
+
+    expect(marker).toContain("Flow prompt file path:");
+    expect(marker).toContain("/tmp/workspace/.mux/prompts/feature-branch.md");
+    expect(marker).toContain("MUST use this exact path string");
+  });
+});

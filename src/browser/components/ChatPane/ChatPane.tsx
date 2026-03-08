@@ -43,6 +43,7 @@ import {
 import { formatKeybind, KEYBINDS } from "@/browser/utils/ui/keybinds";
 import { useAutoScroll } from "@/browser/hooks/useAutoScroll";
 import { useOpenInEditor } from "@/browser/hooks/useOpenInEditor";
+import { useFlowPrompt } from "@/browser/hooks/useFlowPrompt";
 import { usePersistedState } from "@/browser/hooks/usePersistedState";
 import {
   useWorkspaceAggregator,
@@ -83,6 +84,7 @@ import {
   normalizeQueuedMessage,
   type EditingMessageState,
 } from "@/browser/utils/chatEditing";
+import { FlowPromptComposerCard } from "../FlowPromptComposerCard/FlowPromptComposerCard";
 import { recordSyntheticReactRenderSample } from "@/browser/utils/perf/reactProfileCollector";
 
 // Perf e2e runs load the production bundle where React's onRender profiler callbacks may not
@@ -1022,6 +1024,7 @@ interface ChatInputPaneProps {
 
 const ChatInputPane: React.FC<ChatInputPaneProps> = (props) => {
   const { reviews } = props;
+  const flowPrompt = useFlowPrompt(props.workspaceId, props.workspaceName, props.runtimeConfig);
 
   return (
     <div className="flex flex-col gap-2">
@@ -1057,6 +1060,20 @@ const ChatInputPane: React.FC<ChatInputPaneProps> = (props) => {
           This agent task is queued and will start automatically when a parallel slot is available.
         </div>
       )}
+      {flowPrompt.state?.exists ? (
+        // Keep Flow Prompting additive so users can maintain a durable editor-driven prompt
+        // without losing the fast inline chat loop for one-off asks and follow-ups.
+        <FlowPromptComposerCard
+          state={flowPrompt.state}
+          error={flowPrompt.error}
+          onOpen={() => {
+            void flowPrompt.openFlowPrompt();
+          }}
+          onDisable={() => {
+            void flowPrompt.disableFlowPrompt();
+          }}
+        />
+      ) : null}
       <ChatInput
         key={props.workspaceId}
         variant="workspace"

@@ -108,6 +108,11 @@ import type { BackgroundProcessManager } from "@/node/services/backgroundProcess
 import type { WorkspaceLifecycleHooks } from "@/node/services/workspaceLifecycleHooks";
 import type { TaskService } from "@/node/services/taskService";
 
+import {
+  WorkspaceFlowPromptService,
+  type FlowPromptState,
+  type FlowPromptUpdateRequest,
+} from "@/node/services/workspaceFlowPromptService";
 import { DisposableTempDir } from "@/node/services/tempDir";
 import { createBashTool } from "@/node/services/tools/bash";
 import type { AskUserQuestionToolSuccessResult, BashToolResult } from "@/common/types/tools";
@@ -998,6 +1003,13 @@ export interface WorkspaceServiceEvents {
   chat: (event: { workspaceId: string; message: WorkspaceChatMessage }) => void;
   metadata: (event: { workspaceId: string; metadata: FrontendWorkspaceMetadata | null }) => void;
   activity: (event: { workspaceId: string; activity: WorkspaceActivitySnapshot | null }) => void;
+  chatSubscription: (event: {
+    workspaceId: string;
+    activeCount: number;
+    change: "started" | "ended";
+    atMs: number;
+  }) => void;
+  flowPrompt: (event: { workspaceId: string; state: FlowPromptState }) => void;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-unsafe-declaration-merging
@@ -1045,6 +1057,8 @@ export class WorkspaceService extends EventEmitter {
   // cancel any fire-and-forget init work to avoid orphaned processes (e.g., SSH sync, .mux/init).
   private readonly initAbortControllers = new Map<string, AbortController>();
 
+  private readonly chatSubscriptionCounts = new Map<string, number>();
+
   // ExtensionMetadataService now serializes all mutations globally because every
   // workspace shares the same extensionMetadata.json file.
 
@@ -1072,6 +1086,15 @@ export class WorkspaceService extends EventEmitter {
     this.telemetryService = telemetryService;
     this.experimentsService = experimentsService;
     this.sessionTimingService = sessionTimingService;
+    this.flowPromptService = new WorkspaceFlowPromptService(this.config);
+    this.flowPromptService.attachEventSource(this);
+    this.flowPromptService.on("state", (event) => {
+      this.emit("flowPrompt", event);
+    });
+    this.flowPromptService.on("update", (event) => {
+      void this.handleFlowPromptUpdate(event);
+    });
+    void this.primeFlowPromptMonitorActivity();
     this.setupMetadataListeners();
     this.setupInitMetadataListeners();
   }
@@ -1085,6 +1108,7 @@ export class WorkspaceService extends EventEmitter {
   private readonly sessionTimingService?: SessionTimingService;
   private workspaceLifecycleHooks?: WorkspaceLifecycleHooks;
   private taskService?: TaskService;
+  private readonly flowPromptService: WorkspaceFlowPromptService;
 
   /**
    * Set the MCP server manager for tool access.
@@ -1235,6 +1259,35 @@ export class WorkspaceService extends EventEmitter {
     snapshot: WorkspaceActivitySnapshot | null
   ): void {
     this.emit("activity", { workspaceId, activity: snapshot });
+  }
+
+  private async primeFlowPromptMonitorActivity(): Promise<void> {
+    try {
+      const snapshots = await this.extensionMetadata.getAllSnapshots();
+      for (const [workspaceId, snapshot] of snapshots) {
+        this.emit("activity", { workspaceId, activity: snapshot });
+      }
+    } catch (error) {
+      log.error("Failed to prime Flow Prompting activity state", { error });
+    }
+  }
+
+  private emitChatSubscriptionEvent(workspaceId: string, change: "started" | "ended"): void {
+    const previousCount = this.chatSubscriptionCounts.get(workspaceId) ?? 0;
+    const activeCount = change === "started" ? previousCount + 1 : Math.max(0, previousCount - 1);
+
+    if (activeCount === 0) {
+      this.chatSubscriptionCounts.delete(workspaceId);
+    } else {
+      this.chatSubscriptionCounts.set(workspaceId, activeCount);
+    }
+
+    this.emit("chatSubscription", {
+      workspaceId,
+      activeCount,
+      change,
+      atMs: Date.now(),
+    });
   }
 
   private async updateRecencyTimestamp(workspaceId: string, timestamp?: number): Promise<void> {
@@ -1494,6 +1547,7 @@ export class WorkspaceService extends EventEmitter {
       chat: chatUnsubscribe,
       metadata: metadataUnsubscribe,
     });
+    this.flowPromptService.startMonitoring(trimmed);
 
     return session;
   }
@@ -1529,6 +1583,7 @@ export class WorkspaceService extends EventEmitter {
       chat: chatUnsubscribe,
       metadata: metadataUnsubscribe,
     });
+    this.flowPromptService.startMonitoring(workspaceId);
   }
 
   public disposeSession(workspaceId: string): void {
@@ -1553,6 +1608,7 @@ export class WorkspaceService extends EventEmitter {
 
     session.dispose();
     this.sessions.delete(trimmed);
+    this.flowPromptService.stopMonitoring(trimmed);
   }
 
   private async getPersistedPostCompactionDiffPaths(workspaceId: string): Promise<string[] | null> {
@@ -2872,6 +2928,107 @@ export class WorkspaceService extends EventEmitter {
     }
   }
 
+  markWorkspaceChatSubscriptionStarted(workspaceId: string): void {
+    this.emitChatSubscriptionEvent(workspaceId, "started");
+  }
+
+  markWorkspaceChatSubscriptionEnded(workspaceId: string): void {
+    this.emitChatSubscriptionEvent(workspaceId, "ended");
+  }
+
+  async getFlowPromptState(workspaceId: string): Promise<FlowPromptState> {
+    return this.flowPromptService.getState(workspaceId);
+  }
+
+  async createFlowPrompt(workspaceId: string): Promise<Result<FlowPromptState, string>> {
+    try {
+      const state = await this.flowPromptService.ensurePromptFile(workspaceId);
+      return Ok(state);
+    } catch (error) {
+      return Err(`Failed to enable Flow Prompting: ${getErrorMessage(error)}`);
+    }
+  }
+
+  async deleteFlowPrompt(workspaceId: string): Promise<Result<void, string>> {
+    try {
+      await this.flowPromptService.deletePromptFile(workspaceId);
+      return Ok(undefined);
+    } catch (error) {
+      return Err(`Failed to disable Flow Prompting: ${getErrorMessage(error)}`);
+    }
+  }
+
+  private async handleFlowPromptUpdate(event: FlowPromptUpdateRequest): Promise<void> {
+    if (
+      this.removingWorkspaces.has(event.workspaceId) ||
+      this.renamingWorkspaces.has(event.workspaceId)
+    ) {
+      return;
+    }
+
+    if (!this.config.findWorkspace(event.workspaceId)) {
+      return;
+    }
+
+    const session = this.getOrCreateSession(event.workspaceId);
+    const options = {
+      ...(await session.getFlowPromptSendOptions()),
+      queueDispatchMode: "tool-end" as const,
+      muxMetadata: {
+        type: "flow-prompt-update",
+        path: event.path,
+        fingerprint: event.nextFingerprint,
+      },
+    };
+    const internal = {
+      synthetic: true,
+      onAccepted: async () => {
+        try {
+          await this.flowPromptService.markAcceptedUpdate(event.workspaceId, event.nextContent);
+        } catch (error) {
+          log.error("Failed to persist accepted Flow Prompting update", {
+            workspaceId: event.workspaceId,
+            error: getErrorMessage(error),
+          });
+        }
+      },
+    };
+
+    if (session.isBusy()) {
+      this.flowPromptService.markPendingUpdate(event.workspaceId, event.nextContent);
+      session.queueFlowPromptUpdate({
+        message: event.text,
+        options,
+        internal,
+      });
+      return;
+    }
+
+    const result = await this.sendMessage(event.workspaceId, event.text, options, {
+      synthetic: true,
+      requireIdle: true,
+      skipAutoResumeReset: true,
+      onAccepted: internal.onAccepted,
+    });
+
+    if (!result.success && session.isBusy()) {
+      this.flowPromptService.markPendingUpdate(event.workspaceId, event.nextContent);
+      session.queueFlowPromptUpdate({
+        message: event.text,
+        options,
+        internal,
+      });
+      return;
+    }
+
+    if (!result.success) {
+      log.error("Failed to enqueue Flow Prompting update", {
+        workspaceId: event.workspaceId,
+        error: result.error,
+      });
+    }
+  }
+
   async rename(workspaceId: string, newName: string): Promise<Result<{ newWorkspaceId: string }>> {
     try {
       if (this.aiService.isStreaming(workspaceId)) {
@@ -3134,6 +3291,8 @@ export class WorkspaceService extends EventEmitter {
       if (!updatedMetadata) {
         return Err("Failed to retrieve updated workspace metadata");
       }
+
+      await this.flowPromptService.renamePromptFile(workspaceId, oldMetadata, updatedMetadata);
 
       const enrichedMetadata = this.enrichFrontendMetadata(updatedMetadata);
 
@@ -4217,6 +4376,7 @@ export class WorkspaceService extends EventEmitter {
           : {}),
       };
 
+      await this.flowPromptService.copyPromptFile(sourceMetadata, metadata);
       await this.config.addWorkspace(foundProjectPath, metadata);
 
       const enrichedMetadata = this.enrichFrontendMetadata(metadata);
@@ -4243,6 +4403,7 @@ export class WorkspaceService extends EventEmitter {
       agentInitiated?: boolean;
       /** When true, reject instead of queueing if the workspace is busy. */
       requireIdle?: boolean;
+      onAccepted?: () => Promise<void> | void;
     }
   ): Promise<Result<void, SendMessageError>> {
     log.debug("sendMessage handler: Received", {
@@ -4448,6 +4609,7 @@ export class WorkspaceService extends EventEmitter {
       const result = await session.sendMessage(message, normalizedOptions, {
         synthetic: internal?.synthetic,
         agentInitiated: internal?.agentInitiated,
+        onAccepted: internal?.onAccepted,
         onAcceptedPreStreamFailure: restoreInterruptedTaskAfterAcceptedEditFailure,
       });
       if (!result.success) {
