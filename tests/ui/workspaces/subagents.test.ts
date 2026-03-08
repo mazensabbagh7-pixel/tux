@@ -216,4 +216,126 @@ describe("Workspace sidebar completed sub-agent expansion (UI)", () => {
       await cleanupTempGitRepo(repoPath);
     }
   }, 90_000);
+
+  test("expanding completed children reveals old reported rows without expanding age tiers", async () => {
+    const env = await createTestEnvironment();
+    const repoPath = await createTempGitRepo();
+
+    const workspaceIdsToRemove: string[] = [];
+    let view: RenderedApp | undefined;
+    let cleanupDom: (() => void) | undefined;
+
+    try {
+      await trustProject(env, repoPath);
+      const trunkBranch = await detectDefaultTrunkBranch(repoPath);
+
+      const parentWorkspace = await createWorkspaceWithTitle({
+        env,
+        projectPath: repoPath,
+        trunkBranch,
+        title: "Parent Agent",
+        branchPrefix: "subagent-old-parent",
+      });
+      workspaceIdsToRemove.push(parentWorkspace.id);
+
+      const activeChild = await createWorkspaceWithTitle({
+        env,
+        projectPath: repoPath,
+        trunkBranch,
+        title: "Active Child",
+        branchPrefix: "subagent-old-active",
+      });
+      workspaceIdsToRemove.push(activeChild.id);
+
+      const reportedChild = await createWorkspaceWithTitle({
+        env,
+        projectPath: repoPath,
+        trunkBranch,
+        title: "Old Reported Child",
+        branchPrefix: "subagent-old-reported",
+      });
+      workspaceIdsToRemove.push(reportedChild.id);
+
+      const reportedChildTimestamp = new Date(Date.now() - 45 * 24 * 60 * 60 * 1000).toISOString();
+
+      await env.config.addWorkspace(repoPath, {
+        ...activeChild,
+        parentWorkspaceId: parentWorkspace.id,
+        taskStatus: "running",
+      });
+      await env.config.addWorkspace(repoPath, {
+        ...reportedChild,
+        parentWorkspaceId: parentWorkspace.id,
+        taskStatus: "reported",
+        createdAt: reportedChildTimestamp,
+        reportedAt: reportedChildTimestamp,
+      });
+
+      cleanupDom = installDom();
+      view = renderApp({ apiClient: env.orpc, metadata: parentWorkspace });
+      await setupWorkspaceView(view, parentWorkspace, parentWorkspace.id);
+
+      if (!view) {
+        throw new Error("View did not initialize");
+      }
+      const renderedView = view;
+
+      await waitFor(
+        () => {
+          if (!getWorkspaceRow(renderedView.container, activeChild.id)) {
+            throw new Error("Expected active child to be visible");
+          }
+        },
+        { timeout: 10_000 }
+      );
+      expect(getWorkspaceRow(renderedView.container, reportedChild.id)).toBeNull();
+
+      const parentDisplayTitle = parentWorkspace.title ?? parentWorkspace.name;
+      const expandCompletedChildrenButton = await waitFor(
+        () => {
+          const button = renderedView.container.querySelector(
+            `button[aria-label="Expand completed sub-agents for ${parentDisplayTitle}"]`
+          ) as HTMLElement | null;
+          if (!button) {
+            throw new Error("Expand completed sub-agents button not found");
+          }
+          return button;
+        },
+        { timeout: 10_000 }
+      );
+      fireEvent.click(expandCompletedChildrenButton);
+
+      await waitFor(
+        () => {
+          const reportedRow = getWorkspaceRow(renderedView.container, reportedChild.id);
+          if (!reportedRow) {
+            throw new Error("Expected old reported child to be visible after expansion");
+          }
+        },
+        { timeout: 10_000 }
+      );
+
+      const ageTierExpandButton = renderedView.container.querySelector(
+        'button[aria-label^="Expand workspaces older than "]'
+      );
+      expect(ageTierExpandButton).toBeNull();
+    } finally {
+      if (view && cleanupDom) {
+        await cleanupView(view, cleanupDom);
+      } else if (cleanupDom) {
+        cleanupDom();
+      }
+
+      for (const workspaceId of workspaceIdsToRemove.reverse()) {
+        try {
+          await env.orpc.workspace.remove({ workspaceId, options: { force: true } });
+        } catch {
+          // Best effort cleanup.
+        }
+      }
+
+      await cleanupTestEnvironment(env);
+      await cleanupTempGitRepo(repoPath);
+    }
+  }, 90_000);
 });

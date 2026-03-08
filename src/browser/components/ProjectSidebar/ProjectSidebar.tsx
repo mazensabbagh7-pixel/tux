@@ -52,6 +52,7 @@ import {
   getSectionExpandedKey,
   getSectionTierKey,
   sortSectionsByLinkedList,
+  type AgentRowRenderMeta,
 } from "@/browser/utils/ui/workspaceFiltering";
 import { Tooltip, TooltipTrigger, TooltipContent } from "../Tooltip/Tooltip";
 import { SidebarCollapseButton } from "../SidebarCollapseButton/SidebarCollapseButton";
@@ -1260,7 +1261,7 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
                                 workspacesForNormalRendering,
                                 expandedParentIds
                               );
-                              const rowMetaByWorkspaceId = computeAgentRowRenderMeta(
+                              const baseRowMetaByWorkspaceId = computeAgentRowRenderMeta(
                                 workspacesForNormalRendering,
                                 depthByWorkspaceId,
                                 expandedParentIds
@@ -1304,9 +1305,12 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
 
                               const renderWorkspace = (
                                 metadata: FrontendWorkspaceMetadata,
-                                sectionId?: string
+                                sectionId?: string,
+                                rowRenderMetaOverride?: AgentRowRenderMeta
                               ) => {
-                                const rowRenderMeta = rowMetaByWorkspaceId.get(metadata.id);
+                                const rowRenderMeta =
+                                  rowRenderMetaOverride ??
+                                  baseRowMetaByWorkspaceId.get(metadata.id);
 
                                 return (
                                   <AgentListItem
@@ -1409,10 +1413,126 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
                                 tierKeyPrefix: string,
                                 sectionId?: string
                               ): React.ReactNode => {
+                                const shouldBypassAgeTier = (
+                                  workspace: FrontendWorkspaceMetadata
+                                ): boolean => {
+                                  const parentId = workspace.parentWorkspaceId;
+                                  return (
+                                    workspace.taskStatus === "reported" &&
+                                    typeof parentId === "string" &&
+                                    expandedParentIds.has(parentId)
+                                  );
+                                };
+
+                                // Expanding completed children on a parent row should reveal those
+                                // rows immediately, even when old age tiers remain collapsed.
+                                const pinnedExpandedCompletedChildren =
+                                  workspaces.filter(shouldBypassAgeTier);
+                                const ageBucketCandidates = workspaces.filter(
+                                  (workspace) => !shouldBypassAgeTier(workspace)
+                                );
+
                                 const { recent, buckets } = partitionWorkspacesByAge(
-                                  workspaces,
+                                  ageBucketCandidates,
                                   workspaceRecency
                                 );
+
+                                const pinnedOrRecentIds = new Set([
+                                  ...recent.map((workspace) => workspace.id),
+                                  ...pinnedExpandedCompletedChildren.map(
+                                    (workspace) => workspace.id
+                                  ),
+                                ]);
+                                const topVisibleRows = workspaces.filter((workspace) =>
+                                  pinnedOrRecentIds.has(workspace.id)
+                                );
+
+                                const expandedTierVisibleIds = new Set<string>();
+                                const markExpandedTierRowsVisible = (tierIndex: number): void => {
+                                  const bucket = buckets[tierIndex];
+                                  const remainingCount = buckets
+                                    .slice(tierIndex)
+                                    .reduce((sum, bucketRows) => sum + bucketRows.length, 0);
+                                  if (remainingCount === 0) {
+                                    return;
+                                  }
+
+                                  const tierKey = `${tierKeyPrefix}:${tierIndex}`;
+                                  const isTierExpanded = expandedOldWorkspaces[tierKey] ?? false;
+                                  if (!isTierExpanded) {
+                                    return;
+                                  }
+
+                                  for (const workspace of bucket) {
+                                    expandedTierVisibleIds.add(workspace.id);
+                                  }
+
+                                  const nextTier = findNextNonEmptyTier(buckets, tierIndex + 1);
+                                  if (nextTier !== -1) {
+                                    markExpandedTierRowsVisible(nextTier);
+                                  }
+                                };
+
+                                const firstTier = findNextNonEmptyTier(buckets, 0);
+                                if (firstTier !== -1) {
+                                  markExpandedTierRowsVisible(firstTier);
+                                }
+
+                                // Connector geometry should match the rows users can currently see,
+                                // not hidden siblings parked behind collapsed age tiers.
+                                const visibleRowIds = new Set<string>([
+                                  ...topVisibleRows.map((workspace) => workspace.id),
+                                  ...expandedTierVisibleIds,
+                                ]);
+                                const visibleRows = workspaces.filter((workspace) =>
+                                  visibleRowIds.has(workspace.id)
+                                );
+                                const visibleChildrenByParent = new Map<
+                                  string,
+                                  FrontendWorkspaceMetadata[]
+                                >();
+                                for (const workspace of visibleRows) {
+                                  const parentId = workspace.parentWorkspaceId;
+                                  if (!parentId) {
+                                    continue;
+                                  }
+
+                                  const siblings = visibleChildrenByParent.get(parentId) ?? [];
+                                  siblings.push(workspace);
+                                  visibleChildrenByParent.set(parentId, siblings);
+                                }
+
+                                const rowMetaByVisibleWorkspaceId = new Map<
+                                  string,
+                                  AgentRowRenderMeta
+                                >();
+                                for (const workspace of visibleRows) {
+                                  const baseRowMeta = baseRowMetaByWorkspaceId.get(workspace.id);
+                                  if (!baseRowMeta) {
+                                    continue;
+                                  }
+
+                                  const parentId = workspace.parentWorkspaceId;
+                                  if (!parentId) {
+                                    rowMetaByVisibleWorkspaceId.set(workspace.id, baseRowMeta);
+                                    continue;
+                                  }
+
+                                  const siblings = visibleChildrenByParent.get(parentId) ?? [];
+                                  let connectorPosition: AgentRowRenderMeta["connectorPosition"] =
+                                    "single";
+                                  if (siblings.length > 1) {
+                                    connectorPosition =
+                                      siblings[siblings.length - 1]?.id === workspace.id
+                                        ? "last"
+                                        : "middle";
+                                  }
+
+                                  rowMetaByVisibleWorkspaceId.set(workspace.id, {
+                                    ...baseRowMeta,
+                                    connectorPosition,
+                                  });
+                                }
 
                                 const renderTier = (tierIndex: number): React.ReactNode => {
                                   const bucket = buckets[tierIndex];
@@ -1466,7 +1586,13 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
                                       </button>
                                       {isTierExpanded && (
                                         <>
-                                          {bucket.map((ws) => renderWorkspace(ws, sectionId))}
+                                          {bucket.map((ws) =>
+                                            renderWorkspace(
+                                              ws,
+                                              sectionId,
+                                              rowMetaByVisibleWorkspaceId.get(ws.id)
+                                            )
+                                          )}
                                           {(() => {
                                             const nextTier = findNextNonEmptyTier(
                                               buckets,
@@ -1480,11 +1606,15 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
                                   );
                                 };
 
-                                const firstTier = findNextNonEmptyTier(buckets, 0);
-
                                 return (
                                   <>
-                                    {recent.map((ws) => renderWorkspace(ws, sectionId))}
+                                    {topVisibleRows.map((ws) =>
+                                      renderWorkspace(
+                                        ws,
+                                        sectionId,
+                                        rowMetaByVisibleWorkspaceId.get(ws.id)
+                                      )
+                                    )}
                                     {firstTier !== -1 && renderTier(firstTier)}
                                   </>
                                 );
