@@ -192,6 +192,38 @@ describe("WorkspaceFlowPromptService runtime error handling", () => {
     expect(executedCommand).not.toContain("~/.mux/src/repo/.mux/prompts/feature.md");
   });
 
+  test("ensurePromptFile rethrows transient stat failures instead of overwriting the prompt", async () => {
+    const metadata = createMetadata({
+      projectPath: "/tmp/projects/repo",
+      name: "feature-branch",
+      srcBaseDir: "/tmp/src",
+    });
+    const service = new WorkspaceFlowPromptService({
+      getAllWorkspaceMetadata: () => Promise.resolve([metadata]),
+      getSessionDir: () => "/tmp/flow-prompt-session",
+    } as unknown as Config);
+
+    let wrotePrompt = false;
+    const runtime = {
+      getWorkspacePath: () => "/tmp/src/repo/feature-branch",
+      ensureDir: () => Promise.resolve(),
+      stat: () => Promise.reject(new Error("permission denied")),
+      writeFile: () => {
+        wrotePrompt = true;
+        return new WritableStream<Uint8Array>();
+      },
+    } as unknown as Runtime;
+    spyOn(runtimeHelpers, "createRuntimeForWorkspace").mockReturnValue(runtime);
+
+    try {
+      await service.ensurePromptFile(metadata.id);
+      throw new Error("Expected ensurePromptFile to reject");
+    } catch (error) {
+      expect(String(error)).toContain("permission denied");
+    }
+    expect(wrotePrompt).toBe(false);
+  });
+
   test("getState rethrows transient prompt read failures instead of treating them as deletion", async () => {
     const metadata = createMetadata({
       projectPath: "/tmp/projects/repo",

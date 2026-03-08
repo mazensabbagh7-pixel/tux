@@ -308,7 +308,10 @@ export class WorkspaceFlowPromptService extends EventEmitter {
 
     try {
       await context.runtime.stat(context.promptPath);
-    } catch {
+    } catch (error) {
+      if (!isMissingFileError(error)) {
+        throw error;
+      }
       await writeFileString(context.runtime, context.promptPath, "");
     }
 

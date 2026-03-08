@@ -63,8 +63,16 @@ export function useFlowPrompt(
       return;
     }
 
+    let latestState = state;
+    try {
+      latestState = await api.workspace.flowPrompt.getState({ workspaceId });
+    } catch {
+      setError("Failed to refresh flow prompt state.");
+      return;
+    }
+
     const relativePath = getFlowPromptRelativePath(workspaceName);
-    if (state?.hasNonEmptyContent) {
+    if (latestState?.hasNonEmptyContent) {
       const confirmed = await confirm({
         title: "Disable Flow Prompting?",
         description: `Delete ${relativePath} and return to inline chat?`,
@@ -83,7 +91,7 @@ export function useFlowPrompt(
     }
 
     setError(null);
-  }, [api, confirm, state?.hasNonEmptyContent, workspaceId, workspaceName]);
+  }, [api, confirm, state, workspaceId, workspaceName]);
 
   return {
     state,
