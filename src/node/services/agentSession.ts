@@ -4089,6 +4089,17 @@ export class AgentSession {
           };
         }
       | undefined;
+    let dequeuedFlowPromptUpdate:
+      | {
+          message: string;
+          options?: SendMessageOptions & { fileParts?: FilePart[] };
+          internal?: {
+            synthetic?: boolean;
+            agentInitiated?: boolean;
+            onAccepted?: () => Promise<void> | void;
+          };
+        }
+      | undefined;
 
     if (!this.messageQueue.isEmpty()) {
       const { message, options, internal } = this.messageQueue.produceMessage();
@@ -4097,6 +4108,7 @@ export class AgentSession {
       queuedSend = { message, options, internal };
     } else if (this.flowPromptUpdate) {
       queuedSend = this.flowPromptUpdate;
+      dequeuedFlowPromptUpdate = this.flowPromptUpdate;
       this.flowPromptUpdate = undefined;
     }
 
@@ -4110,15 +4122,28 @@ export class AgentSession {
     // incoming messages from bypassing the queue during the await gap.
     this.setTurnPhase(TurnPhase.PREPARING);
 
+    const restoreDequeuedFlowPromptUpdate = () => {
+      if (!dequeuedFlowPromptUpdate || this.flowPromptUpdate) {
+        return;
+      }
+
+      this.flowPromptUpdate = dequeuedFlowPromptUpdate;
+      this.syncQueuedMessageFlag();
+    };
+
     void this.sendMessage(queuedSend.message, queuedSend.options, queuedSend.internal)
       .then((result) => {
         // If sendMessage fails before it can start streaming, ensure we don't
         // leave the session stuck in PREPARING.
-        if (!result.success && this.turnPhase === TurnPhase.PREPARING) {
-          this.setTurnPhase(TurnPhase.IDLE);
+        if (!result.success) {
+          restoreDequeuedFlowPromptUpdate();
+          if (this.turnPhase === TurnPhase.PREPARING) {
+            this.setTurnPhase(TurnPhase.IDLE);
+          }
         }
       })
       .catch(() => {
+        restoreDequeuedFlowPromptUpdate();
         if (this.turnPhase === TurnPhase.PREPARING) {
           this.setTurnPhase(TurnPhase.IDLE);
         }
