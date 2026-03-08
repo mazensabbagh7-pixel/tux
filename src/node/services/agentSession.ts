@@ -3939,10 +3939,18 @@ export class AgentSession {
   }
 
   private hasToolEndQueuedWork(): boolean {
-    return (
-      (!this.messageQueue.isEmpty() && this.messageQueue.getQueueDispatchMode() === "tool-end") ||
-      this.flowPromptUpdate !== undefined
-    );
+    const queuedDispatchMode = this.messageQueue.isEmpty()
+      ? null
+      : this.messageQueue.getQueueDispatchMode();
+
+    if (queuedDispatchMode === "tool-end") {
+      return true;
+    }
+
+    // A pending turn-end user message must keep its dispatch semantics even if Flow Prompting
+    // has a coalesced tool-end save waiting in the wings. Otherwise tool boundaries would flush
+    // the user queue earlier than requested.
+    return this.flowPromptUpdate !== undefined && queuedDispatchMode !== "turn-end";
   }
 
   private syncQueuedMessageFlag(): void {

@@ -3330,7 +3330,16 @@ export class WorkspaceService extends EventEmitter {
         return Err("Failed to retrieve updated workspace metadata");
       }
 
-      await this.flowPromptService.renamePromptFile(workspaceId, oldMetadata, updatedMetadata);
+      try {
+        await this.flowPromptService.renamePromptFile(workspaceId, oldMetadata, updatedMetadata);
+      } catch (error) {
+        log.error("Failed to rename Flow Prompting file after workspace rename", {
+          workspaceId,
+          oldName,
+          newName,
+          error: getErrorMessage(error),
+        });
+      }
 
       const enrichedMetadata = this.enrichFrontendMetadata(updatedMetadata);
 

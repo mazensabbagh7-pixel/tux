@@ -198,6 +198,104 @@ describe("WorkspaceService rename lock", () => {
       expect(result.error).toContain("stream is active");
     }
   });
+  test("rename succeeds even if Flow Prompting migration fails after config is updated", async () => {
+    const workspaceId = "rename-workspace";
+    const projectPath = "/tmp/test-project";
+    const oldMetadata: WorkspaceMetadata = {
+      id: workspaceId,
+      name: "old-name",
+      projectName: "test-project",
+      projectPath,
+      runtimeConfig: {
+        type: "worktree",
+        srcBaseDir: "/tmp/src",
+      },
+    };
+    const updatedMetadata: WorkspaceMetadata = {
+      ...oldMetadata,
+      name: "new-name",
+    };
+
+    const aiService: AIService = {
+      isStreaming: mock(() => false),
+      getWorkspaceMetadata: mock(() =>
+        Promise.resolve({ success: true as const, data: oldMetadata })
+      ),
+      // eslint-disable-next-line @typescript-eslint/no-empty-function
+      on: mock(() => {}),
+      // eslint-disable-next-line @typescript-eslint/no-empty-function
+      off: mock(() => {}),
+    } as unknown as AIService;
+
+    const loadedProjectsConfig: ProjectsConfig = {
+      projects: new Map([[projectPath, { trusted: false, workspaces: [] }]]),
+    };
+    let metadataCalls = 0;
+    const mockConfig: Partial<Config> = {
+      srcDir: "/tmp/test",
+      getSessionDir: mock(() => "/tmp/test/sessions"),
+      generateStableId: mock(() => "test-id"),
+      findWorkspace: mock(() => ({
+        projectPath,
+        workspacePath: "/tmp/src/test-project/old-name",
+        runtimeConfig: oldMetadata.runtimeConfig,
+      })),
+      getAllWorkspaceMetadata: mock(() =>
+        Promise.resolve(
+          (metadataCalls++ === 0 ? [oldMetadata] : [updatedMetadata]) as unknown as Awaited<
+            ReturnType<Config["getAllWorkspaceMetadata"]>
+          >
+        )
+      ),
+      editConfig: mock(() => Promise.resolve(undefined)),
+      loadConfigOrDefault: mock(() => loadedProjectsConfig),
+    };
+
+    const renameRuntime = {
+      getMuxHome: () => "/tmp/mux-home",
+      stat: mock(() => Promise.reject(new Error("plan file missing"))),
+      renameWorkspace: mock(() =>
+        Promise.resolve({
+          success: true as const,
+          oldPath: "/tmp/src/test-project/old-name",
+          newPath: "/tmp/src/test-project/new-name",
+        })
+      ),
+    };
+    spyOn(runtimeFactory, "createRuntime").mockReturnValue(renameRuntime as never);
+
+    const renameService = new WorkspaceService(
+      mockConfig as Config,
+      historyService,
+      aiService,
+      mockInitStateManager as InitStateManager,
+      mockExtensionMetadataService as ExtensionMetadataService,
+      mockBackgroundProcessManager as BackgroundProcessManager
+    );
+    const renamePromptFile = spyOn(
+      (
+        renameService as unknown as {
+          flowPromptService: {
+            renamePromptFile: (
+              workspaceId: string,
+              oldMetadata: WorkspaceMetadata,
+              newMetadata: WorkspaceMetadata
+            ) => Promise<void>;
+          };
+        }
+      ).flowPromptService,
+      "renamePromptFile"
+    ).mockRejectedValue(new Error("transient flow prompt error"));
+
+    try {
+      const result = await renameService.rename(workspaceId, "new-name");
+
+      expect(result).toEqual(Ok({ newWorkspaceId: workspaceId }));
+      expect(renamePromptFile).toHaveBeenCalledWith(workspaceId, oldMetadata, updatedMetadata);
+    } finally {
+      mock.restore();
+    }
+  });
 });
 
 describe("WorkspaceService sendMessage status clearing", () => {
