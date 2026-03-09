@@ -76,6 +76,7 @@ import {
 import { PolicyGetResponseSchema } from "./policy";
 import {
   AgentAiDefaultsSchema,
+  EventSoundSettingsSchema,
   SubagentAiDefaultsSchema,
   UpdateChannelSchema,
 } from "../../config/schemas/appConfigOnDisk";
@@ -1766,6 +1767,7 @@ export const config = {
       muxGovernorUrl: z.string().nullable(),
       muxGovernorEnrolled: z.boolean(),
       llmDebugLogs: z.boolean(),
+      eventSoundSettings: EventSoundSettingsSchema,
       onePasswordAccountName: z.string().nullish(),
     }),
   },
@@ -1841,6 +1843,14 @@ export const config = {
     input: z
       .object({
         enabled: z.boolean(),
+      })
+      .strict(),
+    output: z.void(),
+  },
+  updateEventSoundSettings: {
+    input: z
+      .object({
+        eventSoundSettings: EventSoundSettingsSchema,
       })
       .strict(),
     output: z.void(),
