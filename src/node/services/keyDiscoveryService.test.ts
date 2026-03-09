@@ -4,10 +4,7 @@ import * as fsSync from "fs";
 import * as os from "os";
 import * as path from "path";
 import { Config } from "@/node/config";
-import {
-  discoverApiKeysInternal,
-  importDiscoveredKey,
-} from "@/node/services/keyDiscoveryService";
+import { discoverApiKeysInternal, importDiscoveredKey } from "@/node/services/keyDiscoveryService";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -113,7 +110,11 @@ describe("keyDiscoveryService", () => {
     });
 
     it("discovers OpenAI key from openai_api_key field", async () => {
-      await writeFile(home, ".codex/auth.json", JSON.stringify({ openai_api_key: "sk-openai-auth456" }));
+      await writeFile(
+        home,
+        ".codex/auth.json",
+        JSON.stringify({ openai_api_key: "sk-openai-auth456" })
+      );
 
       const keys = await discoverApiKeysInternal(home);
       expect(keys).toHaveLength(1);
@@ -232,6 +233,19 @@ describe("keyDiscoveryService", () => {
       expect(openaiKeys[0].fullKey).toBe("sk-from-bash");
     });
 
+    it("uses last export when key is rotated in same file", async () => {
+      await writeFile(
+        home,
+        ".bashrc",
+        "export OPENAI_API_KEY=sk-old-key\nexport OPENAI_API_KEY=sk-rotated-key\n"
+      );
+
+      const keys = await discoverApiKeysInternal(home);
+      const openaiKeys = keys.filter((k) => k.provider === "openai");
+      expect(openaiKeys).toHaveLength(1);
+      expect(openaiKeys[0].fullKey).toBe("sk-rotated-key");
+    });
+
     it("discovers Google, xAI, DeepSeek, OpenRouter keys", async () => {
       await writeFile(
         home,
@@ -273,7 +287,11 @@ describe("keyDiscoveryService", () => {
 
   describe("key preview masking", () => {
     it("shows prefix and last 4 chars", async () => {
-      await writeFile(home, ".claude.json", JSON.stringify({ apiKey: "sk-ant-api03-abcdefghij1234" }));
+      await writeFile(
+        home,
+        ".claude.json",
+        JSON.stringify({ apiKey: "sk-ant-api03-abcdefghij1234" })
+      );
 
       const keys = await discoverApiKeysInternal(home);
       expect(keys).toHaveLength(1);

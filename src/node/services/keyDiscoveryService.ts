@@ -152,7 +152,9 @@ async function scanCodexCli(home: string): Promise<DiscoveredKeyInternal[]> {
 
   for (const filename of ["config.json", "auth.json"]) {
     const filePath = path.join(home, ".codex", filename);
-    const parsed = (await readJsonSafe(filePath)) as { apiKey?: unknown; openai_api_key?: unknown } | undefined;
+    const parsed = (await readJsonSafe(filePath)) as
+      | { apiKey?: unknown; openai_api_key?: unknown }
+      | undefined;
 
     if (!parsed) {
       continue;
@@ -212,9 +214,11 @@ async function scanAiderConf(home: string): Promise<DiscoveredKeyInternal[]> {
 async function scanContinueDev(home: string): Promise<DiscoveredKeyInternal[]> {
   const results: DiscoveredKeyInternal[] = [];
   const filePath = path.join(home, ".continue", "config.json");
-  const parsed = (await readJsonSafe(filePath)) as {
-    models?: Array<{ provider?: unknown; apiKey?: unknown }>;
-  } | undefined;
+  const parsed = (await readJsonSafe(filePath)) as
+    | {
+        models?: Array<{ provider?: unknown; apiKey?: unknown }>;
+      }
+    | undefined;
 
   if (!parsed || !Array.isArray(parsed.models)) {
     return results;
@@ -280,23 +284,29 @@ async function scanShellRcFiles(home: string): Promise<DiscoveredKeyInternal[]> 
       }
 
       // Match: export VAR=value  or  export VAR="value"  or  export VAR='value'
+      // Use global flag and iterate to find the *last* match, because later
+      // shell assignments override earlier ones (key rotation appends a new export).
       const pattern = new RegExp(
         `^\\s*export\\s+${mapping.envVar}\\s*=\\s*["']?([^"'\\s#]+)["']?`,
-        "m"
+        "gm"
       );
-      const match = pattern.exec(content);
-      if (match) {
-        const key = match[1].trim();
+      let lastKey: string | null = null;
+      let m: RegExpExecArray | null;
+      while ((m = pattern.exec(content)) !== null) {
+        const candidate = m[1].trim();
         // Skip variable references like $OTHER_VAR
-        if (key && !key.startsWith("$")) {
-          seen.add(mapping.provider);
-          results.push({
-            provider: mapping.provider,
-            source: `Shell RC (~/${rcFile})`,
-            keyPreview: maskKey(key),
-            fullKey: key,
-          });
+        if (candidate && !candidate.startsWith("$")) {
+          lastKey = candidate;
         }
+      }
+      if (lastKey) {
+        seen.add(mapping.provider);
+        results.push({
+          provider: mapping.provider,
+          source: `Shell RC (~/${rcFile})`,
+          keyPreview: maskKey(lastKey),
+          fullKey: lastKey,
+        });
       }
     }
   }
@@ -333,12 +343,13 @@ export async function importDiscoveredKey(
   const home = os.homedir();
   const allKeys = await discoverApiKeysInternal(home);
 
-  const match = allKeys.find(
-    (k) => k.provider === request.provider && k.source === request.source
-  );
+  const match = allKeys.find((k) => k.provider === request.provider && k.source === request.source);
 
   if (!match) {
-    return { success: false, error: `Key not found for ${request.provider} from "${request.source}"` };
+    return {
+      success: false,
+      error: `Key not found for ${request.provider} from "${request.source}"`,
+    };
   }
 
   try {
@@ -385,7 +396,9 @@ export async function discoverApiKeysInternal(home: string): Promise<DiscoveredK
       allKeys.push(...found);
     } catch (err) {
       // Individual scanner failures should never break the whole flow
-      log.warn("Key discovery scanner error", { error: err instanceof Error ? err.message : String(err) });
+      log.warn("Key discovery scanner error", {
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 

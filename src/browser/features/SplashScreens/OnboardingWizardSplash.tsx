@@ -534,7 +534,11 @@ export function OnboardingWizardSplash(props: { onDismiss: () => void }) {
   }, [configuredProviders.length, hasConfiguredProvidersAtStart, providersLoading]);
 
   // ---- Key Discovery ----
-  interface DiscoveredKeyEntry { provider: string; source: string; keyPreview: string }
+  interface DiscoveredKeyEntry {
+    provider: string;
+    source: string;
+    keyPreview: string;
+  }
   const [discoveredKeys, setDiscoveredKeys] = useState<DiscoveredKeyEntry[]>([]);
   const [discoveredKeysLoading, setDiscoveredKeysLoading] = useState(false);
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
@@ -554,8 +558,17 @@ export function OnboardingWizardSplash(props: { onDismiss: () => void }) {
       .then((keys) => {
         if (!cancelled) {
           setDiscoveredKeys(keys);
-          // Pre-select all discovered keys
-          setSelectedKeys(new Set(keys.map((k) => `${k.provider}:${k.source}`)));
+          // Pre-select only the first discovered key per provider so
+          // duplicates require an explicit user choice (Codex review).
+          const seenProviders = new Set<string>();
+          const preselected = new Set<string>();
+          for (const k of keys) {
+            if (!seenProviders.has(k.provider)) {
+              seenProviders.add(k.provider);
+              preselected.add(`${k.provider}:${k.source}`);
+            }
+          }
+          setSelectedKeys(preselected);
         }
       })
       .catch(() => {
@@ -763,7 +776,11 @@ export function OnboardingWizardSplash(props: { onDismiss: () => void }) {
     }
 
     // Key discovery step — only shown when keys were found from other tools
-    if (hasConfiguredProvidersAtStart === false && discoveredKeys.length > 0 && !discoveredKeysLoading) {
+    if (
+      hasConfiguredProvidersAtStart === false &&
+      discoveredKeys.length > 0 &&
+      !discoveredKeysLoading
+    ) {
       const importedCount = Object.values(importResults).filter((r) => r === "success").length;
 
       nextSteps.push({

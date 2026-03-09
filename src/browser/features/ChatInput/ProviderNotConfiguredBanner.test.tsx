@@ -1,7 +1,10 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { GlobalWindow } from "happy-dom";
 import { cleanup, fireEvent, render } from "@testing-library/react";
-import { ProviderNotConfiguredBanner, getUnconfiguredProvider } from "./ProviderNotConfiguredBanner";
+import {
+  ProviderNotConfiguredBanner,
+  getUnconfiguredProvider,
+} from "./ProviderNotConfiguredBanner";
 import type { ProvidersConfigMap } from "@/common/orpc/types";
 
 describe("ProviderNotConfiguredBanner", () => {

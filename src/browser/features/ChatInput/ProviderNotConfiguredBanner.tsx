@@ -63,8 +63,8 @@ export function ProviderNotConfiguredBanner(props: Props) {
               ? `${displayName} provider is disabled.`
               : `API key required for ${displayName}.`}
           </span>{" "}
-          Open Settings → Providers to{" "}
-          {isDisabled ? "enable this provider" : "add an API key"} before sending.
+          Open Settings → Providers to {isDisabled ? "enable this provider" : "add an API key"}{" "}
+          before sending.
         </p>
       </div>
       <Button
