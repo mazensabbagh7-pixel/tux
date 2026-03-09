@@ -385,6 +385,80 @@ describe("Config", () => {
     });
   });
 
+  describe("event sound settings", () => {
+    it("loads eventSoundSettings and applies schema defaults", () => {
+      const configFile = path.join(tempDir, "config.json");
+      fs.writeFileSync(
+        configFile,
+        JSON.stringify({
+          projects: [],
+          eventSoundSettings: {
+            agent_review_ready: {
+              enabled: true,
+              source: {
+                kind: "managed",
+                assetId: "11111111-1111-1111-1111-111111111111.wav",
+              },
+            },
+            future_event: {
+              source: {
+                kind: "managed",
+                assetId: "22222222-2222-2222-2222-222222222222.wav",
+              },
+            },
+          },
+        })
+      );
+
+      const loaded = config.loadConfigOrDefault();
+      expect(loaded.eventSoundSettings).toEqual({
+        agent_review_ready: {
+          enabled: true,
+          source: {
+            kind: "managed",
+            assetId: "11111111-1111-1111-1111-111111111111.wav",
+          },
+        },
+        future_event: {
+          enabled: false,
+          source: {
+            kind: "managed",
+            assetId: "22222222-2222-2222-2222-222222222222.wav",
+          },
+        },
+      });
+    });
+
+    it("round-trips eventSoundSettings through editConfig", async () => {
+      const eventSoundSettings = {
+        agent_review_ready: {
+          enabled: true,
+          source: {
+            kind: "managed",
+            assetId: "33333333-3333-3333-3333-333333333333.wav",
+          },
+        },
+        future_event: {
+          enabled: false,
+          source: null,
+        },
+      };
+
+      await config.editConfig((cfg) => {
+        cfg.eventSoundSettings = eventSoundSettings;
+        return cfg;
+      });
+
+      const reloaded = config.loadConfigOrDefault();
+      expect(reloaded.eventSoundSettings).toEqual(eventSoundSettings);
+
+      const raw = JSON.parse(fs.readFileSync(path.join(tempDir, "config.json"), "utf-8")) as {
+        eventSoundSettings?: unknown;
+      };
+      expect(raw.eventSoundSettings).toEqual(eventSoundSettings);
+    });
+  });
+
   describe("model preferences", () => {
     it("should preserve explicit gateway-scoped defaultModel and hiddenModels", async () => {
       await config.editConfig((cfg) => {
