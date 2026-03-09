@@ -117,6 +117,14 @@ describe("keyDiscoveryService", () => {
       expect(keys).toHaveLength(1);
       expect(keys[0].fullKey).toBe("sk-ant-rotated");
     });
+
+    it("handles export prefix in .env files", async () => {
+      await writeFile(home, ".claude/.env", "export ANTHROPIC_API_KEY=sk-ant-exported\n");
+
+      const keys = await discoverApiKeysInternal(home);
+      expect(keys).toHaveLength(1);
+      expect(keys[0].fullKey).toBe("sk-ant-exported");
+    });
   });
 
   describe("scanCodexCli", () => {

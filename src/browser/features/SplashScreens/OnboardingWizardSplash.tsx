@@ -591,7 +591,8 @@ export function OnboardingWizardSplash(props: { onDismiss: () => void }) {
     }
 
     setImportingKeys(true);
-    const results: Record<string, "success" | "error"> = {};
+    // Merge with prior import state so earlier results are preserved.
+    const results: Record<string, "success" | "error"> = { ...importResults };
 
     for (const key of discoveredKeys) {
       const id = `${key.provider}:${key.source}`;
@@ -612,7 +613,7 @@ export function OnboardingWizardSplash(props: { onDismiss: () => void }) {
 
     setImportResults(results);
     setImportingKeys(false);
-  }, [api, discoveredKeys, selectedKeys]);
+  }, [api, discoveredKeys, importResults, selectedKeys]);
 
   const commandPaletteShortcut = formatKeybind(KEYBINDS.OPEN_COMMAND_PALETTE);
   const commandPaletteActionsShortcut = formatKeybind(KEYBINDS.OPEN_COMMAND_PALETTE_ACTIONS);

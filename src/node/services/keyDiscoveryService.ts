@@ -132,7 +132,8 @@ async function scanClaudeEnv(home: string): Promise<DiscoveredKeyInternal[]> {
 
   // Use global regex and iterate to find the *last* match, because later
   // assignments override earlier ones (key rotation appends new export).
-  const pattern = /^ANTHROPIC_API_KEY=(.+)$/gm;
+  // Support both `ANTHROPIC_API_KEY=...` and `export ANTHROPIC_API_KEY=...`.
+  const pattern = /^(?:export\s+)?ANTHROPIC_API_KEY=(.+)$/gm;
   let lastKey: string | null = null;
   let m: RegExpExecArray | null;
   while ((m = pattern.exec(content)) !== null) {
