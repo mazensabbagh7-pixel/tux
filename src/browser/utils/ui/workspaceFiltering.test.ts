@@ -6,6 +6,7 @@ import {
   buildSortedWorkspacesByProject,
   computeWorkspaceDepthMap,
   computeAgentRowRenderMeta,
+  computePinnedCompletedChildIdsForAgeTiers,
   filterVisibleAgentRows,
   partitionWorkspacesBySection,
   sortSectionsByLinkedList,
@@ -167,6 +168,101 @@ describe("partitionWorkspacesByAge", () => {
 
     expect(buckets[2]).toHaveLength(1);
     expect(buckets[2][0].id).toBe("bucket2");
+  });
+});
+
+describe("computePinnedCompletedChildIdsForAgeTiers", () => {
+  const now = Date.now();
+  const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+
+  const createWorkspace = (
+    id: string,
+    opts?: {
+      parentWorkspaceId?: string;
+      taskStatus?: FrontendWorkspaceMetadata["taskStatus"];
+    }
+  ): FrontendWorkspaceMetadata => ({
+    id,
+    name: `workspace-${id}`,
+    projectName: "test-project",
+    projectPath: "/test/project",
+    namedWorkspacePath: `/test/project/workspace-${id}`,
+    runtimeConfig: DEFAULT_RUNTIME_CONFIG,
+    parentWorkspaceId: opts?.parentWorkspaceId,
+    taskStatus: opts?.taskStatus,
+  });
+
+  it("does not pin an expanded completed child when its parent row is hidden in a collapsed age tier", () => {
+    const workspaces = [
+      createWorkspace("recent-root"),
+      createWorkspace("old-parent"),
+      createWorkspace("old-reported-child", {
+        parentWorkspaceId: "old-parent",
+        taskStatus: "reported",
+      }),
+    ];
+
+    const pinnedIds = computePinnedCompletedChildIdsForAgeTiers({
+      workspaces,
+      workspaceRecency: {
+        "recent-root": now - 60 * 60 * 1000,
+        "old-parent": now - 45 * ONE_DAY_MS,
+        "old-reported-child": now - 44 * ONE_DAY_MS,
+      },
+      expandedParentIds: new Set(["old-parent"]),
+      isTierExpanded: () => false,
+    });
+
+    expect([...pinnedIds]).toEqual([]);
+  });
+
+  it("pins an expanded completed child when its parent row is visible in the recent tier", () => {
+    const workspaces = [
+      createWorkspace("recent-parent"),
+      createWorkspace("old-reported-child", {
+        parentWorkspaceId: "recent-parent",
+        taskStatus: "reported",
+      }),
+    ];
+
+    const pinnedIds = computePinnedCompletedChildIdsForAgeTiers({
+      workspaces,
+      workspaceRecency: {
+        "recent-parent": now - 60 * 60 * 1000,
+        "old-reported-child": now - 44 * ONE_DAY_MS,
+      },
+      expandedParentIds: new Set(["recent-parent"]),
+      isTierExpanded: () => false,
+    });
+
+    expect([...pinnedIds]).toEqual(["old-reported-child"]);
+  });
+
+  it("supports nested pinning when a parent becomes visible through pinning", () => {
+    const workspaces = [
+      createWorkspace("recent-root"),
+      createWorkspace("reported-grandchild", {
+        parentWorkspaceId: "reported-parent",
+        taskStatus: "reported",
+      }),
+      createWorkspace("reported-parent", {
+        parentWorkspaceId: "recent-root",
+        taskStatus: "reported",
+      }),
+    ];
+
+    const pinnedIds = computePinnedCompletedChildIdsForAgeTiers({
+      workspaces,
+      workspaceRecency: {
+        "recent-root": now - 60 * 60 * 1000,
+        "reported-parent": now - 44 * ONE_DAY_MS,
+        "reported-grandchild": now - 43 * ONE_DAY_MS,
+      },
+      expandedParentIds: new Set(["recent-root", "reported-parent"]),
+      isTierExpanded: () => false,
+    });
+
+    expect([...pinnedIds].sort()).toEqual(["reported-grandchild", "reported-parent"].sort());
   });
 });
 

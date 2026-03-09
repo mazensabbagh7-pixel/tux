@@ -368,6 +368,81 @@ export function findNextNonEmptyTier(
   return -1;
 }
 
+export interface PinnedCompletedChildOptions {
+  workspaces: FrontendWorkspaceMetadata[];
+  workspaceRecency: Record<string, number>;
+  expandedParentIds: ReadonlySet<string>;
+  isTierExpanded: (tierIndex: number) => boolean;
+}
+
+/**
+ * Determine which expanded completed child rows should bypass age-tier collapsing.
+ * Reported children are pinned only when their parent row is currently visible
+ * (recent rows, expanded old tiers, or rows pinned earlier in this same pass).
+ */
+export function computePinnedCompletedChildIdsForAgeTiers(
+  opts: PinnedCompletedChildOptions
+): Set<string> {
+  const potentialPinnedChildren = opts.workspaces.filter((workspace) => {
+    const parentId = workspace.parentWorkspaceId;
+    return (
+      workspace.taskStatus === "reported" &&
+      typeof parentId === "string" &&
+      opts.expandedParentIds.has(parentId)
+    );
+  });
+
+  if (potentialPinnedChildren.length === 0) {
+    return new Set<string>();
+  }
+
+  const { recent, buckets } = partitionWorkspacesByAge(opts.workspaces, opts.workspaceRecency);
+  const visibleParentIds = new Set<string>(recent.map((workspace) => workspace.id));
+
+  const markExpandedTierRowsVisible = (tierIndex: number): void => {
+    const bucket = buckets[tierIndex];
+    const remainingCount = buckets
+      .slice(tierIndex)
+      .reduce((sum, bucketRows) => sum + bucketRows.length, 0);
+    if (remainingCount === 0 || !opts.isTierExpanded(tierIndex)) {
+      return;
+    }
+
+    for (const workspace of bucket) {
+      visibleParentIds.add(workspace.id);
+    }
+
+    const nextTier = findNextNonEmptyTier(buckets, tierIndex + 1);
+    if (nextTier !== -1) {
+      markExpandedTierRowsVisible(nextTier);
+    }
+  };
+
+  const firstTier = findNextNonEmptyTier(buckets, 0);
+  if (firstTier !== -1) {
+    markExpandedTierRowsVisible(firstTier);
+  }
+
+  const pinnedIds = new Set<string>();
+  let pinnedInPass = true;
+  while (pinnedInPass) {
+    pinnedInPass = false;
+
+    for (const workspace of potentialPinnedChildren) {
+      const parentId = workspace.parentWorkspaceId;
+      if (!parentId || pinnedIds.has(workspace.id) || !visibleParentIds.has(parentId)) {
+        continue;
+      }
+
+      pinnedIds.add(workspace.id);
+      visibleParentIds.add(workspace.id);
+      pinnedInPass = true;
+    }
+  }
+
+  return pinnedIds;
+}
+
 /**
  * Partition workspaces into age-based buckets.
  * Always shows at least one workspace in the recent section (the most recent one).

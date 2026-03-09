@@ -47,6 +47,7 @@ import {
   computeWorkspaceDepthMap,
   filterVisibleAgentRows,
   computeAgentRowRenderMeta,
+  computePinnedCompletedChildIdsForAgeTiers,
   findNextNonEmptyTier,
   getTierKey,
   getSectionExpandedKey,
@@ -1413,23 +1414,24 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
                                 tierKeyPrefix: string,
                                 sectionId?: string
                               ): React.ReactNode => {
-                                const shouldBypassAgeTier = (
-                                  workspace: FrontendWorkspaceMetadata
-                                ): boolean => {
-                                  const parentId = workspace.parentWorkspaceId;
-                                  return (
-                                    workspace.taskStatus === "reported" &&
-                                    typeof parentId === "string" &&
-                                    expandedParentIds.has(parentId)
-                                  );
-                                };
+                                const pinnedExpandedCompletedChildIds =
+                                  computePinnedCompletedChildIdsForAgeTiers({
+                                    workspaces,
+                                    workspaceRecency,
+                                    expandedParentIds,
+                                    isTierExpanded: (tierIndex) =>
+                                      expandedOldWorkspaces[`${tierKeyPrefix}:${tierIndex}`] ??
+                                      false,
+                                  });
 
                                 // Expanding completed children on a parent row should reveal those
-                                // rows immediately, even when old age tiers remain collapsed.
-                                const pinnedExpandedCompletedChildren =
-                                  workspaces.filter(shouldBypassAgeTier);
+                                // rows immediately, even when old age tiers remain collapsed. Only
+                                // pin rows whose parent is visible in the current tier render.
+                                const pinnedExpandedCompletedChildren = workspaces.filter(
+                                  (workspace) => pinnedExpandedCompletedChildIds.has(workspace.id)
+                                );
                                 const ageBucketCandidates = workspaces.filter(
-                                  (workspace) => !shouldBypassAgeTier(workspace)
+                                  (workspace) => !pinnedExpandedCompletedChildIds.has(workspace.id)
                                 );
 
                                 const { recent, buckets } = partitionWorkspacesByAge(
