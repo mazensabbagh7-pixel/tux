@@ -200,7 +200,11 @@ async function scanAiderConf(home: string): Promise<DiscoveredKeyInternal[]> {
     const pattern = new RegExp(`^${mapping.yamlKey}\\s*:\\s*(.+)$`, "m");
     const match = pattern.exec(content);
     if (match) {
-      const key = match[1].trim().replace(/^["']|["']$/g, "");
+      // Strip surrounding quotes, then inline YAML comments (# ...)
+      const key = match[1]
+        .trim()
+        .replace(/^["']|["']$/g, "")
+        .replace(/\s+#.*$/, "");
       if (key) {
         results.push({
           provider: mapping.provider,

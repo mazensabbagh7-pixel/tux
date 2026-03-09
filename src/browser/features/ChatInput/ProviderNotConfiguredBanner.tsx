@@ -1,7 +1,11 @@
 import { AlertTriangle } from "lucide-react";
 import { Button } from "@/browser/components/Button/Button";
 import { getModelProvider } from "@/common/utils/ai/models";
-import { PROVIDER_DISPLAY_NAMES, type ProviderName } from "@/common/constants/providers";
+import {
+  PROVIDER_DEFINITIONS,
+  PROVIDER_DISPLAY_NAMES,
+  type ProviderName,
+} from "@/common/constants/providers";
 import type { ProvidersConfigMap } from "@/common/orpc/types";
 import { isProviderSupported } from "@/browser/hooks/useGatewayModels";
 
@@ -49,6 +53,9 @@ export function ProviderNotConfiguredBanner(props: Props) {
   const displayName = PROVIDER_DISPLAY_NAMES[provider as ProviderName] ?? provider;
   const info = props.providersConfig?.[provider];
   const isDisabled = info != null && !info.isEnabled;
+  const definition = PROVIDER_DEFINITIONS[provider as ProviderName];
+  // Providers like bedrock/ollama don't use API keys — use generic guidance.
+  const usesApiKey = definition?.requiresApiKey !== false;
 
   return (
     <div
@@ -61,9 +68,16 @@ export function ProviderNotConfiguredBanner(props: Props) {
           <span className="font-medium">
             {isDisabled
               ? `${displayName} provider is disabled.`
-              : `API key required for ${displayName}.`}
+              : usesApiKey
+                ? `API key required for ${displayName}.`
+                : `${displayName} is not configured.`}
           </span>{" "}
-          Open Settings → Providers to {isDisabled ? "enable this provider" : "add an API key"}{" "}
+          Open Settings → Providers to{" "}
+          {isDisabled
+            ? "enable this provider"
+            : usesApiKey
+              ? "add an API key"
+              : "configure this provider"}{" "}
           before sending.
         </p>
       </div>

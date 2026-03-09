@@ -163,6 +163,14 @@ describe("keyDiscoveryService", () => {
       expect(keys).toHaveLength(1);
       expect(keys[0].fullKey).toBe("sk-quoted-key");
     });
+
+    it("strips inline YAML comments from values", async () => {
+      await writeFile(home, ".aider.conf.yml", "openai-api-key: sk-aider-real # rotated key\n");
+
+      const keys = await discoverApiKeysInternal(home);
+      expect(keys).toHaveLength(1);
+      expect(keys[0].fullKey).toBe("sk-aider-real");
+    });
   });
 
   describe("scanContinueDev", () => {
