@@ -1247,10 +1247,18 @@ export const router = (authToken?: string) => {
         .input(schemas.keyDiscovery.import.input)
         .output(schemas.keyDiscovery.import.output)
         .handler(async ({ context, input }) => {
-          const result = await importDiscoveredKey(context.config, {
-            provider: input.provider,
-            source: input.source,
-          });
+          const result = await importDiscoveredKey(
+            context.config,
+            {
+              provider: input.provider,
+              source: input.source,
+            },
+            {
+              isProviderAllowed: (provider) =>
+                !context.policyService.isEnforced() ||
+                context.policyService.isProviderAllowed(provider),
+            }
+          );
 
           if (!result.success) {
             return { success: false as const, error: result.error };

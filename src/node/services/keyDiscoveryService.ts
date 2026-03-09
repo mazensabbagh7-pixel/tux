@@ -356,11 +356,14 @@ export async function discoverApiKeys(): Promise<DiscoveredKey[]> {
  * Import a previously-discovered key into providers.jsonc.
  *
  * Re-scans the source to read the actual key value (never cached).
+ * When an `isProviderAllowed` guard is supplied (e.g. from PolicyService),
+ * the import is rejected if the provider is blocked by policy.
  * Returns true on success, error message on failure.
  */
 export async function importDiscoveredKey(
   config: Config,
-  request: KeyImportRequest
+  request: KeyImportRequest,
+  options?: { isProviderAllowed?: (provider: ProviderName) => boolean }
 ): Promise<{ success: true } | { success: false; error: string }> {
   const home = os.homedir();
   const allKeys = await discoverApiKeysInternal(home);
@@ -371,6 +374,14 @@ export async function importDiscoveredKey(
     return {
       success: false,
       error: `Key not found for ${request.provider} from "${request.source}"`,
+    };
+  }
+
+  // Reject if an admin policy disallows this provider.
+  if (options?.isProviderAllowed && !options.isProviderAllowed(match.provider)) {
+    return {
+      success: false,
+      error: `Provider ${match.provider} is not allowed by policy`,
     };
   }
 

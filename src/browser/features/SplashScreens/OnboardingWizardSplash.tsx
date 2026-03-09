@@ -594,11 +594,25 @@ export function OnboardingWizardSplash(props: { onDismiss: () => void }) {
     // Merge with prior import state so earlier results are preserved.
     const results: Record<string, "success" | "error"> = { ...importResults };
 
+    // Deduplicate: only import the first selected entry per provider.
+    const importedProviders = new Set<string>();
+
     for (const key of discoveredKeys) {
       const id = `${key.provider}:${key.source}`;
       if (!selectedKeys.has(id)) {
         continue;
       }
+
+      // Skip keys that were already successfully imported.
+      if (importResults[id] === "success") {
+        continue;
+      }
+
+      // Only import the first selected key per provider.
+      if (importedProviders.has(key.provider)) {
+        continue;
+      }
+      importedProviders.add(key.provider);
 
       try {
         const result = await api.keyDiscovery.import({
