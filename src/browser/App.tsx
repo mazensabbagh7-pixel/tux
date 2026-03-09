@@ -241,10 +241,12 @@ function AppInner() {
   }, [workspaceMetadata]);
 
   const eventSoundSettingsRef = useRef<EventSoundSettings | undefined>(undefined);
+  const eventSoundSettingsLoadVersionRef = useRef(0);
   useEffect(() => {
     const handleEventSoundSettingsChanged = (
       event: CustomEventType<typeof CUSTOM_EVENTS.EVENT_SOUND_SETTINGS_CHANGED>
     ) => {
+      eventSoundSettingsLoadVersionRef.current += 1;
       eventSoundSettingsRef.current = event.detail.eventSoundSettings;
     };
 
@@ -264,10 +266,11 @@ function AppInner() {
     }
 
     let isCancelled = false;
+    const loadVersion = eventSoundSettingsLoadVersionRef.current;
     void api.config
       .getConfig()
       .then((config) => {
-        if (!isCancelled) {
+        if (!isCancelled && loadVersion === eventSoundSettingsLoadVersionRef.current) {
           eventSoundSettingsRef.current = config.eventSoundSettings;
         }
       })
