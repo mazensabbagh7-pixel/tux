@@ -130,22 +130,29 @@ async function scanClaudeEnv(home: string): Promise<DiscoveredKeyInternal[]> {
     return results;
   }
 
-  const match = /^ANTHROPIC_API_KEY=(.+)$/m.exec(content);
-  if (match) {
+  // Use global regex and iterate to find the *last* match, because later
+  // assignments override earlier ones (key rotation appends new export).
+  const pattern = /^ANTHROPIC_API_KEY=(.+)$/gm;
+  let lastKey: string | null = null;
+  let m: RegExpExecArray | null;
+  while ((m = pattern.exec(content)) !== null) {
     // Strip surrounding quotes, then inline comments (# ...) and trailing semicolons
-    const key = match[1]
+    const candidate = m[1]
       .trim()
       .replace(/^["']|["']$/g, "")
       .replace(/\s+#.*$/, "")
       .replace(/;+$/, "");
-    if (key) {
-      results.push({
-        provider: "anthropic",
-        source: `Claude Code (~/.claude/.env)`,
-        keyPreview: maskKey(key),
-        fullKey: key,
-      });
+    if (candidate) {
+      lastKey = candidate;
     }
+  }
+  if (lastKey) {
+    results.push({
+      provider: "anthropic",
+      source: `Claude Code (~/.claude/.env)`,
+      keyPreview: maskKey(lastKey),
+      fullKey: lastKey,
+    });
   }
 
   return results;

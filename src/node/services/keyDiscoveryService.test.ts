@@ -105,6 +105,18 @@ describe("keyDiscoveryService", () => {
       expect(keys).toHaveLength(1);
       expect(keys[0].fullKey).toBe("sk-ant-real");
     });
+
+    it("uses last assignment when key is rotated", async () => {
+      await writeFile(
+        home,
+        ".claude/.env",
+        "ANTHROPIC_API_KEY=sk-ant-old\nANTHROPIC_API_KEY=sk-ant-rotated\n"
+      );
+
+      const keys = await discoverApiKeysInternal(home);
+      expect(keys).toHaveLength(1);
+      expect(keys[0].fullKey).toBe("sk-ant-rotated");
+    });
   });
 
   describe("scanCodexCli", () => {
