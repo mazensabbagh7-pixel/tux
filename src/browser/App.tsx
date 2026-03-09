@@ -39,7 +39,7 @@ import { CommandPalette } from "./components/CommandPalette/CommandPalette";
 import { buildCoreSources, type BuildSourcesParams } from "./utils/commands/sources";
 
 import { THINKING_LEVELS, type ThinkingLevel } from "@/common/types/thinking";
-import { CUSTOM_EVENTS } from "@/common/constants/events";
+import { CUSTOM_EVENTS, type CustomEventType } from "@/common/constants/events";
 import { isWorkspaceForkSwitchEvent } from "./utils/workspaceEvents";
 import {
   getAgentIdKey,
@@ -242,9 +242,25 @@ function AppInner() {
 
   const eventSoundSettingsRef = useRef<EventSoundSettings | undefined>(undefined);
   useEffect(() => {
+    const handleEventSoundSettingsChanged = (
+      event: CustomEventType<typeof CUSTOM_EVENTS.EVENT_SOUND_SETTINGS_CHANGED>
+    ) => {
+      eventSoundSettingsRef.current = event.detail.eventSoundSettings;
+    };
+
+    window.addEventListener(
+      CUSTOM_EVENTS.EVENT_SOUND_SETTINGS_CHANGED,
+      handleEventSoundSettingsChanged as EventListener
+    );
+
     if (!api) {
       eventSoundSettingsRef.current = undefined;
-      return;
+      return () => {
+        window.removeEventListener(
+          CUSTOM_EVENTS.EVENT_SOUND_SETTINGS_CHANGED,
+          handleEventSoundSettingsChanged as EventListener
+        );
+      };
     }
 
     let isCancelled = false;
@@ -263,6 +279,10 @@ function AppInner() {
 
     return () => {
       isCancelled = true;
+      window.removeEventListener(
+        CUSTOM_EVENTS.EVENT_SOUND_SETTINGS_CHANGED,
+        handleEventSoundSettingsChanged as EventListener
+      );
     };
   }, [api]);
 
