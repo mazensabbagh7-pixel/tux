@@ -496,6 +496,7 @@ test("getState waits for an in-flight refresh instead of returning stale state",
     lastEnqueuedFingerprint: null,
     isCurrentVersionEnqueued: false,
     hasPendingUpdate: false,
+    pendingUpdatePreviewText: null,
   };
   const freshState = {
     ...staleState,
@@ -538,6 +539,109 @@ test("getState waits for an in-flight refresh instead of returning stale state",
   });
 
   expect(await service.getState(workspaceId)).toEqual(freshState);
+});
+
+it("includes the queued preview text in state while a flow prompt update is pending", () => {
+  const workspaceId = "workspace-1";
+  const service = new WorkspaceFlowPromptService({
+    getSessionDir: () => "/tmp/flow-prompt-session",
+  } as unknown as Config);
+
+  const buildState = (
+    service as unknown as {
+      buildState: (
+        snapshot: {
+          workspaceId: string;
+          path: string;
+          exists: boolean;
+          content: string;
+          hasNonEmptyContent: boolean;
+          modifiedAtMs: number | null;
+          contentFingerprint: string | null;
+        },
+        persisted: { lastSentContent: string | null; lastSentFingerprint: string | null },
+        pendingFingerprint: string | null
+      ) => {
+        hasPendingUpdate: boolean;
+        pendingUpdatePreviewText: string | null;
+      };
+    }
+  ).buildState.bind(service);
+
+  const previousContent = Array.from(
+    { length: 40 },
+    (_, index) => `Context line ${index + 1}`
+  ).join("\n");
+  const nextContent = previousContent.replace("Context line 20", "Updated context line 20");
+
+  const state = buildState(
+    {
+      workspaceId,
+      path: "/tmp/workspace/.mux/prompts/feature.md",
+      exists: true,
+      content: nextContent,
+      hasNonEmptyContent: true,
+      modifiedAtMs: 1,
+      contentFingerprint: "94326d87717f640c44b44234d652ce38a34c79f5d6cbe2f1bb2ed9042f692e91",
+    },
+    {
+      lastSentContent: previousContent,
+      lastSentFingerprint: "2b025ee42d57e6eaf463f4ed6d7ee0ec2a58d5a1f501ef50b57462d4be4ca0b1",
+    },
+    "94326d87717f640c44b44234d652ce38a34c79f5d6cbe2f1bb2ed9042f692e91"
+  );
+
+  expect(state.hasPendingUpdate).toBe(true);
+  expect(state.pendingUpdatePreviewText).toContain("Latest flow prompt changes:");
+  expect(state.pendingUpdatePreviewText).toContain("Updated context line 20");
+});
+
+it("keeps the queued preview visible when deleting the flow prompt file is still pending", () => {
+  const workspaceId = "workspace-1";
+  const service = new WorkspaceFlowPromptService({
+    getSessionDir: () => "/tmp/flow-prompt-session",
+  } as unknown as Config);
+
+  const buildState = (
+    service as unknown as {
+      buildState: (
+        snapshot: {
+          workspaceId: string;
+          path: string;
+          exists: boolean;
+          content: string;
+          hasNonEmptyContent: boolean;
+          modifiedAtMs: number | null;
+          contentFingerprint: string | null;
+        },
+        persisted: { lastSentContent: string | null; lastSentFingerprint: string | null },
+        pendingFingerprint: string | null
+      ) => {
+        hasPendingUpdate: boolean;
+        pendingUpdatePreviewText: string | null;
+      };
+    }
+  ).buildState.bind(service);
+
+  const state = buildState(
+    {
+      workspaceId,
+      path: "/tmp/workspace/.mux/prompts/feature.md",
+      exists: false,
+      content: "",
+      hasNonEmptyContent: false,
+      modifiedAtMs: null,
+      contentFingerprint: null,
+    },
+    {
+      lastSentContent: "Keep following the original flow prompt",
+      lastSentFingerprint: "80b54f769f33b541a90900ac3fe33625bf2ec3ca3e9ec1415c2ab7ab6df554ef",
+    },
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  );
+
+  expect(state.hasPendingUpdate).toBe(true);
+  expect(state.pendingUpdatePreviewText).toContain("flow prompt file is now empty");
 });
 
 describe("buildFlowPromptUpdateMessage", () => {

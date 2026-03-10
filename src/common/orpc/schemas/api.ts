@@ -144,6 +144,7 @@ export const FlowPromptStateSchema = z.object({
   lastEnqueuedFingerprint: z.string().nullable(),
   isCurrentVersionEnqueued: z.boolean(),
   hasPendingUpdate: z.boolean(),
+  pendingUpdatePreviewText: z.string().nullable(),
 });
 
 // Tokenizer

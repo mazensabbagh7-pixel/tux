@@ -40,6 +40,7 @@ export interface FlowPromptState {
   lastEnqueuedFingerprint: string | null;
   isCurrentVersionEnqueued: boolean;
   hasPendingUpdate: boolean;
+  pendingUpdatePreviewText: string | null;
 }
 
 export interface FlowPromptUpdateRequest {
@@ -699,6 +700,18 @@ export class WorkspaceFlowPromptService extends EventEmitter {
     pendingFingerprint: string | null
   ): FlowPromptState {
     const lastEnqueuedFingerprint = pendingFingerprint ?? persisted.lastSentFingerprint;
+    const currentSnapshotFingerprint =
+      snapshot.contentFingerprint ?? computeFingerprint(snapshot.content);
+    const hasPendingUpdate =
+      pendingFingerprint != null && pendingFingerprint === currentSnapshotFingerprint;
+    const pendingUpdatePreviewText = hasPendingUpdate
+      ? buildFlowPromptUpdateMessage({
+          path: snapshot.path,
+          previousContent: persisted.lastSentContent ?? "",
+          nextContent: snapshot.content,
+        })
+      : null;
+
     return {
       workspaceId: snapshot.workspaceId,
       path: snapshot.path,
@@ -710,8 +723,8 @@ export class WorkspaceFlowPromptService extends EventEmitter {
       isCurrentVersionEnqueued:
         snapshot.contentFingerprint != null &&
         snapshot.contentFingerprint === lastEnqueuedFingerprint,
-      hasPendingUpdate:
-        snapshot.contentFingerprint != null && pendingFingerprint === snapshot.contentFingerprint,
+      hasPendingUpdate,
+      pendingUpdatePreviewText,
     };
   }
 

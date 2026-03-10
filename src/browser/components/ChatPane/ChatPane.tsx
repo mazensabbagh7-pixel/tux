@@ -1027,6 +1027,15 @@ const ChatInputPane: React.FC<ChatInputPaneProps> = (props) => {
   const { reviews } = props;
   const flowPrompt = useFlowPrompt(props.workspaceId, props.workspaceName, props.runtimeConfig);
 
+  const flowPromptQueuedMessage: QueuedMessageData | null =
+    flowPrompt.state?.pendingUpdatePreviewText != null
+      ? {
+          id: `queued-flow-prompt-${props.workspaceId}`,
+          content: flowPrompt.state.pendingUpdatePreviewText,
+          queueDispatchMode: "tool-end",
+        }
+      : null;
+
   return (
     <div className="flex flex-col gap-2">
       {/*
@@ -1056,6 +1065,7 @@ const ChatInputPane: React.FC<ChatInputPaneProps> = (props) => {
           onSendImmediately={props.onSendQueuedImmediately}
         />
       )}
+      {flowPromptQueuedMessage && <QueuedMessage message={flowPromptQueuedMessage} />}
       {props.isQueuedAgentTask && (
         <div className="border-border-medium bg-background-secondary text-muted rounded-md border px-3 py-2 text-xs">
           This agent task is queued and will start automatically when a parallel slot is available.
