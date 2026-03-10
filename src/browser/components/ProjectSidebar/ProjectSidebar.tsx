@@ -55,7 +55,6 @@ import {
   type AgentRowRenderMeta,
 } from "@/browser/utils/ui/workspaceFiltering";
 import { Tooltip, TooltipTrigger, TooltipContent } from "../Tooltip/Tooltip";
-import { SidebarCollapseButton } from "../SidebarCollapseButton/SidebarCollapseButton";
 import { ConfirmationModal } from "../ConfirmationModal/ConfirmationModal";
 import { ProjectDeleteConfirmationModal } from "../ProjectDeleteConfirmationModal/ProjectDeleteConfirmationModal";
 import { useSettings } from "@/browser/contexts/SettingsContext";
@@ -1040,7 +1039,7 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
         >
           {!collapsed && (
             <>
-              <div className="border-dark flex items-center justify-between border-b py-3 pr-3 pl-4">
+              <div className="border-dark flex items-center border-b py-3 pr-3 pl-4">
                 <div className="flex min-w-0 items-center gap-2">
                   <button
                     onClick={handleGoHome}
@@ -1059,12 +1058,6 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
                     </>
                   )}
                 </div>
-                <SidebarCollapseButton
-                  collapsed={collapsed}
-                  onToggle={onToggleCollapsed}
-                  side="left"
-                  shortcut={formatKeybind(KEYBINDS.TOGGLE_SIDEBAR)}
-                />
               </div>
               <div
                 ref={projectListScrollRef}
@@ -1770,7 +1763,7 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
               </div>
               <div className="border-border border-t">
                 <button
-                  className="bg-surface-secondary text-foreground hover:bg-hover flex w-full items-center gap-2 px-3 py-2 text-sm"
+                  className="bg-primary text-primary-foreground hover:bg-primary/90 flex w-full items-center justify-center gap-2 px-3 py-2 text-sm"
                   onClick={onAddProject}
                   aria-label="Add project"
                 >
@@ -1779,14 +1772,6 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
                 </button>
               </div>
             </>
-          )}
-          {collapsed && (
-            <SidebarCollapseButton
-              collapsed={collapsed}
-              onToggle={onToggleCollapsed}
-              side="left"
-              shortcut={formatKeybind(KEYBINDS.TOGGLE_SIDEBAR)}
-            />
           )}
           <ConfirmationModal
             isOpen={archiveConfirmation !== null}
