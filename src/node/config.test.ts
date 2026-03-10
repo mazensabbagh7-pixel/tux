@@ -11,6 +11,7 @@ import {
   WORKTREE_ARCHIVE_BEHAVIORS,
 } from "@/common/config/worktreeArchiveBehavior";
 import { MULTI_PROJECT_CONFIG_KEY } from "@/common/constants/multiProject";
+import type { EventSoundSettings } from "@/common/config/schemas/appConfigOnDisk";
 import { type ExternalSecretResolver, secretsToRecord } from "@/common/types/secrets";
 
 describe("Config", () => {
@@ -430,7 +431,7 @@ describe("Config", () => {
     });
 
     it("round-trips eventSoundSettings through editConfig", async () => {
-      const eventSoundSettings = {
+      const eventSoundSettings: EventSoundSettings = {
         agent_review_ready: {
           enabled: true,
           source: {
