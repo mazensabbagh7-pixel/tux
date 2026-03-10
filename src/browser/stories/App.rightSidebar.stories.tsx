@@ -600,7 +600,7 @@ export const ReviewTabSortByLastEdit: AppStory = {
 
     // Ensure the Review tab is active. Storybook can reuse a long-lived AppLoader
     // instance between stories, so persisted state might not apply until interaction.
-    const expandButtons = canvas.queryAllByRole("button", { name: "Expand sidebar" });
+    const expandButtons = canvas.queryAllByRole("button", { name: "Toggle sidebar" });
     if (expandButtons.length > 0) {
       await userEvent.click(expandButtons[expandButtons.length - 1]);
     }
@@ -676,7 +676,7 @@ export const ReviewTabSortByFileOrder: AppStory = {
     const canvas = within(canvasElement);
 
     // Ensure Review tab is active (Storybook may reuse the same App instance).
-    const expandButtons = canvas.queryAllByRole("button", { name: "Expand sidebar" });
+    const expandButtons = canvas.queryAllByRole("button", { name: "Toggle sidebar" });
     if (expandButtons.length > 0) {
       await userEvent.click(expandButtons[expandButtons.length - 1]);
     }
@@ -777,7 +777,7 @@ export const DiffPaddingAlignment: AppStory = {
     const canvas = within(canvasElement);
 
     // Ensure Review tab is active.
-    const expandButtons = canvas.queryAllByRole("button", { name: "Expand sidebar" });
+    const expandButtons = canvas.queryAllByRole("button", { name: "Toggle sidebar" });
     if (expandButtons.length > 0) {
       await userEvent.click(expandButtons[expandButtons.length - 1]);
     }
@@ -861,7 +861,7 @@ export const DiffPaddingAlignmentModification: AppStory = {
     const canvas = within(canvasElement);
 
     // Ensure Review tab is active.
-    const expandButtons = canvas.queryAllByRole("button", { name: "Expand sidebar" });
+    const expandButtons = canvas.queryAllByRole("button", { name: "Toggle sidebar" });
     if (expandButtons.length > 0) {
       await userEvent.click(expandButtons[expandButtons.length - 1]);
     }
@@ -1047,7 +1047,7 @@ export const ReviewTabWithFileFilter: AppStory = {
     const canvas = within(canvasElement);
 
     // Ensure Review tab is active.
-    const expandButtons = canvas.queryAllByRole("button", { name: "Expand sidebar" });
+    const expandButtons = canvas.queryAllByRole("button", { name: "Toggle sidebar" });
     if (expandButtons.length > 0) {
       await userEvent.click(expandButtons[expandButtons.length - 1]);
     }
@@ -1152,7 +1152,7 @@ export const ReviewTabWithUntrackedFiles: AppStory = {
     const canvas = within(canvasElement);
 
     // Ensure Review tab is active
-    const expandButtons = canvas.queryAllByRole("button", { name: "Expand sidebar" });
+    const expandButtons = canvas.queryAllByRole("button", { name: "Toggle sidebar" });
     if (expandButtons.length > 0) {
       await userEvent.click(expandButtons[expandButtons.length - 1]);
     }
