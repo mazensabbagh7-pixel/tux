@@ -45,38 +45,41 @@ function getFlowPromptPreviewDisplay(
   const contentsPrefix = "Current flow prompt contents:\n```md\n";
   const emptyText = "The flow prompt file is now empty.";
 
-  const diffIndex = previewText.indexOf(diffPrefix);
-  if (diffIndex !== -1) {
-    const diffStart = diffIndex + diffPrefix.length;
-    const closingFenceIndex = previewText.lastIndexOf("\n```");
+  const firstSectionBreak = previewText.indexOf("\n\n");
+  const secondSectionBreak =
+    firstSectionBreak === -1 ? -1 : previewText.indexOf("\n\n", firstSectionBreak + 2);
+  const body =
+    secondSectionBreak === -1 ? previewText : previewText.slice(secondSectionBreak + "\n\n".length);
+
+  if (body.startsWith(diffPrefix)) {
+    const diffStart = diffPrefix.length;
+    const closingFenceIndex = body.lastIndexOf("\n```");
     return {
       kind: "diff",
       content:
         closingFenceIndex >= diffStart
-          ? previewText.slice(diffStart, closingFenceIndex)
-          : previewText.slice(diffStart),
+          ? body.slice(diffStart, closingFenceIndex)
+          : body.slice(diffStart),
     };
   }
 
-  const contentsIndex = previewText.indexOf(contentsPrefix);
-  if (contentsIndex !== -1) {
-    const contentStart = contentsIndex + contentsPrefix.length;
-    const closingFenceIndex = previewText.lastIndexOf("\n```");
+  if (body.startsWith(contentsPrefix)) {
+    const contentStart = contentsPrefix.length;
+    const closingFenceIndex = body.lastIndexOf("\n```");
 
     return {
       kind: "contents",
       content:
         closingFenceIndex >= contentStart
-          ? previewText.slice(contentStart, closingFenceIndex)
-          : previewText.slice(contentStart),
+          ? body.slice(contentStart, closingFenceIndex)
+          : body.slice(contentStart),
     };
   }
 
-  const emptyIndex = previewText.indexOf(emptyText);
-  if (emptyIndex !== -1) {
+  if (body.startsWith(emptyText)) {
     return {
       kind: "cleared",
-      content: previewText.slice(emptyIndex).trim(),
+      content: body.trim(),
     };
   }
 

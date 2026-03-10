@@ -1195,6 +1195,35 @@ describe("WorkspaceService Flow Prompting controls", () => {
     expect(setAutoSendMode).toHaveBeenCalledWith(workspaceId, "off", { clearPending: true });
   });
 
+  test("disabling Flow Prompting clears any queued synthetic follow-up before deleting the file", async () => {
+    const workspaceId = "flow-delete-workspace";
+    const session = {
+      clearFlowPromptUpdate: mock(() => undefined),
+    };
+    (
+      workspaceService as unknown as {
+        getOrCreateSession: (workspaceId: string) => AgentSession;
+      }
+    ).getOrCreateSession = mock(() => session as unknown as AgentSession);
+
+    const deletePromptFile = spyOn(
+      (
+        workspaceService as unknown as {
+          flowPromptService: {
+            deletePromptFile: (workspaceId: string) => Promise<void>;
+          };
+        }
+      ).flowPromptService,
+      "deletePromptFile"
+    ).mockResolvedValue(undefined);
+
+    const result = await workspaceService.deleteFlowPrompt(workspaceId);
+
+    expect(result.success).toBe(true);
+    expect(session.clearFlowPromptUpdate).toHaveBeenCalledTimes(1);
+    expect(deletePromptFile).toHaveBeenCalledWith(workspaceId);
+  });
+
   test("sendFlowPromptNow queues the latest diff and interrupts the current turn", async () => {
     const workspaceId = "flow-send-now-workspace";
     let queuedFlowPromptUpdate:

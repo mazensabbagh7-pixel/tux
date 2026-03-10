@@ -114,6 +114,41 @@ describe("FlowPromptComposerCard", () => {
     expect(view.getByText("Live flow prompt diff")).toBeTruthy();
   });
 
+  test("keeps prompt contents previews as contents even when the body mentions diff headers", () => {
+    const contentsPreviewText = [
+      "[Flow prompt updated. Follow current agent instructions.]",
+      "",
+      "Flow prompt file path: /tmp/workspace/.mux/prompts/feature.md (MUST use this exact path string for tool calls; do NOT rewrite it into another form, even if it resolves to the same file)",
+      "",
+      "Current flow prompt contents:",
+      "```md",
+      "Keep these exact notes in the prompt body:",
+      "Latest flow prompt changes:",
+      "```diff",
+      "-not actually a diff preview",
+      "+still just prompt contents",
+      "```",
+      "```",
+    ].join("\n");
+
+    const view = render(
+      <ThemeProvider forcedTheme="dark">
+        <FlowPromptComposerCard
+          state={createState({ updatePreviewText: contentsPreviewText })}
+          onOpen={() => undefined}
+          onDisable={() => undefined}
+          onSendNow={() => undefined}
+          onToggleCollapsed={() => undefined}
+          onAutoSendModeChange={() => undefined}
+        />
+      </ThemeProvider>
+    );
+
+    expect(view.getByText("Live flow prompt contents")).toBeTruthy();
+    expect(view.container.querySelector('[data-diff-indicator="true"]')).toBeNull();
+    expect(view.container.textContent).toContain("still just prompt contents");
+  });
+
   test("renders a minimizable horizontal strip that can expand again", () => {
     const onToggleCollapsed = mock(() => undefined);
     const view = render(

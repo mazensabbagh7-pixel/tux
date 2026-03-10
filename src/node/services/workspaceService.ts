@@ -3008,6 +3008,9 @@ export class WorkspaceService extends EventEmitter {
 
   async deleteFlowPrompt(workspaceId: string): Promise<Result<void, string>> {
     try {
+      // Disabling Flow Prompting should also drop any queued synthetic follow-up so a later
+      // turn cannot re-apply instructions from a prompt file the user explicitly removed.
+      this.getOrCreateSession(workspaceId).clearFlowPromptUpdate();
       await this.flowPromptService.deletePromptFile(workspaceId);
       return Ok(undefined);
     } catch (error) {
