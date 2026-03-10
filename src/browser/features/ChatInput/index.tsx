@@ -2620,7 +2620,10 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
                     (showCommandSuggestions && commandSuggestions.length > 0) ||
                     (showAtMentionSuggestions && atMentionSuggestions.length > 0)
                   }
-                  className={variant === "creation" ? "min-h-28" : "min-h-16"}
+                  className={cn(
+                    variant === "creation" ? "min-h-28" : "min-h-16",
+                    variant === "workspace" && props.topAccessory ? "rounded-t-none" : null
+                  )}
                   trailingAction={
                     <div className="flex items-center gap-1">
                       <AttachFileButton
