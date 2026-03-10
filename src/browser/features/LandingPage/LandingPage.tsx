@@ -108,12 +108,14 @@ function LandingTitlebar(props: {
       )}
     >
       {props.leftSidebarCollapsed && (
-        <SidebarCollapseButton
-          collapsed={true}
-          onToggle={props.onToggleLeftSidebarCollapsed}
-          side="left"
-          shortcut={formatKeybind(KEYBINDS.TOGGLE_SIDEBAR)}
-        />
+        <div className="titlebar-no-drag">
+          <SidebarCollapseButton
+            collapsed={true}
+            onToggle={props.onToggleLeftSidebarCollapsed}
+            side="left"
+            shortcut={formatKeybind(KEYBINDS.TOGGLE_SIDEBAR)}
+          />
+        </div>
       )}
     </div>
   );

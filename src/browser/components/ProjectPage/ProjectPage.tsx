@@ -272,12 +272,14 @@ export const ProjectPage: React.FC<ProjectPageProps> = ({
             )}
           >
             {leftSidebarCollapsed && (
-              <SidebarCollapseButton
-                collapsed={true}
-                onToggle={onToggleLeftSidebarCollapsed}
-                side="left"
-                shortcut={formatKeybind(KEYBINDS.TOGGLE_SIDEBAR)}
-              />
+              <div className="titlebar-no-drag">
+                <SidebarCollapseButton
+                  collapsed={true}
+                  onToggle={onToggleLeftSidebarCollapsed}
+                  side="left"
+                  shortcut={formatKeybind(KEYBINDS.TOGGLE_SIDEBAR)}
+                />
+              </div>
             )}
           </div>
           {/* Scrollable content area */}
