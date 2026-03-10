@@ -83,6 +83,7 @@ import {
 import { ProviderModelEntrySchema } from "../../config/schemas/providerModelEntry";
 import { TaskSettingsSchema } from "../../config/schemas/taskSettings";
 import { ThinkingLevelSchema } from "../../types/thinking";
+import { FLOW_PROMPT_AUTO_SEND_MODES } from "../../constants/flowPrompting";
 
 // Experiments
 export const ExperimentValueSchema = z.object({
@@ -134,6 +135,8 @@ export const BackgroundProcessInfoSchema = z.object({
 
 export type BackgroundProcessInfo = z.infer<typeof BackgroundProcessInfoSchema>;
 
+export const FlowPromptAutoSendModeSchema = z.enum(FLOW_PROMPT_AUTO_SEND_MODES);
+
 export const FlowPromptStateSchema = z.object({
   workspaceId: z.string(),
   path: z.string(),
@@ -144,7 +147,8 @@ export const FlowPromptStateSchema = z.object({
   lastEnqueuedFingerprint: z.string().nullable(),
   isCurrentVersionEnqueued: z.boolean(),
   hasPendingUpdate: z.boolean(),
-  pendingUpdatePreviewText: z.string().nullable(),
+  autoSendMode: FlowPromptAutoSendModeSchema,
+  updatePreviewText: z.string().nullable(),
 });
 
 // Tokenizer
@@ -1257,6 +1261,17 @@ export const workspace = {
       output: ResultSchema(FlowPromptStateSchema, z.string()),
     },
     delete: {
+      input: z.object({ workspaceId: z.string() }),
+      output: ResultSchema(z.void(), z.string()),
+    },
+    updateAutoSendMode: {
+      input: z.object({
+        workspaceId: z.string(),
+        mode: FlowPromptAutoSendModeSchema,
+      }),
+      output: ResultSchema(z.void(), z.string()),
+    },
+    sendNow: {
       input: z.object({ workspaceId: z.string() }),
       output: ResultSchema(z.void(), z.string()),
     },

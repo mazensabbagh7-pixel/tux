@@ -3598,6 +3598,29 @@ export const router = (authToken?: string) => {
             }
             return { success: true as const, data: undefined };
           }),
+        updateAutoSendMode: t
+          .input(schemas.workspace.flowPrompt.updateAutoSendMode.input)
+          .output(schemas.workspace.flowPrompt.updateAutoSendMode.output)
+          .handler(async ({ context, input }) => {
+            const result = await context.workspaceService.updateFlowPromptAutoSendMode(
+              input.workspaceId,
+              input.mode
+            );
+            if (!result.success) {
+              return { success: false as const, error: result.error };
+            }
+            return { success: true as const, data: undefined };
+          }),
+        sendNow: t
+          .input(schemas.workspace.flowPrompt.sendNow.input)
+          .output(schemas.workspace.flowPrompt.sendNow.output)
+          .handler(async ({ context, input }) => {
+            const result = await context.workspaceService.sendFlowPromptNow(input.workspaceId);
+            if (!result.success) {
+              return { success: false as const, error: result.error };
+            }
+            return { success: true as const, data: undefined };
+          }),
         subscribe: t
           .input(schemas.workspace.flowPrompt.subscribe.input)
           .output(schemas.workspace.flowPrompt.subscribe.output)

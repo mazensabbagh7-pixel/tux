@@ -70,14 +70,32 @@ describe("AgentSession tool-end queue semantics", () => {
     expect(state.turnPhase).toBe("idle");
   });
 
-  test("still reports tool-end work when Flow Prompting is the only pending queue", () => {
+  test("does not report tool-end work when Flow Prompting is queued for turn end", () => {
     expect(
       hasToolEndQueuedWork({
         messageQueue: {
           isEmpty: () => true,
           getQueueDispatchMode: () => null,
         },
-        flowPromptUpdate: { message: "pending flow prompt" },
+        flowPromptUpdate: {
+          message: "pending flow prompt",
+          options: { queueDispatchMode: "turn-end" },
+        },
+      })
+    ).toBe(false);
+  });
+
+  test("still reports tool-end work when Flow Prompting explicitly targets tool end", () => {
+    expect(
+      hasToolEndQueuedWork({
+        messageQueue: {
+          isEmpty: () => true,
+          getQueueDispatchMode: () => null,
+        },
+        flowPromptUpdate: {
+          message: "pending flow prompt",
+          options: { queueDispatchMode: "tool-end" },
+        },
       })
     ).toBe(true);
   });

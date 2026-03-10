@@ -4,7 +4,10 @@ import { useAPI } from "@/browser/contexts/API";
 import { useConfirmDialog } from "@/browser/contexts/ConfirmDialogContext";
 import { useOpenInEditor } from "@/browser/hooks/useOpenInEditor";
 import { useFlowPromptState } from "@/browser/stores/FlowPromptStore";
-import { getFlowPromptRelativePath } from "@/common/constants/flowPrompting";
+import {
+  getFlowPromptRelativePath,
+  type FlowPromptAutoSendMode,
+} from "@/common/constants/flowPrompting";
 
 export function useFlowPrompt(
   workspaceId: string,
@@ -16,6 +19,8 @@ export function useFlowPrompt(
   const openInEditor = useOpenInEditor();
   const state = useFlowPromptState(workspaceId);
   const [error, setError] = useState<string | null>(null);
+  const [isUpdatingAutoSendMode, setIsUpdatingAutoSendMode] = useState(false);
+  const [isSendingNow, setIsSendingNow] = useState(false);
 
   const clearError = useCallback(() => {
     setError(null);
@@ -93,12 +98,63 @@ export function useFlowPrompt(
     setError(null);
   }, [api, confirm, state, workspaceId, workspaceName]);
 
+  const updateAutoSendMode = useCallback(
+    async (mode: FlowPromptAutoSendMode) => {
+      if (!api) {
+        setError("API not available");
+        return;
+      }
+      if (isUpdatingAutoSendMode) {
+        return;
+      }
+
+      setIsUpdatingAutoSendMode(true);
+      try {
+        const result = await api.workspace.flowPrompt.updateAutoSendMode({ workspaceId, mode });
+        if (!result.success) {
+          setError(result.error);
+          return;
+        }
+        setError(null);
+      } finally {
+        setIsUpdatingAutoSendMode(false);
+      }
+    },
+    [api, isUpdatingAutoSendMode, workspaceId]
+  );
+
+  const sendNow = useCallback(async () => {
+    if (!api) {
+      setError("API not available");
+      return;
+    }
+    if (isSendingNow) {
+      return;
+    }
+
+    setIsSendingNow(true);
+    try {
+      const result = await api.workspace.flowPrompt.sendNow({ workspaceId });
+      if (!result.success) {
+        setError(result.error);
+        return;
+      }
+      setError(null);
+    } finally {
+      setIsSendingNow(false);
+    }
+  }, [api, isSendingNow, workspaceId]);
+
   return {
     state,
     error,
+    isUpdatingAutoSendMode,
+    isSendingNow,
     clearError,
     openFlowPrompt,
     enableFlowPrompt,
     disableFlowPrompt,
+    updateAutoSendMode,
+    sendNow,
   };
 }

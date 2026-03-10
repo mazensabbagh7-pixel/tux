@@ -3947,10 +3947,8 @@ export class AgentSession {
       return true;
     }
 
-    // A pending turn-end user message must keep its dispatch semantics even if Flow Prompting
-    // has a coalesced tool-end save waiting in the wings. Otherwise tool boundaries would flush
-    // the user queue earlier than requested.
-    return this.flowPromptUpdate !== undefined && queuedDispatchMode !== "turn-end";
+    const flowPromptDispatchMode = this.flowPromptUpdate?.options?.queueDispatchMode ?? "turn-end";
+    return flowPromptDispatchMode === "tool-end" && queuedDispatchMode !== "turn-end";
   }
 
   private syncQueuedMessageFlag(): void {
@@ -4004,6 +4002,12 @@ export class AgentSession {
       options: args.options,
       internal: args.internal,
     };
+    this.syncQueuedMessageFlag();
+  }
+
+  clearFlowPromptUpdate(): void {
+    this.assertNotDisposed("clearFlowPromptUpdate");
+    this.flowPromptUpdate = undefined;
     this.syncQueuedMessageFlag();
   }
 

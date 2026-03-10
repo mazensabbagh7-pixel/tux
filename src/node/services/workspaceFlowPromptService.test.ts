@@ -457,9 +457,13 @@ test("shouldEmitUpdate skips repeated clear notifications while deletion is pend
   const shouldEmitUpdate = (
     service as unknown as {
       shouldEmitUpdate: (
-        snapshot: unknown,
-        persisted: unknown,
-        pendingFingerprint: string | null
+        persisted: {
+          lastSentContent: string | null;
+          lastSentFingerprint: string | null;
+          autoSendMode: "off" | "end-of-turn";
+        },
+        pendingFingerprint: string | null,
+        currentFingerprint: string
       ) => boolean;
     }
   ).shouldEmitUpdate.bind(service);
@@ -467,19 +471,44 @@ test("shouldEmitUpdate skips repeated clear notifications while deletion is pend
   expect(
     shouldEmitUpdate(
       {
-        workspaceId: "workspace-1",
-        path: "/tmp/workspace/.mux/prompts/feature.md",
-        exists: false,
-        content: "",
-        hasNonEmptyContent: false,
-        modifiedAtMs: null,
-        contentFingerprint: null,
+        lastSentContent: "Keep this instruction active.",
+        lastSentFingerprint: "previous-fingerprint",
+        autoSendMode: "end-of-turn",
       },
+      "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    )
+  ).toBe(false);
+});
+
+test("shouldEmitUpdate respects auto-send being off", () => {
+  const service = new WorkspaceFlowPromptService({
+    getSessionDir: () => "/tmp/flow-prompt-session",
+  } as unknown as Config);
+
+  const shouldEmitUpdate = (
+    service as unknown as {
+      shouldEmitUpdate: (
+        persisted: {
+          lastSentContent: string | null;
+          lastSentFingerprint: string | null;
+          autoSendMode: "off" | "end-of-turn";
+        },
+        pendingFingerprint: string | null,
+        currentFingerprint: string
+      ) => boolean;
+    }
+  ).shouldEmitUpdate.bind(service);
+
+  expect(
+    shouldEmitUpdate(
       {
         lastSentContent: "Keep this instruction active.",
         lastSentFingerprint: "previous-fingerprint",
+        autoSendMode: "off",
       },
-      "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      null,
+      "new-fingerprint"
     )
   ).toBe(false);
 });
@@ -496,7 +525,8 @@ test("getState waits for an in-flight refresh instead of returning stale state",
     lastEnqueuedFingerprint: null,
     isCurrentVersionEnqueued: false,
     hasPendingUpdate: false,
-    pendingUpdatePreviewText: null,
+    autoSendMode: "off" as const,
+    updatePreviewText: null,
   };
   const freshState = {
     ...staleState,
@@ -559,11 +589,15 @@ it("includes the queued preview text in state while a flow prompt update is pend
           modifiedAtMs: number | null;
           contentFingerprint: string | null;
         },
-        persisted: { lastSentContent: string | null; lastSentFingerprint: string | null },
+        persisted: {
+          lastSentContent: string | null;
+          lastSentFingerprint: string | null;
+          autoSendMode: "off" | "end-of-turn";
+        },
         pendingFingerprint: string | null
       ) => {
         hasPendingUpdate: boolean;
-        pendingUpdatePreviewText: string | null;
+        updatePreviewText: string | null;
       };
     }
   ).buildState.bind(service);
@@ -587,13 +621,73 @@ it("includes the queued preview text in state while a flow prompt update is pend
     {
       lastSentContent: previousContent,
       lastSentFingerprint: "2b025ee42d57e6eaf463f4ed6d7ee0ec2a58d5a1f501ef50b57462d4be4ca0b1",
+      autoSendMode: "end-of-turn",
     },
     "94326d87717f640c44b44234d652ce38a34c79f5d6cbe2f1bb2ed9042f692e91"
   );
 
   expect(state.hasPendingUpdate).toBe(true);
-  expect(state.pendingUpdatePreviewText).toContain("Latest flow prompt changes:");
-  expect(state.pendingUpdatePreviewText).toContain("Updated context line 20");
+  expect(state.updatePreviewText).toContain("Latest flow prompt changes:");
+  expect(state.updatePreviewText).toContain("Updated context line 20");
+});
+
+it("keeps the live diff visible even when auto-send is off", () => {
+  const workspaceId = "workspace-1";
+  const service = new WorkspaceFlowPromptService({
+    getSessionDir: () => "/tmp/flow-prompt-session",
+  } as unknown as Config);
+
+  const buildState = (
+    service as unknown as {
+      buildState: (
+        snapshot: {
+          workspaceId: string;
+          path: string;
+          exists: boolean;
+          content: string;
+          hasNonEmptyContent: boolean;
+          modifiedAtMs: number | null;
+          contentFingerprint: string | null;
+        },
+        persisted: {
+          lastSentContent: string | null;
+          lastSentFingerprint: string | null;
+          autoSendMode: "off" | "end-of-turn";
+        },
+        pendingFingerprint: string | null
+      ) => {
+        hasPendingUpdate: boolean;
+        autoSendMode: "off" | "end-of-turn";
+        updatePreviewText: string | null;
+      };
+    }
+  ).buildState.bind(service);
+
+  const previousContent = "Keep edits scoped and explain why they matter.";
+  const nextContent = "Keep edits tightly scoped and explain why they matter.";
+
+  const state = buildState(
+    {
+      workspaceId,
+      path: "/tmp/workspace/.mux/prompts/feature.md",
+      exists: true,
+      content: nextContent,
+      hasNonEmptyContent: true,
+      modifiedAtMs: 1,
+      contentFingerprint: "4ed3f20f59f6f19039e3b9ca1e7e9040cd026b8d55cfab262503324fa419fe00",
+    },
+    {
+      lastSentContent: previousContent,
+      lastSentFingerprint: "ef45d76e44c5ac31c43c08bf9fcf76a151867766f3bfa75e95b0098e59ff65fd",
+      autoSendMode: "off",
+    },
+    null
+  );
+
+  expect(state.hasPendingUpdate).toBe(false);
+  expect(state.autoSendMode).toBe("off");
+  expect(state.updatePreviewText).toContain("Current flow prompt contents:");
+  expect(state.updatePreviewText).toContain("Keep edits tightly scoped");
 });
 
 it("keeps the queued preview visible when deleting the flow prompt file is still pending", () => {
@@ -614,11 +708,15 @@ it("keeps the queued preview visible when deleting the flow prompt file is still
           modifiedAtMs: number | null;
           contentFingerprint: string | null;
         },
-        persisted: { lastSentContent: string | null; lastSentFingerprint: string | null },
+        persisted: {
+          lastSentContent: string | null;
+          lastSentFingerprint: string | null;
+          autoSendMode: "off" | "end-of-turn";
+        },
         pendingFingerprint: string | null
       ) => {
         hasPendingUpdate: boolean;
-        pendingUpdatePreviewText: string | null;
+        updatePreviewText: string | null;
       };
     }
   ).buildState.bind(service);
@@ -636,12 +734,13 @@ it("keeps the queued preview visible when deleting the flow prompt file is still
     {
       lastSentContent: "Keep following the original flow prompt",
       lastSentFingerprint: "80b54f769f33b541a90900ac3fe33625bf2ec3ca3e9ec1415c2ab7ab6df554ef",
+      autoSendMode: "end-of-turn",
     },
     "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
   );
 
   expect(state.hasPendingUpdate).toBe(true);
-  expect(state.pendingUpdatePreviewText).toContain("flow prompt file is now empty");
+  expect(state.updatePreviewText).toContain("flow prompt file is now empty");
 });
 
 describe("buildFlowPromptUpdateMessage", () => {

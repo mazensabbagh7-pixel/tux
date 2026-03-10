@@ -13,6 +13,7 @@ import {
   FLOW_PROMPTS_DIR,
   getFlowPromptPathMarkerLine,
   getFlowPromptRelativePath,
+  type FlowPromptAutoSendMode,
 } from "@/common/constants/flowPrompting";
 import { getErrorMessage } from "@/common/utils/errors";
 import { shellQuote } from "@/common/utils/shell";
@@ -24,10 +25,12 @@ const FLOW_PROMPT_RECENT_POLL_INTERVAL_MS = 10_000;
 const FLOW_PROMPT_RECENT_WINDOW_MS = 24 * 60 * 60 * 1_000;
 const FLOW_PROMPT_STATE_FILE = "flow-prompt-state.json";
 const MAX_FLOW_PROMPT_DIFF_CHARS = 12_000;
+const DEFAULT_FLOW_PROMPT_AUTO_SEND_MODE: FlowPromptAutoSendMode = "off";
 
 interface PersistedFlowPromptState {
   lastSentContent: string | null;
   lastSentFingerprint: string | null;
+  autoSendMode: FlowPromptAutoSendMode;
 }
 
 export interface FlowPromptState {
@@ -40,7 +43,8 @@ export interface FlowPromptState {
   lastEnqueuedFingerprint: string | null;
   isCurrentVersionEnqueued: boolean;
   hasPendingUpdate: boolean;
-  pendingUpdatePreviewText: string | null;
+  autoSendMode: FlowPromptAutoSendMode;
+  updatePreviewText: string | null;
 }
 
 export interface FlowPromptUpdateRequest {
@@ -134,7 +138,9 @@ function areFlowPromptStatesEqual(a: FlowPromptState | null, b: FlowPromptState)
     a.contentFingerprint === b.contentFingerprint &&
     a.lastEnqueuedFingerprint === b.lastEnqueuedFingerprint &&
     a.isCurrentVersionEnqueued === b.isCurrentVersionEnqueued &&
-    a.hasPendingUpdate === b.hasPendingUpdate
+    a.hasPendingUpdate === b.hasPendingUpdate &&
+    a.autoSendMode === b.autoSendMode &&
+    a.updatePreviewText === b.updatePreviewText
   );
 }
 
@@ -355,6 +361,36 @@ export class WorkspaceFlowPromptService extends EventEmitter {
     await this.refreshMonitor(workspaceId, true);
   }
 
+  async setAutoSendMode(
+    workspaceId: string,
+    mode: FlowPromptAutoSendMode,
+    options?: { clearPending?: boolean }
+  ): Promise<FlowPromptState> {
+    const persisted = await this.readPersistedState(workspaceId);
+    await this.writePersistedState(workspaceId, {
+      ...persisted,
+      autoSendMode: mode,
+    });
+
+    const monitor = this.monitors.get(workspaceId);
+    if (options?.clearPending && monitor) {
+      monitor.pendingFingerprint = null;
+    }
+
+    // Auto-send mode lives beside the last-sent fingerprint in the session sidecar because
+    // file watching happens in the backend; the watcher needs the current preference even
+    // when the user changes it from the browser without another manual send.
+    return this.refreshMonitor(workspaceId, true);
+  }
+
+  async getCurrentUpdate(workspaceId: string): Promise<FlowPromptUpdateRequest | null> {
+    const snapshot = await this.readPromptSnapshot(workspaceId);
+    const persisted = await this.readPersistedState(workspaceId);
+    const pendingFingerprint = this.monitors.get(workspaceId)?.pendingFingerprint ?? null;
+    const state = this.buildState(snapshot, persisted, pendingFingerprint);
+    return this.buildCurrentUpdate(snapshot, persisted, state);
+  }
+
   async renamePromptFile(
     workspaceId: string,
     oldMetadata: WorkspaceMetadata,
@@ -525,8 +561,10 @@ export class WorkspaceFlowPromptService extends EventEmitter {
   async markAcceptedUpdate(workspaceId: string, nextContent: string): Promise<void> {
     const monitor = this.monitors.get(workspaceId);
     const nextFingerprint = computeFingerprint(nextContent);
+    const persisted = await this.readPersistedState(workspaceId);
 
     await this.writePersistedState(workspaceId, {
+      ...persisted,
       lastSentContent: nextContent,
       lastSentFingerprint: nextFingerprint,
     });
@@ -616,6 +654,7 @@ export class WorkspaceFlowPromptService extends EventEmitter {
 
       const pendingFingerprint = monitor?.pendingFingerprint ?? null;
       const state = this.buildState(snapshot, persisted, pendingFingerprint);
+      const currentUpdate = this.buildCurrentUpdate(snapshot, persisted, state);
 
       if (monitor) {
         const shouldEmitState = emitEvents && !areFlowPromptStatesEqual(monitor.lastState, state);
@@ -625,19 +664,12 @@ export class WorkspaceFlowPromptService extends EventEmitter {
         }
       }
 
-      if (emitEvents && this.shouldEmitUpdate(snapshot, persisted, pendingFingerprint)) {
-        this.emit("update", {
-          workspaceId,
-          path: snapshot.path,
-          nextContent: snapshot.content,
-          nextFingerprint: snapshot.contentFingerprint ?? computeFingerprint(snapshot.content),
-          text: buildFlowPromptUpdateMessage({
-            path: snapshot.path,
-            previousContent: persisted.lastSentContent ?? "",
-            nextContent: snapshot.content,
-          }),
-          state,
-        });
+      if (
+        emitEvents &&
+        currentUpdate &&
+        this.shouldEmitUpdate(persisted, pendingFingerprint, currentUpdate.nextFingerprint)
+      ) {
+        this.emit("update", currentUpdate);
       }
 
       return state;
@@ -664,34 +696,56 @@ export class WorkspaceFlowPromptService extends EventEmitter {
   }
 
   private shouldEmitUpdate(
-    snapshot: FlowPromptFileSnapshot,
     persisted: PersistedFlowPromptState,
-    pendingFingerprint: string | null
+    pendingFingerprint: string | null,
+    currentFingerprint: string
   ): boolean {
+    return persisted.autoSendMode === "end-of-turn" && pendingFingerprint !== currentFingerprint;
+  }
+
+  private buildCurrentUpdatePayload(
+    snapshot: FlowPromptFileSnapshot,
+    persisted: PersistedFlowPromptState
+  ): { nextFingerprint: string; text: string } | null {
     const previousTrimmed = (persisted.lastSentContent ?? "").trim();
+    const nextFingerprint = snapshot.contentFingerprint ?? computeFingerprint(snapshot.content);
 
-    if (!snapshot.exists || snapshot.contentFingerprint == null) {
-      const clearedFingerprint = computeFingerprint(snapshot.content);
-      if (pendingFingerprint === clearedFingerprint) {
-        return false;
-      }
-      return previousTrimmed.length > 0;
-    }
-
-    const currentFingerprint = snapshot.contentFingerprint;
-    if (pendingFingerprint === currentFingerprint) {
-      return false;
-    }
-
-    if (persisted.lastSentFingerprint === currentFingerprint) {
-      return false;
+    if (persisted.lastSentFingerprint === nextFingerprint) {
+      return null;
     }
 
     if (!snapshot.hasNonEmptyContent && previousTrimmed.length === 0) {
-      return false;
+      return null;
     }
 
-    return true;
+    return {
+      nextFingerprint,
+      text: buildFlowPromptUpdateMessage({
+        path: snapshot.path,
+        previousContent: persisted.lastSentContent ?? "",
+        nextContent: snapshot.content,
+      }),
+    };
+  }
+
+  private buildCurrentUpdate(
+    snapshot: FlowPromptFileSnapshot,
+    persisted: PersistedFlowPromptState,
+    state: FlowPromptState
+  ): FlowPromptUpdateRequest | null {
+    const payload = this.buildCurrentUpdatePayload(snapshot, persisted);
+    if (!payload) {
+      return null;
+    }
+
+    return {
+      workspaceId: snapshot.workspaceId,
+      path: snapshot.path,
+      nextContent: snapshot.content,
+      nextFingerprint: payload.nextFingerprint,
+      text: payload.text,
+      state,
+    };
   }
 
   private buildState(
@@ -704,13 +758,7 @@ export class WorkspaceFlowPromptService extends EventEmitter {
       snapshot.contentFingerprint ?? computeFingerprint(snapshot.content);
     const hasPendingUpdate =
       pendingFingerprint != null && pendingFingerprint === currentSnapshotFingerprint;
-    const pendingUpdatePreviewText = hasPendingUpdate
-      ? buildFlowPromptUpdateMessage({
-          path: snapshot.path,
-          previousContent: persisted.lastSentContent ?? "",
-          nextContent: snapshot.content,
-        })
-      : null;
+    const currentUpdatePayload = this.buildCurrentUpdatePayload(snapshot, persisted);
 
     return {
       workspaceId: snapshot.workspaceId,
@@ -724,7 +772,8 @@ export class WorkspaceFlowPromptService extends EventEmitter {
         snapshot.contentFingerprint != null &&
         snapshot.contentFingerprint === lastEnqueuedFingerprint,
       hasPendingUpdate,
-      pendingUpdatePreviewText,
+      autoSendMode: persisted.autoSendMode,
+      updatePreviewText: currentUpdatePayload?.text ?? null,
     };
   }
 
@@ -840,11 +889,16 @@ export class WorkspaceFlowPromptService extends EventEmitter {
         lastSentContent: typeof parsed.lastSentContent === "string" ? parsed.lastSentContent : null,
         lastSentFingerprint:
           typeof parsed.lastSentFingerprint === "string" ? parsed.lastSentFingerprint : null,
+        autoSendMode:
+          parsed.autoSendMode === "end-of-turn"
+            ? "end-of-turn"
+            : DEFAULT_FLOW_PROMPT_AUTO_SEND_MODE,
       };
     } catch {
       return {
         lastSentContent: null,
         lastSentFingerprint: null,
+        autoSendMode: DEFAULT_FLOW_PROMPT_AUTO_SEND_MODE,
       };
     }
   }

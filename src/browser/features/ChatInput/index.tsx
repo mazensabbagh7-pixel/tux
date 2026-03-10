@@ -2543,6 +2543,8 @@ const ChatInputInner: React.FC<ChatInputProps> = (props) => {
             onOpenProviders={() => open("providers", { expandProvider: "openai" })}
           />
 
+          {variant === "workspace" ? props.topAccessory : null}
+
           {/* File path suggestions (@src/foo.ts) */}
           <CommandSuggestions
             suggestions={atMentionSuggestions}

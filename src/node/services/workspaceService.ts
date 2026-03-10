@@ -99,6 +99,7 @@ import {
 import { coerceThinkingLevel, type ThinkingLevel } from "@/common/types/thinking";
 import { enforceThinkingPolicy } from "@/common/utils/thinking/policy";
 import { WORKSPACE_DEFAULTS } from "@/constants/workspaceDefaults";
+import type { FlowPromptAutoSendMode } from "@/common/constants/flowPrompting";
 import type { StreamEndEvent, StreamAbortEvent, ToolCallEndEvent } from "@/common/types/stream";
 import type { TerminalService } from "@/node/services/terminalService";
 import type { WorkspaceAISettingsSchema } from "@/common/orpc/schemas";
@@ -198,6 +199,12 @@ interface ExecuteBashOptions {
   cwdMode?: "default" | "repo-root" | null;
   repoRootProjectPath?: string | null;
   executionTarget?: "runtime" | "host-workspace";
+}
+
+interface PreparedFlowPromptDispatch {
+  session: AgentSession;
+  event: FlowPromptUpdateRequest;
+  options: SendMessageOptions & { fileParts?: FilePart[] };
 }
 
 /**
@@ -3008,18 +3015,51 @@ export class WorkspaceService extends EventEmitter {
     }
   }
 
-  private async handleFlowPromptUpdate(event: FlowPromptUpdateRequest): Promise<void> {
-    if (
-      this.removingWorkspaces.has(event.workspaceId) ||
-      this.renamingWorkspaces.has(event.workspaceId)
-    ) {
-      return;
+  async updateFlowPromptAutoSendMode(
+    workspaceId: string,
+    mode: FlowPromptAutoSendMode
+  ): Promise<Result<void, string>> {
+    try {
+      if (mode === "off") {
+        this.getOrCreateSession(workspaceId).clearFlowPromptUpdate();
+        await this.flowPromptService.setAutoSendMode(workspaceId, mode, { clearPending: true });
+      } else {
+        await this.flowPromptService.setAutoSendMode(workspaceId, mode);
+      }
+      return Ok(undefined);
+    } catch (error) {
+      return Err(`Failed to update Flow Prompting auto-send: ${getErrorMessage(error)}`);
     }
+  }
 
-    if (!this.config.findWorkspace(event.workspaceId)) {
-      return;
+  async sendFlowPromptNow(workspaceId: string): Promise<Result<void, string>> {
+    try {
+      const currentUpdate = await this.flowPromptService.getCurrentUpdate(workspaceId);
+      if (!currentUpdate) {
+        return Err("No flow prompt changes are ready to send.");
+      }
+
+      const prepared = await this.prepareFlowPromptDispatch(currentUpdate);
+      if (!prepared) {
+        return Err("Flow prompt changed before it could be sent. Save again to retry.");
+      }
+
+      const dispatchResult = await this.dispatchPreparedFlowPromptUpdate(prepared, {
+        interruptCurrentTurn: true,
+      });
+      if (!dispatchResult.success) {
+        return Err(dispatchResult.error);
+      }
+
+      return Ok(undefined);
+    } catch (error) {
+      return Err(`Failed to send Flow Prompting update: ${getErrorMessage(error)}`);
     }
+  }
 
+  private async prepareFlowPromptDispatch(
+    event: FlowPromptUpdateRequest
+  ): Promise<PreparedFlowPromptDispatch | null> {
     const session = this.getOrCreateSession(event.workspaceId);
     this.flowPromptService.rememberUpdate(
       event.workspaceId,
@@ -3034,47 +3074,111 @@ export class WorkspaceService extends EventEmitter {
     );
     if (!isCurrentFlowPromptVersion) {
       this.flowPromptService.forgetUpdate(event.workspaceId, event.nextFingerprint);
-      return;
+      return null;
     }
 
-    const options = {
-      ...sendOptions,
-      queueDispatchMode: "tool-end" as const,
-      muxMetadata: {
-        type: "flow-prompt-update",
-        path: event.path,
-        fingerprint: event.nextFingerprint,
+    return {
+      session,
+      event,
+      options: {
+        ...sendOptions,
+        queueDispatchMode: "turn-end",
+        muxMetadata: {
+          type: "flow-prompt-update",
+          path: event.path,
+          fingerprint: event.nextFingerprint,
+        },
       },
     };
+  }
 
-    if (session.isBusy()) {
-      this.flowPromptService.markPendingUpdate(event.workspaceId, event.nextContent);
-      session.queueFlowPromptUpdate({
-        message: event.text,
-        options,
-        internal: { synthetic: true },
+  private queueFlowPromptUpdateForLater(prepared: PreparedFlowPromptDispatch): void {
+    this.flowPromptService.markPendingUpdate(
+      prepared.event.workspaceId,
+      prepared.event.nextContent
+    );
+    prepared.session.queueFlowPromptUpdate({
+      message: prepared.event.text,
+      options: prepared.options,
+      internal: { synthetic: true },
+    });
+  }
+
+  private async dispatchPreparedFlowPromptUpdate(
+    prepared: PreparedFlowPromptDispatch,
+    options?: { interruptCurrentTurn?: boolean }
+  ): Promise<Result<void, string>> {
+    if (prepared.session.isBusy()) {
+      this.queueFlowPromptUpdateForLater(prepared);
+      if (!options?.interruptCurrentTurn) {
+        return Ok(undefined);
+      }
+
+      const interruptResult = await this.interruptStream(prepared.event.workspaceId, {
+        sendQueuedImmediately: true,
       });
-      return;
+      if (!interruptResult.success) {
+        return Err(interruptResult.error);
+      }
+      return Ok(undefined);
     }
 
-    const result = await this.sendMessage(event.workspaceId, event.text, options, {
-      synthetic: true,
-      requireIdle: true,
-      skipAutoResumeReset: true,
-    });
+    const result = await this.sendMessage(
+      prepared.event.workspaceId,
+      prepared.event.text,
+      prepared.options,
+      {
+        synthetic: true,
+        requireIdle: true,
+        skipAutoResumeReset: true,
+      }
+    );
 
-    if (!result.success && session.isBusy()) {
-      this.flowPromptService.markPendingUpdate(event.workspaceId, event.nextContent);
-      session.queueFlowPromptUpdate({
-        message: event.text,
-        options,
-        internal: { synthetic: true },
+    if (!result.success && prepared.session.isBusy()) {
+      this.queueFlowPromptUpdateForLater(prepared);
+      if (!options?.interruptCurrentTurn) {
+        return Ok(undefined);
+      }
+
+      const interruptResult = await this.interruptStream(prepared.event.workspaceId, {
+        sendQueuedImmediately: true,
       });
-      return;
+      if (!interruptResult.success) {
+        return Err(interruptResult.error);
+      }
+      return Ok(undefined);
     }
 
     if (!result.success) {
-      this.flowPromptService.forgetUpdate(event.workspaceId, event.nextFingerprint);
+      this.flowPromptService.forgetUpdate(
+        prepared.event.workspaceId,
+        prepared.event.nextFingerprint
+      );
+      return Err(getErrorMessage(result.error));
+    }
+
+    return Ok(undefined);
+  }
+
+  private async handleFlowPromptUpdate(event: FlowPromptUpdateRequest): Promise<void> {
+    if (
+      this.removingWorkspaces.has(event.workspaceId) ||
+      this.renamingWorkspaces.has(event.workspaceId)
+    ) {
+      return;
+    }
+
+    if (!this.config.findWorkspace(event.workspaceId)) {
+      return;
+    }
+
+    const prepared = await this.prepareFlowPromptDispatch(event);
+    if (!prepared) {
+      return;
+    }
+
+    const result = await this.dispatchPreparedFlowPromptUpdate(prepared);
+    if (!result.success) {
       log.error("Failed to enqueue Flow Prompting update", {
         workspaceId: event.workspaceId,
         error: result.error,

@@ -18,7 +18,8 @@ function createEmptyState(workspaceId: string): FlowPromptState {
     lastEnqueuedFingerprint: null,
     isCurrentVersionEnqueued: false,
     hasPendingUpdate: false,
-    pendingUpdatePreviewText: null,
+    autoSendMode: "off",
+    updatePreviewText: null,
   };
 }
 
@@ -33,7 +34,8 @@ function areStatesEqual(a: FlowPromptState, b: FlowPromptState): boolean {
     a.lastEnqueuedFingerprint === b.lastEnqueuedFingerprint &&
     a.isCurrentVersionEnqueued === b.isCurrentVersionEnqueued &&
     a.hasPendingUpdate === b.hasPendingUpdate &&
-    a.pendingUpdatePreviewText === b.pendingUpdatePreviewText
+    a.autoSendMode === b.autoSendMode &&
+    a.updatePreviewText === b.updatePreviewText
   );
 }
 

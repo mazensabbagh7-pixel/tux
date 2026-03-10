@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { FrontendWorkspaceMetadata } from "@/common/types/workspace";
 import type { TelemetryRuntimeType } from "@/common/telemetry/payload";
 import type { Review } from "@/common/types/review";
@@ -41,6 +42,8 @@ export interface ChatInputWorkspaceVariant {
   onReady?: (api: ChatInputAPI) => void;
   /** When true, surface the Flow Prompting shortcut in the inline hint row. */
   showFlowPromptShortcutHint?: boolean;
+  /** Optional UI rendered above the textarea while remaining part of the composer chrome. */
+  topAccessory?: ReactNode;
   /** Reviews currently attached to chat (from useReviews hook) */
   attachedReviews?: Review[];
   /** Detach a review from chat input (sets status to pending) */
