@@ -1026,6 +1026,11 @@ interface ChatInputPaneProps {
 const ChatInputPane: React.FC<ChatInputPaneProps> = (props) => {
   const { reviews } = props;
   const flowPrompt = useFlowPrompt(props.workspaceId, props.workspaceName, props.runtimeConfig);
+  const [isFlowPromptCollapsed, setIsFlowPromptCollapsed] = usePersistedState(
+    `flowPromptComposerCollapsed:${props.workspaceId}`,
+    false,
+    { listener: true }
+  );
 
   return (
     <div className="flex flex-col gap-2">
@@ -1086,7 +1091,7 @@ const ChatInputPane: React.FC<ChatInputPaneProps> = (props) => {
           props.workspaceId !== MUX_HELP_CHAT_WORKSPACE_ID && !flowPrompt.state?.exists
         }
         topAccessory={
-          flowPrompt.state?.exists ? (
+          flowPrompt.state?.exists && !isFlowPromptCollapsed ? (
             <FlowPromptComposerCard
               state={flowPrompt.state}
               error={flowPrompt.error}
@@ -1103,6 +1108,35 @@ const ChatInputPane: React.FC<ChatInputPaneProps> = (props) => {
               }}
               onSendNow={() => {
                 void flowPrompt.sendNow();
+              }}
+              onToggleCollapsed={() => {
+                setIsFlowPromptCollapsed(true);
+              }}
+            />
+          ) : null
+        }
+        leadingAccessory={
+          flowPrompt.state?.exists && isFlowPromptCollapsed ? (
+            <FlowPromptComposerCard
+              state={flowPrompt.state}
+              error={flowPrompt.error}
+              isCollapsed
+              isUpdatingAutoSendMode={flowPrompt.isUpdatingAutoSendMode}
+              isSendingNow={flowPrompt.isSendingNow}
+              onOpen={() => {
+                void flowPrompt.openFlowPrompt();
+              }}
+              onDisable={() => {
+                void flowPrompt.disableFlowPrompt();
+              }}
+              onAutoSendModeChange={(mode) => {
+                void flowPrompt.updateAutoSendMode(mode);
+              }}
+              onSendNow={() => {
+                void flowPrompt.sendNow();
+              }}
+              onToggleCollapsed={() => {
+                setIsFlowPromptCollapsed(false);
               }}
             />
           ) : null
