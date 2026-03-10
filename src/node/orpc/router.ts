@@ -2867,6 +2867,12 @@ export const router = (authToken?: string) => {
           }
           return { success: true };
         }),
+      updateSelectedAgent: t
+        .input(schemas.workspace.updateSelectedAgent.input)
+        .output(schemas.workspace.updateSelectedAgent.output)
+        .handler(async ({ context, input }) => {
+          return context.workspaceService.updateSelectedAgent(input.workspaceId, input.agentId);
+        }),
       updateAgentAISettings: t
         .input(schemas.workspace.updateAgentAISettings.input)
         .output(schemas.workspace.updateAgentAISettings.output)

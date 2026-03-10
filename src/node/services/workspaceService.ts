@@ -4104,6 +4104,58 @@ export class WorkspaceService extends EventEmitter {
     return Ok(true);
   }
 
+  async updateSelectedAgent(workspaceId: string, agentId: string): Promise<Result<void, string>> {
+    try {
+      const normalizedAgentId = agentId.trim().toLowerCase();
+      if (!normalizedAgentId) {
+        return Err("Agent ID is required");
+      }
+
+      const found = this.config.findWorkspace(workspaceId);
+      if (!found) {
+        return Err("Workspace not found");
+      }
+
+      const { projectPath, workspacePath } = found;
+      const config = this.config.loadConfigOrDefault();
+      const projectConfig = config.projects.get(projectPath);
+      if (!projectConfig) {
+        return Err(`Project not found: ${projectPath}`);
+      }
+
+      const workspaceEntry =
+        projectConfig.workspaces.find((workspace) => workspace.id === workspaceId) ??
+        projectConfig.workspaces.find((workspace) => workspace.path === workspacePath);
+      if (!workspaceEntry) {
+        return Err("Workspace not found");
+      }
+
+      if (workspaceEntry.agentId === normalizedAgentId) {
+        return Ok(undefined);
+      }
+
+      workspaceEntry.agentId = normalizedAgentId;
+      await this.config.saveConfig(config);
+
+      const allMetadata = await this.config.getAllWorkspaceMetadata();
+      const updatedMetadata = allMetadata.find((metadata) => metadata.id === workspaceId);
+      if (updatedMetadata) {
+        const enrichedMetadata = this.enrichFrontendMetadata(updatedMetadata);
+        const session = this.sessions.get(workspaceId);
+        if (session) {
+          session.emitMetadata(enrichedMetadata);
+        } else {
+          this.emit("metadata", { workspaceId, metadata: enrichedMetadata });
+        }
+      }
+
+      return Ok(undefined);
+    } catch (error) {
+      const message = getErrorMessage(error);
+      return Err(`Failed to update selected agent: ${message}`);
+    }
+  }
+
   async updateModeAISettings(
     workspaceId: string,
     mode: UIMode,

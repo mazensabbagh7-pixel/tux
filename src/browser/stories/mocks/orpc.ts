@@ -1453,6 +1453,7 @@ export function createMockORPCClient(options: MockORPCClientOptions = {}): APICl
         });
       },
       remove: () => Promise.resolve({ success: true }),
+      updateSelectedAgent: () => Promise.resolve({ success: true, data: undefined }),
       updateAgentAISettings: () => Promise.resolve({ success: true, data: undefined }),
       updateModeAISettings: () => Promise.resolve({ success: true, data: undefined }),
       updateTitle: () => Promise.resolve({ success: true, data: undefined }),

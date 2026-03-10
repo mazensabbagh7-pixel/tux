@@ -22,6 +22,48 @@ import type * as RouterContextModule from "./RouterContext";
 import type * as WorkspaceContextModule from "./WorkspaceContext";
 
 let mockAgentDefinitions: AgentDefinitionDescriptor[] = [];
+<<<<<<< HEAD
+||||||| parent of 4c2bf9b4a (🤖 fix: sync workspace agent selection for flow prompts)
+const apiClient = {
+  agents: {
+    list: () => Promise.resolve(mockAgentDefinitions),
+  },
+};
+
+void mock.module("@/browser/contexts/API", () => ({
+  useAPI: () => ({
+    api: apiClient,
+    status: "connected" as const,
+    error: null,
+    authenticate: () => undefined,
+    retry: () => undefined,
+  }),
+}));
+
+=======
+const updateSelectedAgentMock = mock(() =>
+  Promise.resolve({ success: true as const, data: undefined })
+);
+const apiClient = {
+  agents: {
+    list: () => Promise.resolve(mockAgentDefinitions),
+  },
+  workspace: {
+    updateSelectedAgent: updateSelectedAgentMock,
+  },
+};
+
+void mock.module("@/browser/contexts/API", () => ({
+  useAPI: () => ({
+    api: apiClient,
+    status: "connected" as const,
+    error: null,
+    authenticate: () => undefined,
+    retry: () => undefined,
+  }),
+}));
+
+>>>>>>> 4c2bf9b4a (🤖 fix: sync workspace agent selection for flow prompts)
 let mockWorkspaceMetadata = new Map<string, { parentWorkspaceId?: string; agentId?: string }>();
 
 let APIProvider!: typeof APIModule.APIProvider;
@@ -243,6 +285,7 @@ describe("AgentContext", () => {
     isolatedModuleDir = await importIsolatedAgentModules();
     mockAgentDefinitions = [];
     mockWorkspaceMetadata = new Map();
+    updateSelectedAgentMock.mockClear();
 
     originalWindow = globalThis.window;
     originalDocument = globalThis.document;
@@ -301,6 +344,27 @@ describe("AgentContext", () => {
 
     await waitFor(() => {
       expect(contextValue?.agentId).toBe("plan");
+    });
+  });
+
+  test("workspace-scoped agent selection is synced to backend metadata", async () => {
+    const workspaceId = "workspace-sync";
+    const projectPath = "/tmp/project";
+    mockAgentDefinitions = [AUTO_AGENT, EXEC_AGENT, PLAN_AGENT];
+    mockWorkspaceMetadata.set(workspaceId, {});
+    window.localStorage.setItem(getAgentIdKey(workspaceId), JSON.stringify("exec"));
+
+    render(
+      <AgentProvider workspaceId={workspaceId} projectPath={projectPath}>
+        <Harness onChange={() => undefined} />
+      </AgentProvider>
+    );
+
+    await waitFor(() => {
+      expect(updateSelectedAgentMock).toHaveBeenCalledWith({
+        workspaceId,
+        agentId: "exec",
+      });
     });
   });
 

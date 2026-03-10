@@ -147,6 +147,7 @@ function AgentProviderWithState(props: {
   }, []);
 
   const [refreshing, setRefreshing] = useState(false);
+  const pendingSelectedAgentSyncRef = useRef<string | null>(null);
 
   const fetchParamsRef = useRef({
     projectPath: props.projectPath,
@@ -245,6 +246,48 @@ function AgentProviderWithState(props: {
       ? currentMeta.agentId
       : coerceAgentId(isProjectScope ? (scopedAgentId ?? globalDefaultAgentId) : scopedAgentId);
   const currentAgent = loaded ? agents.find((a) => a.id === normalizedAgentId) : undefined;
+
+  useEffect(() => {
+    if (!api || !props.workspaceId || !currentMeta || isCurrentAgentLocked) {
+      return;
+    }
+
+    if (currentMeta.agentId === normalizedAgentId) {
+      pendingSelectedAgentSyncRef.current = null;
+      return;
+    }
+
+    const updateSelectedAgent = api.workspace?.updateSelectedAgent;
+    if (typeof updateSelectedAgent !== "function") {
+      return;
+    }
+
+    const syncKey = `${props.workspaceId}:${normalizedAgentId}`;
+    if (pendingSelectedAgentSyncRef.current === syncKey) {
+      return;
+    }
+
+    pendingSelectedAgentSyncRef.current = syncKey;
+    let cancelled = false;
+
+    // Flow Prompting and other backend-owned follow-up sends read workspace metadata,
+    // so keep the selected agent in sync with the visible picker state.
+    void updateSelectedAgent({ workspaceId: props.workspaceId, agentId: normalizedAgentId })
+      .then((result) => {
+        if (!result.success && !cancelled && pendingSelectedAgentSyncRef.current === syncKey) {
+          pendingSelectedAgentSyncRef.current = null;
+        }
+      })
+      .catch(() => {
+        if (!cancelled && pendingSelectedAgentSyncRef.current === syncKey) {
+          pendingSelectedAgentSyncRef.current = null;
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [api, currentMeta, isCurrentAgentLocked, normalizedAgentId, props.workspaceId]);
 
   const selectableAgents = useMemo(
     () => sortAgentsStable(agents.filter((a) => a.uiSelectable)),
