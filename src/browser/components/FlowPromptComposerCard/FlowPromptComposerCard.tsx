@@ -1,4 +1,5 @@
 import React from "react";
+import { parsePatch } from "diff";
 import { ChevronDown, ChevronRight, FileText, Send, SquarePen, Trash2 } from "lucide-react";
 import type { FlowPromptAutoSendMode } from "@/common/constants/flowPrompting";
 import type { FlowPromptState } from "@/common/orpc/types";
@@ -11,6 +12,7 @@ import {
   SelectValue,
 } from "@/browser/components/SelectPrimitive/SelectPrimitive";
 import { UserMessageContent } from "@/browser/features/Messages/UserMessageContent";
+import { DiffRenderer } from "@/browser/features/Shared/DiffRenderer";
 
 type FlowPromptPreviewKind = "diff" | "contents" | "cleared" | "raw";
 
@@ -45,9 +47,14 @@ function getFlowPromptPreviewDisplay(
 
   const diffIndex = previewText.indexOf(diffPrefix);
   if (diffIndex !== -1) {
+    const diffStart = diffIndex + diffPrefix.length;
+    const closingFenceIndex = previewText.lastIndexOf("\n```");
     return {
       kind: "diff",
-      content: previewText.slice(diffIndex + "Latest flow prompt changes:\n".length).trim(),
+      content:
+        closingFenceIndex >= diffStart
+          ? previewText.slice(diffStart, closingFenceIndex)
+          : previewText.slice(diffStart),
     };
   }
 
@@ -108,6 +115,35 @@ function getCollapsedStatusText(params: {
     return params.autoSendMode === "end-of-turn" ? "Ready now · auto-send on" : "Ready to send";
   }
   return params.autoSendMode === "end-of-turn" ? "Watching saves · auto-send on" : "Watching saves";
+}
+
+function renderFlowPromptDiffPreview(diff: string, filePath: string): React.ReactNode {
+  try {
+    const patches = parsePatch(diff);
+    if (patches.length === 0) {
+      return <UserMessageContent content={`\`\`\`diff\n${diff}\n\`\`\``} variant="queued" />;
+    }
+
+    // Reuse the parsed file-edit diff presentation here so Flow Prompting previews read like
+    // the rest of Mux's diff UIs instead of a raw fenced patch blob.
+    return patches.map((patch, patchIdx) => (
+      <React.Fragment key={`${patch.oldFileName ?? filePath}-${patchIdx}`}>
+        {patch.hunks.map((hunk, hunkIdx) => (
+          <DiffRenderer
+            key={`${patchIdx}-${hunk.oldStart}-${hunk.newStart}-${hunkIdx}`}
+            content={hunk.lines.join("\n")}
+            showLineNumbers={true}
+            oldStart={hunk.oldStart}
+            newStart={hunk.newStart}
+            filePath={filePath}
+            fontSize="11px"
+          />
+        ))}
+      </React.Fragment>
+    ));
+  } catch {
+    return <UserMessageContent content={`\`\`\`diff\n${diff}\n\`\`\``} variant="queued" />;
+  }
 }
 
 export const FlowPromptComposerCard: React.FC<FlowPromptComposerCardProps> = (props) => {
@@ -256,7 +292,11 @@ export const FlowPromptComposerCard: React.FC<FlowPromptComposerCardProps> = (pr
                   </div>
                 </div>
                 <div className="max-h-44 overflow-y-auto px-2.5 py-1.5">
-                  <UserMessageContent content={preview.content} variant="queued" />
+                  {preview.kind === "diff" ? (
+                    renderFlowPromptDiffPreview(preview.content, props.state.path)
+                  ) : (
+                    <UserMessageContent content={preview.content} variant="queued" />
+                  )}
                 </div>
               </div>
             ) : null}

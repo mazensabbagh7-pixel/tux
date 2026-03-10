@@ -24,13 +24,54 @@ function createState(overrides?: Partial<FlowPromptState>): FlowPromptState {
 }
 
 describe("FlowPromptComposerCard", () => {
+  const originalRequestAnimationFrame = globalThis.requestAnimationFrame;
+  const originalCancelAnimationFrame = globalThis.cancelAnimationFrame;
+  const originalResizeObserver = globalThis.ResizeObserver;
+
   beforeEach(() => {
     globalThis.window = new GlobalWindow() as unknown as Window & typeof globalThis;
     globalThis.document = globalThis.window.document;
+
+    const requestAnimationFrameMock: typeof requestAnimationFrame = (callback) => {
+      return globalThis.setTimeout(() => callback(Date.now()), 0) as unknown as number;
+    };
+    const cancelAnimationFrameMock: typeof cancelAnimationFrame = (handle) => {
+      globalThis.clearTimeout(handle as unknown as ReturnType<typeof globalThis.setTimeout>);
+    };
+
+    class ResizeObserver {
+      constructor(_callback: ResizeObserverCallback) {
+        void _callback;
+      }
+      observe(_target: Element): void {
+        void _target;
+      }
+      unobserve(_target: Element): void {
+        void _target;
+      }
+      disconnect(): void {
+        return undefined;
+      }
+    }
+
+    globalThis.ResizeObserver = ResizeObserver;
+    globalThis.window.ResizeObserver = ResizeObserver;
+    globalThis.requestAnimationFrame = requestAnimationFrameMock;
+    globalThis.cancelAnimationFrame = cancelAnimationFrameMock;
+    globalThis.window.requestAnimationFrame = requestAnimationFrameMock;
+    globalThis.window.cancelAnimationFrame = cancelAnimationFrameMock;
   });
 
   afterEach(() => {
     cleanup();
+    globalThis.requestAnimationFrame = originalRequestAnimationFrame;
+    globalThis.cancelAnimationFrame = originalCancelAnimationFrame;
+    globalThis.ResizeObserver = originalResizeObserver;
+    if (globalThis.window) {
+      globalThis.window.requestAnimationFrame = originalRequestAnimationFrame;
+      globalThis.window.cancelAnimationFrame = originalCancelAnimationFrame;
+      globalThis.window.ResizeObserver = originalResizeObserver;
+    }
     globalThis.window = undefined as unknown as Window & typeof globalThis;
     globalThis.document = undefined as unknown as Document;
   });
@@ -43,6 +84,10 @@ describe("FlowPromptComposerCard", () => {
       "",
       "Latest flow prompt changes:",
       "```diff",
+      "Index: /tmp/workspace/.mux/prompts/feature.md",
+      "===================================================================",
+      "--- /tmp/workspace/.mux/prompts/feature.md",
+      "+++ /tmp/workspace/.mux/prompts/feature.md",
       "@@ -1 +1 @@",
       "-old line",
       "+new line",
@@ -65,7 +110,7 @@ describe("FlowPromptComposerCard", () => {
     expect(view.container.textContent).not.toContain("Flow prompt file path:");
     expect(view.container.textContent).not.toContain("[Flow prompt updated.");
     expect(view.container.textContent).not.toContain("Latest flow prompt changes:");
-    expect(view.container.textContent).toContain("+new line");
+    expect(view.container.querySelector('[data-diff-indicator="true"]')).toBeTruthy();
     expect(view.getByText("Live flow prompt diff")).toBeTruthy();
   });
 
