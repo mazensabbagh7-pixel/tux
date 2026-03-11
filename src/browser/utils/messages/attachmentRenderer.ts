@@ -82,6 +82,24 @@ export function renderAttachmentToContent(attachment: PostCompactionAttachment):
 const PLAN_TRUNCATION_NOTE = "\n\n...(truncated)\n";
 const FLOW_PROMPT_TRUNCATION_NOTE = "\n\n...(truncated)\n";
 
+function truncateAttachmentContentToBudget(
+  content: string,
+  maxChars: number,
+  truncationNote: string
+): string {
+  if (content.length <= maxChars) {
+    return content;
+  }
+
+  if (maxChars <= truncationNote.length) {
+    // Tight post-compaction budgets should still keep whatever prompt/plan content fits instead
+    // of appending a truncation note that pushes the whole attachment block over budget.
+    return content.slice(0, maxChars);
+  }
+
+  return `${content.slice(0, maxChars - truncationNote.length)}${truncationNote}`;
+}
+
 function renderFlowPromptReferenceWithBudget(
   attachment: FlowPromptReferenceAttachment,
   maxChars: number
@@ -99,11 +117,11 @@ function renderFlowPromptReferenceWithBudget(
     return minimal.length <= maxChars ? minimal : null;
   }
 
-  let flowPromptContent = attachment.flowPromptContent;
-  if (flowPromptContent.length > availableForContent) {
-    const sliceLength = Math.max(0, availableForContent - FLOW_PROMPT_TRUNCATION_NOTE.length);
-    flowPromptContent = `${flowPromptContent.slice(0, sliceLength)}${FLOW_PROMPT_TRUNCATION_NOTE}`;
-  }
+  const flowPromptContent = truncateAttachmentContentToBudget(
+    attachment.flowPromptContent,
+    availableForContent,
+    FLOW_PROMPT_TRUNCATION_NOTE
+  );
 
   return `${prefix}${flowPromptContent}${suffix}`;
 }
@@ -126,11 +144,11 @@ function renderPlanFileReferenceWithBudget(
     return minimal.length <= maxChars ? minimal : null;
   }
 
-  let planContent = attachment.planContent;
-  if (planContent.length > availableForContent) {
-    const sliceLength = Math.max(0, availableForContent - PLAN_TRUNCATION_NOTE.length);
-    planContent = `${planContent.slice(0, sliceLength)}${PLAN_TRUNCATION_NOTE}`;
-  }
+  const planContent = truncateAttachmentContentToBudget(
+    attachment.planContent,
+    availableForContent,
+    PLAN_TRUNCATION_NOTE
+  );
 
   return `${prefix}${planContent}${suffix}`;
 }
