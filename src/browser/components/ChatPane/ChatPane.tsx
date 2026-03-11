@@ -85,7 +85,10 @@ import {
   normalizeQueuedMessage,
   type EditingMessageState,
 } from "@/browser/utils/chatEditing";
-import { FlowPromptComposerCard } from "../FlowPromptComposerCard/FlowPromptComposerCard";
+import {
+  FlowPromptComposerCard,
+  shouldShowFlowPromptComposerCard,
+} from "../FlowPromptComposerCard/FlowPromptComposerCard";
 import { recordSyntheticReactRenderSample } from "@/browser/utils/perf/reactProfileCollector";
 
 // Perf e2e runs load the production bundle where React's onRender profiler callbacks may not
@@ -1032,6 +1035,8 @@ const ChatInputPane: React.FC<ChatInputPaneProps> = (props) => {
     { listener: true }
   );
 
+  const shouldShowFlowPromptCard = shouldShowFlowPromptComposerCard(flowPrompt.state);
+
   return (
     <div className="flex flex-col gap-2">
       {/*
@@ -1066,7 +1071,7 @@ const ChatInputPane: React.FC<ChatInputPaneProps> = (props) => {
           This agent task is queued and will start automatically when a parallel slot is available.
         </div>
       )}
-      {flowPrompt.state?.exists ? (
+      {flowPrompt.state && shouldShowFlowPromptCard ? (
         <FlowPromptComposerCard
           state={flowPrompt.state}
           error={flowPrompt.error}
@@ -1112,7 +1117,7 @@ const ChatInputPane: React.FC<ChatInputPaneProps> = (props) => {
         canInterrupt={props.canInterrupt}
         onReady={props.onChatInputReady}
         showFlowPromptShortcutHint={
-          props.workspaceId !== MUX_HELP_CHAT_WORKSPACE_ID && !flowPrompt.state?.exists
+          props.workspaceId !== MUX_HELP_CHAT_WORKSPACE_ID && !shouldShowFlowPromptCard
         }
         attachedReviews={reviews.attachedReviews}
         onDetachReview={reviews.detachReview}

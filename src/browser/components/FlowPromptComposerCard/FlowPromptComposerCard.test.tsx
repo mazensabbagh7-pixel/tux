@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render } from "@testing-library/react";
 
 import { ThemeProvider } from "@/browser/contexts/ThemeContext";
 import type { FlowPromptState } from "@/common/orpc/types";
-import { FlowPromptComposerCard } from "./FlowPromptComposerCard";
+import { FlowPromptComposerCard, shouldShowFlowPromptComposerCard } from "./FlowPromptComposerCard";
 
 function createState(overrides?: Partial<FlowPromptState>): FlowPromptState {
   return {
@@ -147,6 +147,55 @@ describe("FlowPromptComposerCard", () => {
     expect(view.getByText("Live flow prompt contents")).toBeTruthy();
     expect(view.container.querySelector('[data-diff-indicator="true"]')).toBeNull();
     expect(view.container.textContent).toContain("still just prompt contents");
+  });
+
+  test("keeps the clear-update banner visible after the prompt file has been deleted", () => {
+    const clearPreviewText = [
+      "[Flow prompt updated. Follow current agent instructions.]",
+      "",
+      "Flow prompt file path: /tmp/workspace/.mux/prompts/feature.md (MUST use this exact path string for tool calls; do NOT rewrite it into another form, even if it resolves to the same file)",
+      "",
+      "The flow prompt file is now empty. Stop relying on any prior flow prompt instructions from that file unless the user saves new content.",
+    ].join("\n");
+
+    const view = render(
+      <ThemeProvider forcedTheme="dark">
+        <FlowPromptComposerCard
+          state={createState({
+            exists: false,
+            hasNonEmptyContent: false,
+            updatePreviewText: clearPreviewText,
+          })}
+          onOpen={() => undefined}
+          onDisable={() => undefined}
+          onSendNow={() => undefined}
+          onToggleCollapsed={() => undefined}
+          onAutoSendModeChange={() => undefined}
+        />
+      </ThemeProvider>
+    );
+
+    expect(view.container.textContent).toContain("Send this clear update");
+    expect(view.getByText("Live flow prompt clear")).toBeTruthy();
+    expect(view.queryByText("Open prompt")).toBeNull();
+    expect(view.queryByText("Disable")).toBeNull();
+  });
+
+  test("keeps the composer visible when only a clear update remains", () => {
+    expect(
+      shouldShowFlowPromptComposerCard({
+        exists: false,
+        updatePreviewText: "The flow prompt file is now empty.",
+        hasPendingUpdate: false,
+      })
+    ).toBe(true);
+    expect(
+      shouldShowFlowPromptComposerCard({
+        exists: false,
+        updatePreviewText: null,
+        hasPendingUpdate: false,
+      })
+    ).toBe(false);
   });
 
   test("renders a minimizable horizontal strip that can expand again", () => {

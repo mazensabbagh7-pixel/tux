@@ -34,6 +34,17 @@ interface FlowPromptComposerCardProps {
   onAutoSendModeChange: (mode: FlowPromptAutoSendMode) => void;
 }
 
+export function shouldShowFlowPromptComposerCard(
+  state:
+    | Pick<FlowPromptState, "exists" | "updatePreviewText" | "hasPendingUpdate">
+    | null
+    | undefined
+): boolean {
+  return (
+    state != null && (state.exists || state.updatePreviewText != null || state.hasPendingUpdate)
+  );
+}
+
 function getFlowPromptPreviewDisplay(
   previewText: string | null | undefined
 ): FlowPromptPreviewDisplay | null {
@@ -155,15 +166,20 @@ export const FlowPromptComposerCard: React.FC<FlowPromptComposerCardProps> = (pr
   const isAutoSendChanging = props.isUpdatingAutoSendMode === true;
   const isCollapsed = props.isCollapsed === true;
   const isSendingNow = props.isSendingNow === true;
-  const statusText = props.state.hasPendingUpdate
-    ? "Latest save is queued for the end of this turn."
-    : hasPreview
-      ? props.state.autoSendMode === "end-of-turn"
-        ? "Latest save is ready now. Future saves auto-send at turn end."
-        : "Latest save is ready here until you send it."
-      : props.state.autoSendMode === "end-of-turn"
-        ? "Saving auto-sends the latest prompt update at turn end."
-        : "Saving keeps the latest prompt update here until you send it.";
+  const statusText =
+    !props.state.exists && preview?.kind === "cleared"
+      ? props.state.hasPendingUpdate
+        ? "Flow prompt file deleted. The clear update is queued for the end of this turn."
+        : "Flow prompt file deleted. Send this clear update to remove prior prompt instructions."
+      : props.state.hasPendingUpdate
+        ? "Latest save is queued for the end of this turn."
+        : hasPreview
+          ? props.state.autoSendMode === "end-of-turn"
+            ? "Latest save is ready now. Future saves auto-send at turn end."
+            : "Latest save is ready here until you send it."
+          : props.state.autoSendMode === "end-of-turn"
+            ? "Saving auto-sends the latest prompt update at turn end."
+            : "Saving keeps the latest prompt update here until you send it.";
   const collapsedStatusText = getCollapsedStatusText({
     hasPendingUpdate: props.state.hasPendingUpdate,
     hasPreview,
@@ -264,24 +280,28 @@ export const FlowPromptComposerCard: React.FC<FlowPromptComposerCardProps> = (pr
                   <Send className="h-3.5 w-3.5" />
                   {isSendingNow ? "Sending…" : "Send now"}
                 </Button>
-                <Button
-                  variant="secondary"
-                  size="xs"
-                  className="gap-1.5 px-2.5"
-                  onClick={props.onOpen}
-                >
-                  <SquarePen className="h-3.5 w-3.5" />
-                  Open prompt
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="xs"
-                  className="gap-1.5 px-2.5"
-                  onClick={props.onDisable}
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                  Disable
-                </Button>
+                {props.state.exists ? (
+                  <>
+                    <Button
+                      variant="secondary"
+                      size="xs"
+                      className="gap-1.5 px-2.5"
+                      onClick={props.onOpen}
+                    >
+                      <SquarePen className="h-3.5 w-3.5" />
+                      Open prompt
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="xs"
+                      className="gap-1.5 px-2.5"
+                      onClick={props.onDisable}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      Disable
+                    </Button>
+                  </>
+                ) : null}
               </div>
             </div>
             {preview ? (
