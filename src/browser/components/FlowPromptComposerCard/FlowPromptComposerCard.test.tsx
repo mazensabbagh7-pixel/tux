@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
 import { GlobalWindow } from "happy-dom";
 import { cleanup, fireEvent, render } from "@testing-library/react";
 
+import { TooltipProvider } from "@/browser/components/Tooltip/Tooltip";
 import { ThemeProvider } from "@/browser/contexts/ThemeContext";
 import type { FlowPromptState } from "@/common/orpc/types";
 import { FlowPromptComposerCard, shouldShowFlowPromptComposerCard } from "./FlowPromptComposerCard";
@@ -21,6 +22,18 @@ function createState(overrides?: Partial<FlowPromptState>): FlowPromptState {
     updatePreviewText: null,
     ...overrides,
   };
+}
+
+type FlowPromptComposerCardTestProps = Parameters<typeof FlowPromptComposerCard>[0];
+
+function renderCard(props: FlowPromptComposerCardTestProps) {
+  return render(
+    <TooltipProvider>
+      <ThemeProvider forcedTheme="dark">
+        <FlowPromptComposerCard {...props} />
+      </ThemeProvider>
+    </TooltipProvider>
+  );
 }
 
 describe("FlowPromptComposerCard", () => {
@@ -94,18 +107,14 @@ describe("FlowPromptComposerCard", () => {
       "```",
     ].join("\n");
 
-    const view = render(
-      <ThemeProvider forcedTheme="dark">
-        <FlowPromptComposerCard
-          state={createState({ updatePreviewText: diffPreviewText })}
-          onOpen={() => undefined}
-          onDisable={() => undefined}
-          onSendNow={() => undefined}
-          onToggleCollapsed={() => undefined}
-          onAutoSendModeChange={() => undefined}
-        />
-      </ThemeProvider>
-    );
+    const view = renderCard({
+      state: createState({ updatePreviewText: diffPreviewText }),
+      onOpen: () => undefined,
+      onDisable: () => undefined,
+      onSendNow: () => undefined,
+      onToggleCollapsed: () => undefined,
+      onAutoSendModeChange: () => undefined,
+    });
 
     expect(view.container.textContent).not.toContain("Flow prompt file path:");
     expect(view.container.textContent).not.toContain("[Flow prompt updated.");
@@ -131,18 +140,14 @@ describe("FlowPromptComposerCard", () => {
       "```",
     ].join("\n");
 
-    const view = render(
-      <ThemeProvider forcedTheme="dark">
-        <FlowPromptComposerCard
-          state={createState({ updatePreviewText: contentsPreviewText })}
-          onOpen={() => undefined}
-          onDisable={() => undefined}
-          onSendNow={() => undefined}
-          onToggleCollapsed={() => undefined}
-          onAutoSendModeChange={() => undefined}
-        />
-      </ThemeProvider>
-    );
+    const view = renderCard({
+      state: createState({ updatePreviewText: contentsPreviewText }),
+      onOpen: () => undefined,
+      onDisable: () => undefined,
+      onSendNow: () => undefined,
+      onToggleCollapsed: () => undefined,
+      onAutoSendModeChange: () => undefined,
+    });
 
     expect(view.getByText("Live flow prompt contents")).toBeTruthy();
     expect(view.container.querySelector('[data-diff-indicator="true"]')).toBeNull();
@@ -158,27 +163,23 @@ describe("FlowPromptComposerCard", () => {
       "The flow prompt file is now empty. Stop relying on any prior flow prompt instructions from that file unless the user saves new content.",
     ].join("\n");
 
-    const view = render(
-      <ThemeProvider forcedTheme="dark">
-        <FlowPromptComposerCard
-          state={createState({
-            exists: false,
-            hasNonEmptyContent: false,
-            updatePreviewText: clearPreviewText,
-          })}
-          onOpen={() => undefined}
-          onDisable={() => undefined}
-          onSendNow={() => undefined}
-          onToggleCollapsed={() => undefined}
-          onAutoSendModeChange={() => undefined}
-        />
-      </ThemeProvider>
-    );
+    const view = renderCard({
+      state: createState({
+        exists: false,
+        hasNonEmptyContent: false,
+        updatePreviewText: clearPreviewText,
+      }),
+      onOpen: () => undefined,
+      onDisable: () => undefined,
+      onSendNow: () => undefined,
+      onToggleCollapsed: () => undefined,
+      onAutoSendModeChange: () => undefined,
+    });
 
     expect(view.container.textContent).toContain("Send this clear update");
     expect(view.getByText("Live flow prompt clear")).toBeTruthy();
-    expect(view.queryByText("Open prompt")).toBeNull();
-    expect(view.queryByText("Disable")).toBeNull();
+    expect(view.queryByRole("button", { name: "Open prompt" })).toBeNull();
+    expect(view.queryByRole("button", { name: "Disable" })).toBeNull();
   });
 
   test("keeps the composer visible when only a clear update remains", () => {
@@ -198,38 +199,53 @@ describe("FlowPromptComposerCard", () => {
     ).toBe(false);
   });
 
-  test("shows a copy-path action instead of rendering the raw prompt path in the header", () => {
+  test("keeps icon actions accessible without rendering their labels inline", () => {
     const state = createState();
-    const view = render(
-      <ThemeProvider forcedTheme="dark">
-        <FlowPromptComposerCard
-          state={state}
-          onOpen={() => undefined}
-          onDisable={() => undefined}
-          onSendNow={() => undefined}
-          onToggleCollapsed={() => undefined}
-          onAutoSendModeChange={() => undefined}
-        />
-      </ThemeProvider>
-    );
+    const view = renderCard({
+      state,
+      onOpen: () => undefined,
+      onDisable: () => undefined,
+      onSendNow: () => undefined,
+      onToggleCollapsed: () => undefined,
+      onAutoSendModeChange: () => undefined,
+    });
 
-    expect(view.getByText("Copy path")).toBeTruthy();
+    expect(view.getByRole("button", { name: "Send now" })).toBeTruthy();
+    expect(view.getByRole("button", { name: "Copy path" })).toBeTruthy();
+    expect(view.getByRole("button", { name: "Open prompt" })).toBeTruthy();
+    expect(view.getByRole("button", { name: "Disable" })).toBeTruthy();
+    expect(view.container.textContent).not.toContain("Send now");
+    expect(view.container.textContent).not.toContain("Copy path");
+    expect(view.container.textContent).not.toContain("Open prompt");
+    expect(view.container.textContent).not.toContain("Disable");
     expect(view.container.textContent).not.toContain(state.path);
+  });
+
+  test("left-aligns the collapsed strip copy like the other composer accessories", () => {
+    const view = renderCard({
+      state: createState(),
+      isCollapsed: true,
+      onOpen: () => undefined,
+      onDisable: () => undefined,
+      onSendNow: () => undefined,
+      onToggleCollapsed: () => undefined,
+      onAutoSendModeChange: () => undefined,
+    });
+
+    expect(view.getByLabelText("Expand Flow Prompting composer").className).toContain("text-left");
   });
 
   test("renders a minimizable horizontal strip that can expand again", () => {
     const onToggleCollapsed = mock(() => undefined);
-    const view = render(
-      <FlowPromptComposerCard
-        state={createState()}
-        isCollapsed
-        onOpen={() => undefined}
-        onDisable={() => undefined}
-        onSendNow={() => undefined}
-        onToggleCollapsed={onToggleCollapsed}
-        onAutoSendModeChange={() => undefined}
-      />
-    );
+    const view = renderCard({
+      state: createState(),
+      isCollapsed: true,
+      onOpen: () => undefined,
+      onDisable: () => undefined,
+      onSendNow: () => undefined,
+      onToggleCollapsed,
+      onAutoSendModeChange: () => undefined,
+    });
 
     expect(view.getByTestId("flow-prompt-composer-strip")).toBeTruthy();
     expect(view.container.textContent).toContain("Flow Prompting");
