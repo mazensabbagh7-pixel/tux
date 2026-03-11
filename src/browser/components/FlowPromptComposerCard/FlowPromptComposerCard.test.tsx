@@ -198,6 +198,25 @@ describe("FlowPromptComposerCard", () => {
     ).toBe(false);
   });
 
+  test("shows a copy-path action instead of rendering the raw prompt path in the header", () => {
+    const state = createState();
+    const view = render(
+      <ThemeProvider forcedTheme="dark">
+        <FlowPromptComposerCard
+          state={state}
+          onOpen={() => undefined}
+          onDisable={() => undefined}
+          onSendNow={() => undefined}
+          onToggleCollapsed={() => undefined}
+          onAutoSendModeChange={() => undefined}
+        />
+      </ThemeProvider>
+    );
+
+    expect(view.getByText("Copy path")).toBeTruthy();
+    expect(view.container.textContent).not.toContain(state.path);
+  });
+
   test("renders a minimizable horizontal strip that can expand again", () => {
     const onToggleCollapsed = mock(() => undefined);
     const view = render(

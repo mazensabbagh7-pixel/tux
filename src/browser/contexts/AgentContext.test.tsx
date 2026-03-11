@@ -117,6 +117,7 @@ describe("AgentContext", () => {
 
   afterEach(() => {
     cleanup();
+    mock.restore();
     globalThis.window = originalWindow;
     globalThis.document = originalDocument;
     globalThis.localStorage = originalLocalStorage;

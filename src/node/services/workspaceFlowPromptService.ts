@@ -61,6 +61,8 @@ interface FlowPromptMonitor {
   stopped: boolean;
   refreshing: boolean;
   refreshPromise: Promise<FlowPromptState> | null;
+  queuedRefresh: boolean;
+  queuedRefreshEmitEvents: boolean;
   pendingFingerprint: string | null;
   inFlightFingerprint: string | null;
   lastState: FlowPromptState | null;
@@ -476,6 +478,8 @@ export class WorkspaceFlowPromptService extends EventEmitter {
       stopped: false,
       refreshing: false,
       refreshPromise: null,
+      queuedRefresh: false,
+      queuedRefreshEmitEvents: false,
       pendingFingerprint: null,
       inFlightFingerprint: null,
       lastState: null,
@@ -661,7 +665,15 @@ export class WorkspaceFlowPromptService extends EventEmitter {
   private async refreshMonitor(workspaceId: string, emitEvents: boolean): Promise<FlowPromptState> {
     const monitor = this.monitors.get(workspaceId);
     if (monitor?.refreshing) {
-      if (!emitEvents && monitor.refreshPromise) {
+      const shouldQueueFollowUpRefresh = emitEvents || monitor.lastState == null;
+      if (shouldQueueFollowUpRefresh) {
+        // A save can land while an earlier prompt read is still in flight. Queue one immediate
+        // follow-up refresh so the first save still updates the composer preview instead of
+        // waiting for the user to save again.
+        monitor.queuedRefresh = true;
+        monitor.queuedRefreshEmitEvents ||= emitEvents;
+      }
+      if (monitor.refreshPromise) {
         return monitor.refreshPromise;
       }
       return monitor.lastState ?? this.computeStateFromScratch(workspaceId);
@@ -669,48 +681,64 @@ export class WorkspaceFlowPromptService extends EventEmitter {
 
     if (monitor) {
       monitor.refreshing = true;
+      monitor.queuedRefresh = false;
+      monitor.queuedRefreshEmitEvents = false;
     }
 
     const refreshPromise = (async () => {
-      const snapshot = await this.readPromptSnapshot(workspaceId);
-      const persisted = await this.readPersistedState(workspaceId);
+      let shouldEmitEvents = emitEvents;
 
-      if (monitor && snapshot.contentFingerprint !== monitor.pendingFingerprint) {
-        const shouldClearPending =
-          snapshot.contentFingerprint == null ||
-          snapshot.contentFingerprint === persisted.lastSentFingerprint;
-        if (shouldClearPending) {
-          monitor.pendingFingerprint = null;
+      while (true) {
+        const snapshot = await this.readPromptSnapshot(workspaceId);
+        const persisted = await this.readPersistedState(workspaceId);
+
+        if (monitor && snapshot.contentFingerprint !== monitor.pendingFingerprint) {
+          const shouldClearPending =
+            snapshot.contentFingerprint == null ||
+            snapshot.contentFingerprint === persisted.lastSentFingerprint;
+          if (shouldClearPending) {
+            monitor.pendingFingerprint = null;
+          }
+        }
+
+        const pendingFingerprint = monitor?.pendingFingerprint ?? null;
+        const inFlightFingerprint = monitor?.inFlightFingerprint ?? null;
+        const state = this.buildState(snapshot, persisted, pendingFingerprint);
+        const currentUpdate = this.buildCurrentUpdate(snapshot, persisted, state);
+
+        if (monitor) {
+          const shouldEmitState =
+            shouldEmitEvents && !areFlowPromptStatesEqual(monitor.lastState, state);
+          monitor.lastState = state;
+          if (shouldEmitState) {
+            this.emit("state", { workspaceId, state });
+          }
+        }
+
+        if (
+          shouldEmitEvents &&
+          currentUpdate &&
+          this.shouldEmitUpdate(
+            persisted,
+            pendingFingerprint,
+            inFlightFingerprint,
+            currentUpdate.nextFingerprint
+          )
+        ) {
+          this.emit("update", currentUpdate);
+        }
+
+        const shouldRefreshAgain = monitor?.queuedRefresh === true;
+        shouldEmitEvents ||= monitor?.queuedRefreshEmitEvents === true;
+        if (monitor) {
+          monitor.queuedRefresh = false;
+          monitor.queuedRefreshEmitEvents = false;
+        }
+
+        if (!shouldRefreshAgain) {
+          return state;
         }
       }
-
-      const pendingFingerprint = monitor?.pendingFingerprint ?? null;
-      const inFlightFingerprint = monitor?.inFlightFingerprint ?? null;
-      const state = this.buildState(snapshot, persisted, pendingFingerprint);
-      const currentUpdate = this.buildCurrentUpdate(snapshot, persisted, state);
-
-      if (monitor) {
-        const shouldEmitState = emitEvents && !areFlowPromptStatesEqual(monitor.lastState, state);
-        monitor.lastState = state;
-        if (shouldEmitState) {
-          this.emit("state", { workspaceId, state });
-        }
-      }
-
-      if (
-        emitEvents &&
-        currentUpdate &&
-        this.shouldEmitUpdate(
-          persisted,
-          pendingFingerprint,
-          inFlightFingerprint,
-          currentUpdate.nextFingerprint
-        )
-      ) {
-        this.emit("update", currentUpdate);
-      }
-
-      return state;
     })();
 
     if (monitor) {

@@ -641,6 +641,8 @@ test("getState waits for an in-flight refresh instead of returning stale state",
           stopped: boolean;
           refreshing: boolean;
           refreshPromise: Promise<typeof freshState> | null;
+          queuedRefresh: boolean;
+          queuedRefreshEmitEvents: boolean;
           pendingFingerprint: string | null;
           inFlightFingerprint: string | null;
           lastState: typeof staleState | null;
@@ -656,6 +658,8 @@ test("getState waits for an in-flight refresh instead of returning stale state",
     stopped: false,
     refreshing: true,
     refreshPromise: Promise.resolve(freshState),
+    queuedRefresh: false,
+    queuedRefreshEmitEvents: false,
     pendingFingerprint: null,
     inFlightFingerprint: null,
     lastState: staleState,
@@ -665,6 +669,149 @@ test("getState waits for an in-flight refresh instead of returning stale state",
   });
 
   expect(await service.getState(workspaceId)).toEqual(freshState);
+});
+
+test("refreshMonitor reruns once when a save lands during an in-flight refresh", async () => {
+  const workspaceId = "workspace-1";
+  const previousContent = Array.from(
+    { length: 40 },
+    (_, index) => `Context line ${index + 1}`
+  ).join("\n");
+  const nextContent = previousContent.replace("Context line 20", "Updated context line 20");
+  const staleSnapshot = {
+    workspaceId,
+    path: "/tmp/workspace/.mux/prompts/feature.md",
+    exists: true,
+    content: previousContent,
+    hasNonEmptyContent: true,
+    modifiedAtMs: 1,
+    contentFingerprint: "2b025ee42d57e6eaf463f4ed6d7ee0ec2a58d5a1f501ef50b57462d4be4ca0b1",
+  };
+  const freshSnapshot = {
+    ...staleSnapshot,
+    content: nextContent,
+    modifiedAtMs: 2,
+    contentFingerprint: "94326d87717f640c44b44234d652ce38a34c79f5d6cbe2f1bb2ed9042f692e91",
+  };
+  const staleState = {
+    workspaceId,
+    path: staleSnapshot.path,
+    exists: true,
+    hasNonEmptyContent: true,
+    modifiedAtMs: staleSnapshot.modifiedAtMs,
+    contentFingerprint: staleSnapshot.contentFingerprint,
+    lastEnqueuedFingerprint: staleSnapshot.contentFingerprint,
+    isCurrentVersionEnqueued: true,
+    hasPendingUpdate: false,
+    autoSendMode: "off" as const,
+    updatePreviewText: null,
+  };
+  const service = new WorkspaceFlowPromptService({
+    getSessionDir: () => "/tmp/flow-prompt-session",
+  } as unknown as Config);
+
+  let snapshotReads = 0;
+  const firstSnapshotGate: {
+    resolve: ((snapshot: typeof staleSnapshot) => void) | null;
+  } = {
+    resolve: null,
+  };
+  spyOn(
+    service as unknown as {
+      readPromptSnapshot: (workspaceId: string) => Promise<typeof staleSnapshot>;
+    },
+    "readPromptSnapshot"
+  ).mockImplementation(async () => {
+    snapshotReads += 1;
+    if (snapshotReads === 1) {
+      return await new Promise<typeof staleSnapshot>((resolve) => {
+        firstSnapshotGate.resolve = resolve;
+      });
+    }
+    return freshSnapshot;
+  });
+  spyOn(
+    service as unknown as {
+      readPersistedState: (workspaceId: string) => Promise<{
+        lastSentContent: string | null;
+        lastSentFingerprint: string | null;
+        autoSendMode: "off" | "end-of-turn";
+      }>;
+    },
+    "readPersistedState"
+  ).mockResolvedValue({
+    lastSentContent: previousContent,
+    lastSentFingerprint: staleSnapshot.contentFingerprint,
+    autoSendMode: "off",
+  });
+
+  const monitors = (
+    service as unknown as {
+      monitors: Map<
+        string,
+        {
+          timer: null;
+          stopped: boolean;
+          refreshing: boolean;
+          refreshPromise: Promise<{
+            contentFingerprint: string | null;
+            updatePreviewText: string | null;
+          }> | null;
+          queuedRefresh: boolean;
+          queuedRefreshEmitEvents: boolean;
+          pendingFingerprint: string | null;
+          inFlightFingerprint: string | null;
+          lastState: typeof staleState | null;
+          activeChatSubscriptions: number;
+          lastOpenedAtMs: number | null;
+          lastKnownActivityAtMs: number | null;
+        }
+      >;
+    }
+  ).monitors;
+  monitors.set(workspaceId, {
+    timer: null,
+    stopped: false,
+    refreshing: false,
+    refreshPromise: null,
+    queuedRefresh: false,
+    queuedRefreshEmitEvents: false,
+    pendingFingerprint: null,
+    inFlightFingerprint: null,
+    lastState: staleState,
+    activeChatSubscriptions: 0,
+    lastOpenedAtMs: null,
+    lastKnownActivityAtMs: null,
+  });
+
+  const refreshMonitor = (
+    service as unknown as {
+      refreshMonitor: (
+        workspaceId: string,
+        emitEvents: boolean
+      ) => Promise<{
+        contentFingerprint: string | null;
+        updatePreviewText: string | null;
+      }>;
+    }
+  ).refreshMonitor.bind(service);
+
+  // Saving while the initial refresh is still reading the file should rerun once so the
+  // first saved diff shows up immediately instead of after a second save.
+  const firstRefreshPromise = refreshMonitor(workspaceId, true);
+  await Promise.resolve();
+  const queuedRefreshPromise = refreshMonitor(workspaceId, true);
+  if (!firstSnapshotGate.resolve) {
+    throw new Error("Expected the first snapshot read to be waiting");
+  }
+  firstSnapshotGate.resolve(staleSnapshot);
+
+  const refreshedState = await firstRefreshPromise;
+  expect(await queuedRefreshPromise).toEqual(refreshedState);
+  expect(snapshotReads).toBe(2);
+  expect(refreshedState.contentFingerprint).toBe(freshSnapshot.contentFingerprint);
+  expect(refreshedState.updatePreviewText).toContain("Latest flow prompt changes:");
+  expect(refreshedState.updatePreviewText).toContain("Updated context line 20");
 });
 
 it("includes the queued preview text in state while a flow prompt update is pending", () => {

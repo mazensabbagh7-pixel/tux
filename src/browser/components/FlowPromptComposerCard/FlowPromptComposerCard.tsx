@@ -1,9 +1,19 @@
 import React from "react";
 import { parsePatch } from "diff";
-import { ChevronDown, ChevronRight, FileText, Send, SquarePen, Trash2 } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronRight,
+  Clipboard,
+  ClipboardCheck,
+  FileText,
+  Send,
+  SquarePen,
+  Trash2,
+} from "lucide-react";
 import type { FlowPromptAutoSendMode } from "@/common/constants/flowPrompting";
 import type { FlowPromptState } from "@/common/orpc/types";
 import { Button } from "@/browser/components/Button/Button";
+import { useCopyToClipboard } from "@/browser/hooks/useCopyToClipboard";
 import {
   Select,
   SelectContent,
@@ -163,6 +173,8 @@ function renderFlowPromptDiffPreview(diff: string, filePath: string): React.Reac
 export const FlowPromptComposerCard: React.FC<FlowPromptComposerCardProps> = (props) => {
   const preview = getFlowPromptPreviewDisplay(props.state.updatePreviewText);
   const hasPreview = preview != null;
+  const { copied, copyToClipboard } = useCopyToClipboard();
+  const canCopyPath = props.state.path.trim().length > 0;
   const isAutoSendChanging = props.isUpdatingAutoSendMode === true;
   const isCollapsed = props.isCollapsed === true;
   const isSendingNow = props.isSendingNow === true;
@@ -198,6 +210,12 @@ export const FlowPromptComposerCard: React.FC<FlowPromptComposerCardProps> = (pr
     if (value === "off" || value === "end-of-turn") {
       props.onAutoSendModeChange(value);
     }
+  };
+  const handleCopyPath = () => {
+    if (!canCopyPath) {
+      return;
+    }
+    void copyToClipboard(props.state.path);
   };
 
   return (
@@ -237,92 +255,108 @@ export const FlowPromptComposerCard: React.FC<FlowPromptComposerCardProps> = (pr
       {!isCollapsed && (
         <div className="border-border mx-auto max-w-4xl space-y-2 border-t py-2">
           <div className="border-border-medium bg-background-secondary/60 rounded-md border px-2.5 py-2">
-            <div className="flex flex-col gap-2.5 lg:flex-row lg:items-start lg:justify-between">
-              <div className="min-w-0 flex-1">
-                <div className="flex min-w-0 flex-wrap items-center gap-2 sm:flex-nowrap">
-                  <div className="text-foreground flex shrink-0 items-center gap-2 text-sm font-medium">
-                    <FileText className="h-4 w-4 shrink-0" />
-                    Flow Prompting
-                  </div>
-                  <div className="border-border-medium bg-background text-muted flex min-w-0 flex-1 items-center rounded-sm border px-1.5 py-0.5 text-[10px]">
-                    <code className="block min-w-0 truncate">{props.state.path}</code>
-                  </div>
+            <div className="flex flex-col gap-2.5">
+              <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+                <div className="text-foreground flex items-center gap-2 text-sm font-medium">
+                  <FileText className="h-4 w-4 shrink-0" />
+                  Flow Prompting
                 </div>
-                <p className="text-muted mt-1 text-[11px] leading-4">{statusText}</p>
-                {props.error ? <p className="mt-1 text-xs text-red-400">{props.error}</p> : null}
-              </div>
-              <div className="flex w-full flex-wrap items-center justify-end gap-1.5 lg:w-auto lg:shrink-0 lg:justify-start">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-muted shrink-0 text-[11px] font-medium tracking-wide uppercase">
-                    Auto-send
-                  </span>
-                  <Select
-                    value={props.state.autoSendMode}
-                    onValueChange={handleAutoSendModeChange}
-                    disabled={isAutoSendChanging}
+                <div className="flex w-full flex-wrap items-center justify-end gap-1.5 lg:w-auto lg:shrink-0 lg:justify-start">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-muted shrink-0 text-[11px] font-medium tracking-wide uppercase">
+                      Auto-send
+                    </span>
+                    <Select
+                      value={props.state.autoSendMode}
+                      onValueChange={handleAutoSendModeChange}
+                      disabled={isAutoSendChanging}
+                    >
+                      <SelectTrigger className="border-border-medium bg-background w-32 text-[11px]">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="off">Off</SelectItem>
+                        <SelectItem value="end-of-turn">End-of-turn</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <Button
+                    variant="secondary"
+                    size="xs"
+                    className="gap-1.5 px-2.5"
+                    onClick={props.onSendNow}
+                    disabled={!hasPreview || isSendingNow}
                   >
-                    <SelectTrigger className="border-border-medium bg-background w-32 text-[11px]">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="off">Off</SelectItem>
-                      <SelectItem value="end-of-turn">End-of-turn</SelectItem>
-                    </SelectContent>
-                  </Select>
+                    <Send className="h-3.5 w-3.5" />
+                    {isSendingNow ? "Sending…" : "Send now"}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    className="gap-1.5 px-2.5"
+                    onClick={handleCopyPath}
+                    disabled={!canCopyPath}
+                  >
+                    {copied ? (
+                      <ClipboardCheck className="h-3.5 w-3.5" />
+                    ) : (
+                      <Clipboard className="h-3.5 w-3.5" />
+                    )}
+                    {copied ? "Copied path" : "Copy path"}
+                  </Button>
+                  {props.state.exists ? (
+                    <>
+                      <Button
+                        variant="secondary"
+                        size="xs"
+                        className="gap-1.5 px-2.5"
+                        onClick={props.onOpen}
+                      >
+                        <SquarePen className="h-3.5 w-3.5" />
+                        Open prompt
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="xs"
+                        className="gap-1.5 px-2.5"
+                        onClick={props.onDisable}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                        Disable
+                      </Button>
+                    </>
+                  ) : null}
                 </div>
-                <Button
-                  variant="secondary"
-                  size="xs"
-                  className="gap-1.5 px-2.5"
-                  onClick={props.onSendNow}
-                  disabled={!hasPreview || isSendingNow}
-                >
-                  <Send className="h-3.5 w-3.5" />
-                  {isSendingNow ? "Sending…" : "Send now"}
-                </Button>
-                {props.state.exists ? (
-                  <>
-                    <Button
-                      variant="secondary"
-                      size="xs"
-                      className="gap-1.5 px-2.5"
-                      onClick={props.onOpen}
-                    >
-                      <SquarePen className="h-3.5 w-3.5" />
-                      Open prompt
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="xs"
-                      className="gap-1.5 px-2.5"
-                      onClick={props.onDisable}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                      Disable
-                    </Button>
-                  </>
-                ) : null}
               </div>
+              {/*
+                Keep the status copy full-width and move the long file path behind an explicit
+                copy action so the Flow Prompting controls stay readable while saves surface
+                their preview immediately below.
+              */}
+              <div className="min-w-0 space-y-1">
+                <p className="text-muted text-[11px] leading-4">{statusText}</p>
+                {props.error ? <p className="text-xs text-red-400">{props.error}</p> : null}
+              </div>
+              {preview ? (
+                <div className="border-border-medium bg-background rounded-md border">
+                  <div className="border-border-medium flex items-center justify-between gap-2 border-b px-2.5 py-1">
+                    <div className="text-foreground text-[11px] leading-none font-medium">
+                      {previewLabel}
+                    </div>
+                    <div className="text-muted text-[10px] font-medium tracking-wide uppercase">
+                      {previewModeText}
+                    </div>
+                  </div>
+                  <div className="max-h-44 overflow-y-auto px-2.5 py-1.5">
+                    {preview.kind === "diff" ? (
+                      renderFlowPromptDiffPreview(preview.content, props.state.path)
+                    ) : (
+                      <UserMessageContent content={preview.content} variant="queued" />
+                    )}
+                  </div>
+                </div>
+              ) : null}
             </div>
-            {preview ? (
-              <div className="border-border-medium bg-background mt-2 rounded-md border">
-                <div className="border-border-medium flex items-center justify-between gap-2 border-b px-2.5 py-1">
-                  <div className="text-foreground text-[11px] leading-none font-medium">
-                    {previewLabel}
-                  </div>
-                  <div className="text-muted text-[10px] font-medium tracking-wide uppercase">
-                    {previewModeText}
-                  </div>
-                </div>
-                <div className="max-h-44 overflow-y-auto px-2.5 py-1.5">
-                  {preview.kind === "diff" ? (
-                    renderFlowPromptDiffPreview(preview.content, props.state.path)
-                  ) : (
-                    <UserMessageContent content={preview.content} variant="queued" />
-                  )}
-                </div>
-              </div>
-            ) : null}
           </div>
         </div>
       )}
