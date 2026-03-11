@@ -1054,7 +1054,7 @@ function AppInner() {
       }
 
       // Play event sound (independent of notification settings).
-      playEventSound(eventSoundSettingsRef.current, "agent_review_ready");
+      playEventSound(eventSoundSettingsRef.current, "agent_review_ready", api);
 
       // Skip notification if the selected workspace is focused (Slack-like behavior).
       // Notification suppression intentionally follows selection state, not chat-route visibility.
