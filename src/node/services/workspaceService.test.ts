@@ -1073,10 +1073,11 @@ describe("WorkspaceService Flow Prompting update ordering", () => {
     expect(flowPromptSession.queueFlowPromptUpdate).not.toHaveBeenCalled();
   });
 
-  test("marks immediately dispatched Flow Prompting revisions as in flight", async () => {
-    const workspaceId = "flow-in-flight-workspace";
+  test("clears any restored queued Flow Prompt update before immediately dispatching a newer revision", async () => {
+    const workspaceId = "flow-stale-queued-workspace";
     const flowPromptSession = {
       isBusy: mock(() => false),
+      clearFlowPromptUpdate: mock(() => undefined),
       getFlowPromptSendOptions: mock(() =>
         Promise.resolve({
           model: "openai:gpt-4o-mini",
@@ -1096,6 +1097,70 @@ describe("WorkspaceService Flow Prompting update ordering", () => {
         flowPromptService: {
           isCurrentFingerprint: (workspaceId: string, fingerprint: string) => Promise<boolean>;
           rememberUpdate: (workspaceId: string, fingerprint: string, nextContent: string) => void;
+          clearPendingUpdate: (workspaceId: string, fingerprint?: string) => void;
+          markInFlightUpdate: (workspaceId: string, fingerprint: string) => void;
+        };
+      }
+    ).flowPromptService;
+    spyOn(flowPromptService, "rememberUpdate").mockImplementation(() => undefined);
+    spyOn(flowPromptService, "isCurrentFingerprint").mockResolvedValue(true);
+    const clearPendingUpdate = spyOn(flowPromptService, "clearPendingUpdate").mockImplementation(
+      () => undefined
+    );
+    const markInFlightUpdate = spyOn(flowPromptService, "markInFlightUpdate").mockImplementation(
+      () => undefined
+    );
+    const sendMessage = spyOn(workspaceService, "sendMessage").mockResolvedValue(Ok(undefined));
+
+    await (
+      workspaceService as unknown as {
+        handleFlowPromptUpdate: (event: {
+          workspaceId: string;
+          path: string;
+          nextContent: string;
+          nextFingerprint: string;
+          text: string;
+        }) => Promise<void>;
+      }
+    ).handleFlowPromptUpdate({
+      workspaceId,
+      path: "/tmp/test/workspace/.mux/prompts/test-workspace.md",
+      nextContent: "newest flow prompt revision",
+      nextFingerprint: "newest-fingerprint",
+      text: "[Flow prompt updated. Follow current agent instructions.]",
+    });
+
+    expect(flowPromptSession.clearFlowPromptUpdate).toHaveBeenCalledTimes(1);
+    expect(clearPendingUpdate).toHaveBeenCalledWith(workspaceId);
+    expect(markInFlightUpdate).toHaveBeenCalledWith(workspaceId, "newest-fingerprint");
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+  });
+
+  test("marks immediately dispatched Flow Prompting revisions as in flight", async () => {
+    const workspaceId = "flow-in-flight-workspace";
+    const flowPromptSession = {
+      isBusy: mock(() => false),
+      clearFlowPromptUpdate: mock(() => undefined),
+      getFlowPromptSendOptions: mock(() =>
+        Promise.resolve({
+          model: "openai:gpt-4o-mini",
+          agentId: "exec",
+        })
+      ),
+      queueFlowPromptUpdate: mock(() => undefined),
+    };
+    (
+      workspaceService as unknown as {
+        getOrCreateSession: (workspaceId: string) => AgentSession;
+      }
+    ).getOrCreateSession = mock(() => flowPromptSession as unknown as AgentSession);
+
+    const flowPromptService = (
+      workspaceService as unknown as {
+        flowPromptService: {
+          isCurrentFingerprint: (workspaceId: string, fingerprint: string) => Promise<boolean>;
+          rememberUpdate: (workspaceId: string, fingerprint: string, nextContent: string) => void;
+          clearPendingUpdate: (workspaceId: string, fingerprint?: string) => void;
           markInFlightUpdate: (workspaceId: string, fingerprint: string) => void;
           clearInFlightUpdate: (workspaceId: string, fingerprint?: string) => void;
         };
@@ -1103,6 +1168,7 @@ describe("WorkspaceService Flow Prompting update ordering", () => {
     ).flowPromptService;
     spyOn(flowPromptService, "rememberUpdate").mockImplementation(() => undefined);
     spyOn(flowPromptService, "isCurrentFingerprint").mockResolvedValue(true);
+    spyOn(flowPromptService, "clearPendingUpdate").mockImplementation(() => undefined);
     const markInFlightUpdate = spyOn(flowPromptService, "markInFlightUpdate").mockImplementation(
       () => undefined
     );

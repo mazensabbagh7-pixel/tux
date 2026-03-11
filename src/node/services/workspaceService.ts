@@ -3139,6 +3139,11 @@ export class WorkspaceService extends EventEmitter {
       return Ok(undefined);
     }
 
+    // If a previous queued Flow Prompt send failed, sendQueuedMessages() restores that older
+    // retry into the session queue. Clear the superseded queued/pending revision before directly
+    // dispatching the newer save so stream-end cannot replay stale prompt instructions later.
+    prepared.session.clearFlowPromptUpdate();
+    this.flowPromptService.clearPendingUpdate(prepared.event.workspaceId);
     this.flowPromptService.markInFlightUpdate(
       prepared.event.workspaceId,
       prepared.event.nextFingerprint

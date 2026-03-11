@@ -516,6 +516,21 @@ export class WorkspaceFlowPromptService extends EventEmitter {
     this.refreshMonitorInBackground(workspaceId);
   }
 
+  clearPendingUpdate(workspaceId: string, fingerprint?: string): void {
+    const monitor = this.monitors.get(workspaceId);
+    const pendingFingerprint = monitor?.pendingFingerprint;
+    if (pendingFingerprint == null || !monitor) {
+      return;
+    }
+
+    if (fingerprint != null && pendingFingerprint !== fingerprint) {
+      return;
+    }
+
+    monitor.pendingFingerprint = null;
+    this.refreshMonitorInBackground(workspaceId);
+  }
+
   markInFlightUpdate(workspaceId: string, fingerprint: string): void {
     const monitor = this.monitors.get(workspaceId);
     if (!monitor) {
