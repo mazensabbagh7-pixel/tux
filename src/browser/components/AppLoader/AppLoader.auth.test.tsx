@@ -51,6 +51,14 @@ void mock.module("@/browser/contexts/API", () => ({
   },
 }));
 
+void mock.module("../../App", () => ({
+  __esModule: true,
+  // App imports the full sidebar tree (including react-dnd) even though these auth-path tests only
+  // need AppLoader's pre-App branching. Keep the unit focused so cross-file DOM teardown cannot
+  // trip react-dnd's MutationObserver bootstrap between test files.
+  default: () => <div data-testid="AppMock" />,
+}));
+
 void mock.module("@/browser/components/LoadingScreen/LoadingScreen", () => ({
   LoadingScreen: () => {
     const { theme } = useTheme();
