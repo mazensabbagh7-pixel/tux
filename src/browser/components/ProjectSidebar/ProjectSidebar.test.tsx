@@ -3,8 +3,6 @@ import "../../../../tests/ui/dom";
 import { type PropsWithChildren } from "react";
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
-import * as ReactDndModule from "react-dnd";
-import * as ReactDndHtml5BackendModule from "react-dnd-html5-backend";
 import * as MuxLogoDarkModule from "@/browser/assets/logos/mux-logo-dark.svg?react";
 import * as MuxLogoLightModule from "@/browser/assets/logos/mux-logo-light.svg?react";
 import { installDom } from "../../../../tests/ui/dom";
@@ -39,8 +37,6 @@ import * as SectionDragLayerModule from "../SectionDragLayer/SectionDragLayer";
 import * as DraggableSectionModule from "../DraggableSection/DraggableSection";
 import * as AgentListItemModule from "../AgentListItem/AgentListItem";
 
-import ProjectSidebar from "./ProjectSidebar";
-
 const agentItemTestId = (workspaceId: string) => `agent-item-${workspaceId}`;
 const toggleButtonLabel = (workspaceId: string) => `toggle-completed-${workspaceId}`;
 
@@ -49,6 +45,20 @@ function TestWrapper(props: PropsWithChildren) {
 }
 
 const passthroughRef = <T,>(value: T): T => value;
+
+let ProjectSidebar: (typeof import("./ProjectSidebar"))["default"];
+
+void mock.module("react-dnd", () => ({
+  DndProvider: TestWrapper,
+  useDrag: () => [{ isDragging: false }, passthroughRef, () => undefined] as const,
+  useDrop: () => [{ isOver: false }, passthroughRef] as const,
+  useDragLayer: () => ({ isDragging: false, item: null, currentOffset: null }),
+}));
+
+void mock.module("react-dnd-html5-backend", () => ({
+  HTML5Backend: {},
+  getEmptyImage: () => null,
+}));
 
 function resolveVoidResult() {
   return Promise.resolve({ success: true as const, data: undefined });
@@ -69,27 +79,6 @@ function installProjectSidebarTestDoubles() {
   spyOn(MuxLogoLightModule, "default").mockImplementation((() => (
     <svg data-testid="mux-logo-light" />
   )) as typeof MuxLogoLightModule.default);
-
-  spyOn(ReactDndModule, "DndProvider").mockImplementation(
-    TestWrapper as unknown as typeof ReactDndModule.DndProvider
-  );
-  spyOn(ReactDndModule, "useDrag").mockImplementation(
-    (() =>
-      [
-        { isDragging: false },
-        passthroughRef,
-        () => undefined,
-      ] as const) as unknown as typeof ReactDndModule.useDrag
-  );
-  spyOn(ReactDndModule, "useDrop").mockImplementation(
-    (() => [{ isOver: false }, passthroughRef] as const) as unknown as typeof ReactDndModule.useDrop
-  );
-  spyOn(ReactDndModule, "useDragLayer").mockImplementation((() => ({
-    isDragging: false,
-    item: null,
-    currentOffset: null,
-  })) as unknown as typeof ReactDndModule.useDragLayer);
-  spyOn(ReactDndHtml5BackendModule, "getEmptyImage").mockImplementation(() => new Image());
 
   spyOn(DesktopTitlebarModule, "isDesktopMode").mockImplementation(() => false);
   spyOn(ThemeContextModule, "useTheme").mockImplementation(() => ({
@@ -309,7 +298,7 @@ function createWorkspace(
 let cleanupDom: (() => void) | null = null;
 
 describe("ProjectSidebar multi-project completed-subagent toggles", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     cleanupDom = installDom();
     window.localStorage.clear();
     window.localStorage.setItem(
@@ -317,6 +306,7 @@ describe("ProjectSidebar multi-project completed-subagent toggles", () => {
       JSON.stringify([MULTI_PROJECT_SIDEBAR_SECTION_ID])
     );
     installProjectSidebarTestDoubles();
+    ({ default: ProjectSidebar } = await import("./ProjectSidebar"));
   });
 
   afterEach(() => {

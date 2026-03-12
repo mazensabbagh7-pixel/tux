@@ -99,11 +99,12 @@ void mock.module("@/browser/components/AuthTokenModal/AuthTokenModal", () => ({
   clearStoredAuthToken: () => {},
 }));
 
-import { AppLoader } from "../AppLoader/AppLoader";
+let AppLoader: (typeof import("../AppLoader/AppLoader"))["AppLoader"];
 
 describe("AppLoader", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     cleanupDom = installDom();
+    ({ AppLoader } = await import("../AppLoader/AppLoader"));
   });
 
   afterEach(() => {
