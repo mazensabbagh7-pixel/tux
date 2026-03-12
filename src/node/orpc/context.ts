@@ -34,6 +34,23 @@ import type { ServerAuthService } from "@/node/services/serverAuthService";
 import type { SshPromptService } from "@/node/services/sshPromptService";
 import type { AnalyticsService } from "@/node/services/analytics/analyticsService";
 
+export interface ProcessDiagnostics {
+  memory: {
+    rss: number;
+    heapUsed: number;
+    heapTotal: number;
+    external: number;
+    arrayBuffers: number;
+  };
+  processes: {
+    mcp: number;
+    background: number;
+    pty: number;
+    total: number;
+  };
+  uptime: number;
+}
+
 export interface ORPCContext {
   config: Config;
   aiService: AIService;
@@ -69,5 +86,6 @@ export interface ORPCContext {
   serverAuthService: ServerAuthService;
   sshPromptService: SshPromptService;
   analyticsService: AnalyticsService;
+  getProcessDiagnostics?: () => Promise<ProcessDiagnostics>;
   headers?: IncomingHttpHeaders;
 }

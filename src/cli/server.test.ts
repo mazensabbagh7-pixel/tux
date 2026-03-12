@@ -166,8 +166,37 @@ describe("oRPC Server Endpoints", () => {
     test("GET /health returns ok status", async () => {
       const response = await fetch(`${serverHandle.server.baseUrl}/health`);
       expect(response.ok).toBe(true);
-      const data = (await response.json()) as { status: string };
-      expect(data).toEqual({ status: "ok" });
+      const data = (await response.json()) as {
+        status: string;
+        diagnostics: {
+          memory: {
+            rss: number;
+            heapUsed: number;
+            heapTotal: number;
+            external: number;
+            arrayBuffers: number;
+          };
+          processes: {
+            mcp: number;
+            background: number;
+            pty: number;
+            total: number;
+          };
+          uptime: number;
+        };
+      };
+      expect(data.status).toBe("ok");
+      expect(data.diagnostics.memory.rss).toBeNumber();
+      expect(data.diagnostics.memory.heapUsed).toBeNumber();
+      expect(data.diagnostics.memory.heapTotal).toBeNumber();
+      expect(data.diagnostics.memory.external).toBeNumber();
+      expect(data.diagnostics.memory.arrayBuffers).toBeNumber();
+      expect(data.diagnostics.processes.total).toBe(
+        data.diagnostics.processes.mcp +
+          data.diagnostics.processes.background +
+          data.diagnostics.processes.pty
+      );
+      expect(data.diagnostics.uptime).toBeNumber();
     });
 
     test("GET /version returns version info with server mode", async () => {

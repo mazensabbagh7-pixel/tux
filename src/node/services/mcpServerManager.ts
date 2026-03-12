@@ -615,6 +615,14 @@ export class MCPServerManager {
     clearInterval(this.idleCheckInterval);
   }
 
+  getServerCount(): number {
+    let total = 0;
+    for (const entry of this.workspaceServers.values()) {
+      total += entry.instances.size;
+    }
+    return total;
+  }
+
   private getLeaseCount(workspaceId: string): number {
     return this.workspaceLeases.get(workspaceId) ?? 0;
   }

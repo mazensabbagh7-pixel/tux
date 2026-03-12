@@ -58,7 +58,7 @@ import { setSshPromptService } from "@/node/runtime/sshConnectionPool";
 import { setSshPromptService as setSSH2SshPromptService } from "@/node/runtime/SSH2ConnectionPool";
 import { PolicyService } from "@/node/services/policyService";
 import { ServerAuthService } from "@/node/services/serverAuthService";
-import type { ORPCContext } from "@/node/orpc/context";
+import type { ORPCContext, ProcessDiagnostics } from "@/node/orpc/context";
 import type { ExternalSecretResolver } from "@/common/types/secrets";
 
 const MUX_HELP_CHAT_WELCOME_MESSAGE_ID = "mux-chat-welcome";
@@ -76,6 +76,8 @@ Try asking:
 - "Help me write global instructions for code reviews"
 - "How do I set up an OpenAI / Anthropic key in Mux?"
 `;
+
+const PROCESS_DIAGNOSTICS_LOG_INTERVAL_MS = 60_000;
 
 /**
  * ServiceContainer - Central dependency container for all backend services.
@@ -126,6 +128,7 @@ export class ServiceContainer {
   public readonly sshPromptService = new SshPromptService();
   private readonly ptyService: PTYService;
   public readonly idleCompactionService: IdleCompactionService;
+  private processDiagnosticsLogInterval: ReturnType<typeof setInterval> | null = null;
 
   constructor(config: Config) {
     this.config = config;
@@ -361,6 +364,59 @@ export class ServiceContainer {
     } catch (error) {
       log.warn("[ServiceContainer] Failed to ensure Chat with Mux workspace", { error });
     }
+
+    this.startProcessDiagnosticsLogging();
+    log.info("[ServiceContainer] Initial process diagnostics", await this.getProcessDiagnostics());
+  }
+
+  private getMemoryDiagnostics(): ProcessDiagnostics["memory"] {
+    const memoryUsage = process.memoryUsage();
+    return {
+      rss: memoryUsage.rss,
+      heapUsed: memoryUsage.heapUsed,
+      heapTotal: memoryUsage.heapTotal,
+      external: memoryUsage.external,
+      arrayBuffers: memoryUsage.arrayBuffers,
+    };
+  }
+
+  private startProcessDiagnosticsLogging(): void {
+    this.stopProcessDiagnosticsLogging();
+
+    this.processDiagnosticsLogInterval = setInterval(() => {
+      log.debug("[ServiceContainer] Process memory usage", this.getMemoryDiagnostics());
+    }, PROCESS_DIAGNOSTICS_LOG_INTERVAL_MS);
+    this.processDiagnosticsLogInterval.unref?.();
+  }
+
+  private stopProcessDiagnosticsLogging(): void {
+    if (!this.processDiagnosticsLogInterval) {
+      return;
+    }
+
+    clearInterval(this.processDiagnosticsLogInterval);
+    this.processDiagnosticsLogInterval = null;
+  }
+
+  async getProcessDiagnostics(): Promise<ProcessDiagnostics> {
+    const memory = this.getMemoryDiagnostics();
+    const mcp = this.mcpServerManager.getServerCount();
+    const background = (await this.backgroundProcessManager.list()).filter(
+      (processInfo) => processInfo.status === "running"
+    ).length;
+    const pty = this.ptyService.getSessionCount();
+    const processes = {
+      mcp,
+      background,
+      pty,
+      total: mcp + background + pty,
+    };
+
+    return {
+      memory,
+      processes,
+      uptime: process.uptime(),
+    };
   }
 
   private async ensureMuxChatWorkspace(): Promise<void> {
@@ -523,6 +579,7 @@ export class ServiceContainer {
       serverAuthService: this.serverAuthService,
       sshPromptService: this.sshPromptService,
       analyticsService: this.analyticsService,
+      getProcessDiagnostics: () => this.getProcessDiagnostics(),
     };
   }
 
@@ -548,6 +605,7 @@ export class ServiceContainer {
    * Terminates all background processes to prevent orphans.
    */
   async dispose(): Promise<void> {
+    this.stopProcessDiagnosticsLogging();
     await this.analyticsService.dispose();
     this.policyService.dispose();
     this.mcpServerManager.dispose();

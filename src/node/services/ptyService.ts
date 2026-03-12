@@ -318,6 +318,10 @@ export class PTYService {
     sessionIds.forEach((id) => this.closeSession(id));
   }
 
+  getSessionCount(): number {
+    return this.sessions.size;
+  }
+
   /**
    * Get all sessions for debugging
    */

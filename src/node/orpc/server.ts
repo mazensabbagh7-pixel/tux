@@ -17,7 +17,7 @@ import { OpenAPIGenerator } from "@orpc/openapi";
 import { OpenAPIHandler } from "@orpc/openapi/node";
 import { ZodToJsonSchemaConverter } from "@orpc/zod/zod4";
 import { router, type AppRouter } from "@/node/orpc/router";
-import type { ORPCContext } from "@/node/orpc/context";
+import type { ORPCContext, ProcessDiagnostics } from "@/node/orpc/context";
 import { extractCookieValues, extractWsHeaders, safeEq } from "@/node/orpc/authMiddleware";
 import { VERSION } from "@/version";
 import { formatOrpcError } from "@/node/orpc/formatOrpcError";
@@ -448,6 +448,30 @@ function shouldEnforceOriginValidation(req: Pick<express.Request, "path">): bool
   );
 }
 
+async function getHealthDiagnostics(context: ORPCContext): Promise<ProcessDiagnostics> {
+  if (context.getProcessDiagnostics) {
+    return context.getProcessDiagnostics();
+  }
+
+  const memoryUsage = process.memoryUsage();
+  return {
+    memory: {
+      rss: memoryUsage.rss,
+      heapUsed: memoryUsage.heapUsed,
+      heapTotal: memoryUsage.heapTotal,
+      external: memoryUsage.external,
+      arrayBuffers: memoryUsage.arrayBuffers,
+    },
+    processes: {
+      mcp: 0,
+      background: 0,
+      pty: 0,
+      total: 0,
+    },
+    uptime: process.uptime(),
+  };
+}
+
 /**
  * Create an oRPC server with HTTP and WebSocket endpoints.
  *
@@ -579,8 +603,11 @@ export async function createOrpcServer({
   }
 
   // Health check endpoint
-  app.get("/health", (_req, res) => {
-    res.json({ status: "ok" });
+  app.get("/health", async (_req, res) => {
+    res.json({
+      status: "ok",
+      diagnostics: await getHealthDiagnostics(context),
+    });
   });
 
   // Version endpoint
