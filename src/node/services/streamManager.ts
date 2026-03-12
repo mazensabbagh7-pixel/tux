@@ -67,6 +67,8 @@ import { normalizeLiteralRequiredToolPattern } from "@/common/utils/agentTools";
 // Disable noisy AI SDK warning logging.
 globalThis.AI_SDK_LOG_WARNINGS = false;
 
+const MAX_LOST_RESPONSE_IDS = 1000;
+
 // Type definitions for stream parts with extended properties
 interface ReasoningDeltaPart {
   type: "reasoning-delta";
@@ -2177,6 +2179,9 @@ export class StreamManager extends EventEmitter {
         this.cleanupStreamTempDir(streamInfo.runtime, streamInfo.runtimeTempDir);
       }
 
+      // Explicitly clear accumulated parts once streaming is fully finished so
+      // long-lived processes can release these references under memory pressure.
+      streamInfo.parts.length = 0;
       this.workspaceStreams.delete(workspaceId);
     }
   }
@@ -2882,6 +2887,18 @@ export class StreamManager extends EventEmitter {
       statusCode,
       errorCode,
     });
+
+    while (this.lostResponseIds.size >= MAX_LOST_RESPONSE_IDS) {
+      const oldestResponseId = this.lostResponseIds.values().next().value;
+      if (!oldestResponseId) {
+        break;
+      }
+      this.lostResponseIds.delete(oldestResponseId);
+      logger.debug("Evicting oldest lost previousResponseId to cap memory growth", {
+        evictedPreviousResponseId: oldestResponseId,
+        maxLostResponseIds: MAX_LOST_RESPONSE_IDS,
+      });
+    }
 
     this.lostResponseIds.add(responseId);
   }

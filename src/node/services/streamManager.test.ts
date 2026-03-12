@@ -1552,6 +1552,115 @@ describe("StreamManager - TTFT metadata persistence", () => {
   });
 });
 
+describe("StreamManager - processStreamWithCleanup cleanup", () => {
+  test("clears retained parts after stream completion without affecting persisted history", async () => {
+    const streamManager = new StreamManager(historyService);
+    streamManager.on("error", () => undefined);
+
+    const replaceTokenTrackerResult = Reflect.set(streamManager, "tokenTracker", {
+      setModel: () => Promise.resolve(undefined),
+      countTokens: () => Promise.resolve(0),
+    });
+    if (!replaceTokenTrackerResult) {
+      throw new Error("Failed to mock StreamManager.tokenTracker");
+    }
+
+    const workspaceId = "cleanup-workspace";
+    const messageId = "cleanup-message";
+    const historySequence = 1;
+    const startTime = Date.now();
+    const runtime = createRuntime({ type: "local", srcBaseDir: "/tmp" });
+
+    const appendResult = await historyService.appendToHistory(workspaceId, {
+      id: messageId,
+      role: "assistant",
+      metadata: {
+        historySequence,
+        partial: true,
+      },
+      parts: [],
+    });
+    expect(appendResult.success).toBe(true);
+    if (!appendResult.success) {
+      throw new Error(appendResult.error);
+    }
+
+    const processStreamWithCleanup = Reflect.get(streamManager, "processStreamWithCleanup") as (
+      workspaceId: string,
+      streamInfo: unknown,
+      historySequence: number
+    ) => Promise<void>;
+    expect(typeof processStreamWithCleanup).toBe("function");
+
+    const streamInfo = {
+      state: "streaming",
+      streamResult: {
+        fullStream: (async function* () {
+          // No-op stream: exercise stream-end cleanup on pre-populated parts.
+        })(),
+        totalUsage: Promise.resolve({ inputTokens: 1, outputTokens: 2, totalTokens: 3 }),
+        usage: Promise.resolve({ inputTokens: 1, outputTokens: 2, totalTokens: 3 }),
+        providerMetadata: Promise.resolve(undefined),
+        steps: Promise.resolve([]),
+      },
+      abortController: new AbortController(),
+      messageId,
+      token: "cleanup-token",
+      startTime,
+      lastPartTimestamp: startTime,
+      toolCompletionTimestamps: new Map<string, number>(),
+      model: KNOWN_MODELS.SONNET.id,
+      historySequence,
+      parts: [
+        {
+          type: "text",
+          text: "cleanup me after persistence",
+          timestamp: startTime + 1,
+        },
+      ],
+      lastPartialWriteTime: 0,
+      partialWriteTimer: undefined,
+      partialWritePromise: undefined,
+      processingPromise: Promise.resolve(),
+      softInterrupt: { pending: false as const },
+      runtimeTempDir: "",
+      runtime,
+      cumulativeUsage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+      cumulativeProviderMetadata: undefined,
+      didRetryPreviousResponseIdAtStep: false,
+      currentStepStartIndex: 0,
+      stepTracker: {},
+    };
+
+    const workspaceStreamsValue = Reflect.get(streamManager, "workspaceStreams");
+    if (!(workspaceStreamsValue instanceof Map)) {
+      throw new Error("StreamManager.workspaceStreams is not a Map");
+    }
+    const workspaceStreams = workspaceStreamsValue as Map<string, unknown>;
+    workspaceStreams.set(workspaceId, streamInfo);
+
+    await processStreamWithCleanup.call(streamManager, workspaceId, streamInfo, historySequence);
+
+    expect(streamInfo.parts).toHaveLength(0);
+    expect(workspaceStreams.has(workspaceId)).toBe(false);
+
+    const historyResult = await historyService.getHistoryFromLatestBoundary(workspaceId);
+    expect(historyResult.success).toBe(true);
+    if (!historyResult.success) {
+      throw new Error(historyResult.error);
+    }
+
+    expect(historyResult.data).toHaveLength(1);
+    expect(historyResult.data[0]?.parts).toEqual([
+      {
+        type: "text",
+        text: "cleanup me after persistence",
+        timestamp: startTime + 1,
+      },
+    ]);
+  });
+});
+
 describe("StreamManager - previousResponseId recovery", () => {
   test("isResponseIdLost returns false for unknown IDs", () => {
     const streamManager = new StreamManager(historyService);
@@ -1649,6 +1758,69 @@ describe("StreamManager - previousResponseId recovery", () => {
     });
 
     expect(streamManager.isResponseIdLost("resp_cafebabe")).toBe(true);
+  });
+
+  test("recordLostResponseIdIfApplicable evicts the oldest ID when the cap is reached", () => {
+    const streamManager = new StreamManager(historyService);
+
+    const recordMethod = Reflect.get(streamManager, "recordLostResponseIdIfApplicable") as (
+      workspaceId: string,
+      error: unknown,
+      streamInfo: unknown,
+      workspaceLog?: {
+        info: (...args: unknown[]) => void;
+        debug: (...args: unknown[]) => void;
+      }
+    ) => void;
+    expect(typeof recordMethod).toBe("function");
+
+    const workspaceLog = {
+      info: mock(() => undefined),
+      debug: mock(() => undefined),
+    };
+
+    for (let index = 0; index <= 1000; index++) {
+      const responseId = `resp_${index.toString(16).padStart(6, "0")}`;
+      const apiError = new APICallError({
+        message: `Previous response with id '${responseId}' not found.`,
+        url: "https://api.openai.com/v1/responses",
+        requestBodyValues: {},
+        statusCode: 400,
+        responseHeaders: {},
+        responseBody: `Previous response with id '${responseId}' not found.`,
+        isRetryable: false,
+        data: { error: { code: "previous_response_not_found" } },
+      });
+
+      recordMethod.call(
+        streamManager,
+        "workspace-cap",
+        apiError,
+        {
+          messageId: `msg-${index}`,
+          model: "openai:gpt-mini",
+        },
+        workspaceLog
+      );
+    }
+
+    const lostResponseIds = Reflect.get(streamManager, "lostResponseIds");
+    if (!(lostResponseIds instanceof Set)) {
+      throw new Error("StreamManager.lostResponseIds is not a Set");
+    }
+
+    expect(lostResponseIds.size).toBe(1000);
+    expect(streamManager.isResponseIdLost("resp_000000")).toBe(false);
+    expect(streamManager.isResponseIdLost("resp_000001")).toBe(true);
+    expect(streamManager.isResponseIdLost("resp_0003e8")).toBe(true);
+    expect(workspaceLog.debug).toHaveBeenCalledTimes(1);
+    expect(workspaceLog.debug).toHaveBeenCalledWith(
+      "Evicting oldest lost previousResponseId to cap memory growth",
+      expect.objectContaining({
+        evictedPreviousResponseId: "resp_000000",
+        maxLostResponseIds: 1000,
+      })
+    );
   });
 
   test("retryStreamWithoutPreviousResponseId retries at step boundary with existing parts", async () => {
