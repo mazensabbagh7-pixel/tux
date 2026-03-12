@@ -27,6 +27,7 @@ import { DisposableTempDir } from "@/node/services/tempDir";
 import { createTaskTool } from "./tools/task";
 import { createTestToolConfig } from "./tools/testHelpers";
 import { MUX_APP_ATTRIBUTION_TITLE, MUX_APP_ATTRIBUTION_URL } from "@/constants/appAttribution";
+import type { ProviderName } from "@/common/constants/providers";
 import { KNOWN_MODELS } from "@/common/constants/knownModels";
 import type { CodexOauthService } from "@/node/services/codexOauthService";
 import { CODEX_ENDPOINT } from "@/common/constants/codexOAuth";
@@ -50,6 +51,7 @@ import * as messagePipeline from "./messagePipeline";
 import * as toolAssembly from "./toolAssembly";
 import * as toolsModule from "@/common/utils/tools/tools";
 import * as providerOptionsModule from "@/common/utils/ai/providerOptions";
+import * as system1ToolWrapperModule from "./system1ToolWrapper";
 import * as systemMessageModule from "./systemMessage";
 
 describe("AIService", () => {
@@ -376,9 +378,14 @@ describe("AIService.setupStreamEventForwarding", () => {
 });
 
 describe("AIService.resolveGatewayModelString", () => {
-  async function writeMuxConfig(
+  async function writeMainConfig(
     root: string,
-    config: { muxGatewayEnabled?: boolean; muxGatewayModels?: string[] }
+    config: {
+      muxGatewayEnabled?: boolean;
+      muxGatewayModels?: string[];
+      routePriority?: string[];
+      routeOverrides?: Record<string, string>;
+    }
   ): Promise<void> {
     await fs.writeFile(
       path.join(root, "config.json"),
@@ -420,7 +427,7 @@ describe("AIService.resolveGatewayModelString", () => {
   it("routes allowlisted models when gateway is enabled + configured", async () => {
     using muxHome = new DisposableTempDir("gateway-routing");
 
-    await writeMuxConfig(muxHome.path, {
+    await writeMainConfig(muxHome.path, {
       muxGatewayEnabled: true,
       muxGatewayModels: [KNOWN_MODELS.SONNET.id],
     });
@@ -436,15 +443,18 @@ describe("AIService.resolveGatewayModelString", () => {
     expect(resolved).toBe(toGatewayModelString(KNOWN_MODELS.SONNET.id));
   });
 
-  it("does not route when gateway is disabled", async () => {
-    using muxHome = new DisposableTempDir("gateway-routing-disabled");
+  it("does not route when the mux-gateway provider is disabled", async () => {
+    using muxHome = new DisposableTempDir("gateway-routing-provider-disabled");
 
-    await writeMuxConfig(muxHome.path, {
-      muxGatewayEnabled: false,
-      muxGatewayModels: [KNOWN_MODELS.SONNET.id],
+    await writeMainConfig(muxHome.path, {
+      routePriority: ["mux-gateway", "direct"],
     });
     await writeProvidersConfig(muxHome.path, {
-      "mux-gateway": { couponCode: "test-coupon" },
+      anthropic: { apiKey: "sk-ant-test" },
+      "mux-gateway": {
+        couponCode: "test-coupon",
+        enabled: false,
+      },
     });
 
     const service = createService(muxHome.path);
@@ -458,7 +468,7 @@ describe("AIService.resolveGatewayModelString", () => {
   it("does not route when gateway is not configured", async () => {
     using muxHome = new DisposableTempDir("gateway-routing-unconfigured");
 
-    await writeMuxConfig(muxHome.path, {
+    await writeMainConfig(muxHome.path, {
       muxGatewayEnabled: true,
       muxGatewayModels: [KNOWN_MODELS.SONNET.id],
     });
@@ -475,7 +485,7 @@ describe("AIService.resolveGatewayModelString", () => {
     using muxHome = new DisposableTempDir("gateway-routing-unsupported-provider");
 
     const modelString = "openrouter:some-model";
-    await writeMuxConfig(muxHome.path, {
+    await writeMainConfig(muxHome.path, {
       muxGatewayEnabled: true,
       muxGatewayModels: [modelString],
     });
@@ -495,7 +505,7 @@ describe("AIService.resolveGatewayModelString", () => {
     using muxHome = new DisposableTempDir("gateway-routing-model-key");
 
     const variant = "xai:grok-4-1-fast-reasoning";
-    await writeMuxConfig(muxHome.path, {
+    await writeMainConfig(muxHome.path, {
       muxGatewayEnabled: true,
       muxGatewayModels: [KNOWN_MODELS.GROK_4_1.id],
     });
@@ -517,7 +527,7 @@ describe("AIService.resolveGatewayModelString", () => {
   it("honors explicit mux-gateway prefixes from legacy clients", async () => {
     using muxHome = new DisposableTempDir("gateway-routing-explicit");
 
-    await writeMuxConfig(muxHome.path, {
+    await writeMainConfig(muxHome.path, {
       muxGatewayEnabled: true,
       muxGatewayModels: [],
     });
@@ -1194,10 +1204,20 @@ describe("AIService.streamMessage compaction boundary slicing", () => {
     return openai as Record<string, unknown>;
   }
 
+  function initialMetadataFromStartStreamCall(startStreamArgs: unknown[]): Record<string, unknown> {
+    const initialMetadata = startStreamArgs[10];
+    if (!initialMetadata || typeof initialMetadata !== "object" || Array.isArray(initialMetadata)) {
+      throw new Error("Expected initial metadata object at startStream arg index 10");
+    }
+
+    return initialMetadata as Record<string, unknown>;
+  }
+
   function createHarness(
     muxHomePath: string,
     metadata: WorkspaceMetadata,
     options?: {
+      routeProvider?: ProviderName;
       allTools?: Record<string, Tool>;
       postPolicyTools?: Record<string, Tool>;
     }
@@ -1297,6 +1317,7 @@ describe("AIService.streamMessage compaction boundary slicing", () => {
         canonicalProviderName: "openai",
         canonicalModelId: "gpt-5.2",
         routedThroughGateway: false,
+        ...(options?.routeProvider != null ? { routeProvider: options.routeProvider } : {}),
       },
     };
     spyOn(providerModelFactory, "resolveAndCreateModel").mockResolvedValue(
@@ -1424,6 +1445,127 @@ describe("AIService.streamMessage compaction boundary slicing", () => {
     const openaiOptions = openAIOptionsFromStartStreamCall(startStreamCall);
     expect(openaiOptions.previousResponseId).toBeUndefined();
     expect(openaiOptions.promptCacheKey).toBe(`mux-v1-${workspaceId}`);
+  });
+
+  it("passes the resolved routeProvider into initial stream metadata", async () => {
+    using muxHome = new DisposableTempDir("ai-service-route-provider-present");
+    const projectPath = path.join(muxHome.path, "project");
+    await fs.mkdir(projectPath, { recursive: true });
+
+    const workspaceId = "workspace-route-provider-present";
+    const metadata = createWorkspaceMetadata(workspaceId, projectPath);
+    const harness = createHarness(muxHome.path, metadata, { routeProvider: "openrouter" });
+
+    const result = await harness.service.streamMessage({
+      messages: [createMuxMessage("latest-user", "user", "continue")],
+      workspaceId,
+      modelString: "openai:gpt-5.2",
+      thinkingLevel: "medium",
+    });
+
+    expect(result.success).toBe(true);
+    expect(harness.startStreamCalls).toHaveLength(1);
+
+    const startStreamCall = harness.startStreamCalls[0];
+    expect(startStreamCall).toBeDefined();
+    if (!startStreamCall) {
+      throw new Error("Expected streamManager.startStream call arguments");
+    }
+
+    const initialMetadata = initialMetadataFromStartStreamCall(startStreamCall);
+    expect(initialMetadata.routeProvider).toBe("openrouter");
+  });
+
+  it("omits routeProvider from initial stream metadata when unresolved", async () => {
+    using muxHome = new DisposableTempDir("ai-service-route-provider-absent");
+    const projectPath = path.join(muxHome.path, "project");
+    await fs.mkdir(projectPath, { recursive: true });
+
+    const workspaceId = "workspace-route-provider-absent";
+    const metadata = createWorkspaceMetadata(workspaceId, projectPath);
+    const harness = createHarness(muxHome.path, metadata);
+
+    const result = await harness.service.streamMessage({
+      messages: [createMuxMessage("latest-user", "user", "continue")],
+      workspaceId,
+      modelString: "openai:gpt-5.2",
+      thinkingLevel: "medium",
+    });
+
+    expect(result.success).toBe(true);
+    expect(harness.startStreamCalls).toHaveLength(1);
+
+    const startStreamCall = harness.startStreamCalls[0];
+    expect(startStreamCall).toBeDefined();
+    if (!startStreamCall) {
+      throw new Error("Expected streamManager.startStream call arguments");
+    }
+
+    const initialMetadata = initialMetadataFromStartStreamCall(startStreamCall);
+    expect(Object.prototype.hasOwnProperty.call(initialMetadata, "routeProvider")).toBe(false);
+  });
+
+  it("passes routeProvider into the System1 wrapper when System1 reuses the primary model", async () => {
+    using muxHome = new DisposableTempDir("ai-service-system1-route-provider");
+    const projectPath = path.join(muxHome.path, "project");
+    await fs.mkdir(projectPath, { recursive: true });
+
+    const workspaceId = "workspace-system1-route-provider";
+    const metadata = createWorkspaceMetadata(workspaceId, projectPath);
+    const harness = createHarness(muxHome.path, metadata, { routeProvider: "openrouter" });
+
+    let receivedWrapOptions:
+      | Parameters<typeof system1ToolWrapperModule.wrapToolsWithSystem1>[0]
+      | undefined;
+    spyOn(system1ToolWrapperModule, "wrapToolsWithSystem1").mockImplementation((options) => {
+      receivedWrapOptions = options;
+      return options.tools;
+    });
+
+    const result = await harness.service.streamMessage({
+      messages: [createMuxMessage("latest-user", "user", "continue")],
+      workspaceId,
+      modelString: "openai:gpt-5.2",
+      thinkingLevel: "medium",
+      experiments: { system1: true },
+    });
+
+    expect(result.success).toBe(true);
+    expect(receivedWrapOptions).toBeDefined();
+    expect(receivedWrapOptions?.routeProvider).toBe("openrouter");
+    expect(receivedWrapOptions?.system1Model).toBeUndefined();
+  });
+
+  it("passes routeProvider into the System1 wrapper when System1 uses an explicit canonical model", async () => {
+    using muxHome = new DisposableTempDir("ai-service-system1-canonical-route-provider");
+    const projectPath = path.join(muxHome.path, "project");
+    await fs.mkdir(projectPath, { recursive: true });
+
+    const workspaceId = "workspace-system1-canonical-route-provider";
+    const metadata = createWorkspaceMetadata(workspaceId, projectPath);
+    const harness = createHarness(muxHome.path, metadata, { routeProvider: "openrouter" });
+
+    let receivedWrapOptions:
+      | Parameters<typeof system1ToolWrapperModule.wrapToolsWithSystem1>[0]
+      | undefined;
+    spyOn(system1ToolWrapperModule, "wrapToolsWithSystem1").mockImplementation((options) => {
+      receivedWrapOptions = options;
+      return options.tools;
+    });
+
+    const result = await harness.service.streamMessage({
+      messages: [createMuxMessage("latest-user", "user", "continue")],
+      workspaceId,
+      modelString: "openai:gpt-5.2",
+      thinkingLevel: "medium",
+      system1Model: "openai:gpt-5.2",
+      experiments: { system1: true },
+    });
+
+    expect(result.success).toBe(true);
+    expect(receivedWrapOptions).toBeDefined();
+    expect(receivedWrapOptions?.routeProvider).toBe("openrouter");
+    expect(receivedWrapOptions?.system1Model).toBe("openai:gpt-5.2");
   });
 
   it("derives sentinel tool names from assembled post-policy tools", async () => {
@@ -2110,7 +2252,8 @@ describe("AIService.streamMessage model parameter overrides", () => {
 
   function createHarness(
     muxHomePath: string,
-    metadata: WorkspaceMetadata
+    metadata: WorkspaceMetadata,
+    options?: { routeProvider?: ProviderName }
   ): ModelParameterOverridesHarness {
     const config = new Config(muxHomePath);
     const historyService = new HistoryService(config);
@@ -2186,6 +2329,7 @@ describe("AIService.streamMessage model parameter overrides", () => {
         canonicalProviderName: "anthropic",
         canonicalModelId: "claude-sonnet-4-5",
         routedThroughGateway: false,
+        ...(options?.routeProvider != null ? { routeProvider: options.routeProvider } : {}),
       },
     };
     spyOn(providerModelFactory, "resolveAndCreateModel").mockResolvedValue(
@@ -2328,6 +2472,70 @@ describe("AIService.streamMessage model parameter overrides", () => {
       anthropic: {
         custom_knob: 40,
         thinking: { type: "enabled" },
+      },
+    });
+  });
+
+  it("merges routed OpenAI provider extras under the active route namespace", async () => {
+    using muxHome = new DisposableTempDir("ai-service-model-overrides-routed-openai");
+    const projectPath = path.join(muxHome.path, "project");
+    await fs.mkdir(projectPath, { recursive: true });
+
+    const workspaceId = "workspace-model-overrides-routed-openai";
+    const metadata = createWorkspaceMetadata(workspaceId, projectPath);
+    const harness = createHarness(muxHome.path, metadata, { routeProvider: "openrouter" });
+
+    const providerModelFactory = Reflect.get(
+      harness.service,
+      "providerModelFactory"
+    ) as ProviderModelFactory;
+    const fakeModel = Object.create(null) as LanguageModel;
+    spyOn(providerModelFactory, "resolveAndCreateModel").mockResolvedValue({
+      success: true,
+      data: {
+        model: fakeModel,
+        effectiveModelString: "openrouter:openai/gpt-5.2",
+        canonicalModelString: "openai:gpt-5.2",
+        canonicalProviderName: "openai",
+        canonicalModelId: "gpt-5.2",
+        routedThroughGateway: false,
+        routeProvider: "openrouter",
+      },
+    });
+
+    spyOn(harness.config, "loadProvidersConfig").mockReturnValue({
+      openai: {
+        modelParameters: {
+          "*": {
+            reasoning: { max_tokens: 4096 },
+          },
+        },
+      },
+    });
+
+    spyOn(providerOptionsModule, "buildProviderOptions").mockReturnValue({
+      openrouter: {
+        reasoning: {
+          enabled: true,
+          effort: "medium",
+          exclude: false,
+        },
+      },
+    });
+
+    const startStreamArgs = await streamAndGetStartStreamArgs(
+      harness,
+      workspaceId,
+      "openai:gpt-5.2"
+    );
+    expect(providerOptionsFromStartStreamCall(startStreamArgs)).toEqual({
+      openrouter: {
+        reasoning: {
+          max_tokens: 4096,
+          enabled: true,
+          effort: "medium",
+          exclude: false,
+        },
       },
     });
   });

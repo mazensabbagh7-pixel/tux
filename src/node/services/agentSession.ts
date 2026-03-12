@@ -92,7 +92,11 @@ import {
 import { buildCompactionMessageText } from "@/common/utils/compaction/compactionPrompt";
 import type { AutoCompactionUsageState } from "@/common/utils/compaction/autoCompactionCheck";
 import { getModelCapabilitiesResolved } from "@/common/utils/ai/modelCapabilities";
-import { normalizeGatewayModel, isValidModelFormat } from "@/common/utils/ai/models";
+import {
+  getExplicitGatewayPrefix,
+  normalizeToCanonical,
+  isValidModelFormat,
+} from "@/common/utils/ai/models";
 import {
   isAnthropic1MEffectivelyEnabled,
   preserveAnthropic1MContextForFollowUp,
@@ -823,7 +827,7 @@ export class AgentSession {
       return undefined;
     }
 
-    const normalized = normalizeGatewayModel(trimmed);
+    const normalized = normalizeToCanonical(trimmed);
     if (!isValidModelFormat(normalized)) {
       return undefined;
     }
@@ -1918,23 +1922,15 @@ export class AgentSession {
       );
     }
 
-    const rawModelString = options.model.trim();
-    const rawSystem1Model = options.system1Model?.trim();
-
     options = this.normalizeGatewaySendOptions(options);
 
     // Internal callers can force Copilot billing attribution for non-user turns
     // (task orchestration, compaction, auto-resume, etc.).
     let agentInitiated = internal?.agentInitiated === true;
 
-    // Preserve explicit mux-gateway prefixes from legacy clients so backend routing can
-    // honor the opt-in even before muxGatewayModels has synchronized.
-    let modelForStream = rawModelString.startsWith("mux-gateway:") ? rawModelString : options.model;
-    const baseOptionsForStream = rawSystem1Model?.startsWith("mux-gateway:")
-      ? { ...options, system1Model: rawSystem1Model }
-      : options;
+    let modelForStream = options.model;
     let optionsForStream: SendMessageOptions = {
-      ...baseOptionsForStream,
+      ...options,
       ...(acpPromptId != null ? { acpPromptId } : {}),
       ...(delegatedToolNames != null ? { delegatedToolNames } : {}),
     };
@@ -2247,18 +2243,9 @@ export class AgentSession {
     const { model } = options;
     assert(typeof model === "string" && model.trim().length > 0, "resumeStream requires a model");
 
-    const rawModelString = options.model.trim();
-    const rawSystem1Model = options.system1Model?.trim();
     const normalizedOptions = this.normalizeGatewaySendOptions(options);
-
-    // Preserve explicit mux-gateway prefixes from legacy clients so backend routing can
-    // honor the opt-in even before muxGatewayModels has synchronized.
-    const modelForStream = rawModelString.startsWith("mux-gateway:")
-      ? rawModelString
-      : normalizedOptions.model;
-    const optionsForStream = rawSystem1Model?.startsWith("mux-gateway:")
-      ? { ...normalizedOptions, system1Model: rawSystem1Model }
-      : normalizedOptions;
+    const modelForStream = normalizedOptions.model;
+    const optionsForStream = normalizedOptions;
 
     // Guard against auto-retry starting a second stream while the initial send is
     // still waiting for init hooks to complete (or while completion cleanup is running).
@@ -2486,7 +2473,7 @@ export class AgentSession {
         return null;
       }
 
-      const normalized = normalizeGatewayModel(compactModelString.trim());
+      const normalized = normalizeToCanonical(compactModelString.trim());
       if (!isValidModelFormat(normalized)) {
         return null;
       }
@@ -2645,16 +2632,21 @@ export class AgentSession {
   }
 
   private normalizeGatewaySendOptions(options: SendMessageOptions): SendMessageOptions {
-    // Keep persisted model IDs canonical; gateway routing is now backend-authoritative (issue #1769).
-    const normalizedModel = normalizeGatewayModel(options.model.trim());
+    const normalizeModelSelection = (modelString: string): string => {
+      const trimmedModelString = modelString.trim();
+      // Preserve explicit gateway prefixes as user intent; otherwise keep persisted IDs canonical.
+      return getExplicitGatewayPrefix(trimmedModelString)
+        ? trimmedModelString
+        : normalizeToCanonical(trimmedModelString);
+    };
+
     const system1Model = options.system1Model?.trim();
-    const normalizedSystem1Model =
-      system1Model && system1Model.length > 0 ? normalizeGatewayModel(system1Model) : undefined;
 
     return {
       ...options,
-      model: normalizedModel,
-      system1Model: normalizedSystem1Model,
+      model: normalizeModelSelection(options.model),
+      system1Model:
+        system1Model && system1Model.length > 0 ? normalizeModelSelection(system1Model) : undefined,
     };
   }
 
@@ -2928,7 +2920,7 @@ export class AgentSession {
   }
 
   private supports1MContextRetry(modelString: string): boolean {
-    const normalized = normalizeGatewayModel(modelString);
+    const normalized = normalizeToCanonical(modelString);
     const [provider, modelName] = normalized.split(":", 2);
     const lower = modelName?.toLowerCase() ?? "";
     return (
@@ -2985,7 +2977,7 @@ export class AgentSession {
   }
 
   private isGptClassModel(modelString: string): boolean {
-    const normalized = normalizeGatewayModel(modelString);
+    const normalized = normalizeToCanonical(modelString);
     const [provider, modelName] = normalized.split(":", 2);
     return provider === "openai" && modelName?.toLowerCase().startsWith("gpt-");
   }
@@ -3012,7 +3004,13 @@ export class AgentSession {
 
     let retryOptions = context.options;
     if (is1MCapable) {
-      if (this.is1MContextEnabledForModel(context.modelString, context.options)) {
+      if (
+        this.is1MContextEnabledForModel(
+          context.modelString,
+          context.options,
+          this.activeStreamContext?.providersConfig ?? null
+        )
+      ) {
         return false;
       }
 

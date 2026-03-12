@@ -1,12 +1,19 @@
 import { Check, Eye, Info, Pencil, Star, Trash2, X } from "lucide-react";
 import { createEditKeyHandler } from "@/browser/utils/ui/keybinds";
-import { GatewayToggleButton } from "@/browser/components/GatewayToggleButton/GatewayToggleButton";
 import { SearchableModelSelect } from "@/browser/features/Settings/Components/SearchableModelSelect";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/browser/components/Tooltip/Tooltip";
 import { Button } from "@/browser/components/Button/Button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/browser/components/SelectPrimitive/SelectPrimitive";
 import { ProviderIcon, ProviderWithIcon } from "@/browser/components/ProviderIcon/ProviderIcon";
 import { formatModelDisplayName } from "@/common/utils/ai/modelDisplay";
 import { cn } from "@/common/lib/utils";
+import type { AvailableRoute } from "@/common/routing";
 import { getModelStats, type ModelStats } from "@/common/utils/tokens/modelStats";
 
 /** Format tokens as human-readable string (e.g. 200000 -> "200k") */
@@ -172,8 +179,19 @@ export interface ModelRowProps {
   editError?: string | null;
   saving?: boolean;
   hasActiveEdit?: boolean;
-  /** Whether gateway mode is enabled for this model */
-  isGatewayEnabled?: boolean;
+  /** Route chosen by resolver for this model */
+  resolvedRoute?: {
+    route: string;
+    isAuto: boolean;
+    displayName: string;
+  };
+  /** What route Auto would pick (priority-walk only, ignoring overrides) */
+  autoResolvedRoute?: {
+    route: string;
+    displayName: string;
+  };
+  /** Configured routes that can serve this model */
+  availableRoutes?: AvailableRoute[];
   /** Whether 1M context is enabled for this model */
   is1MContextEnabled?: boolean;
   /** Whether this model is hidden from the selector */
@@ -187,8 +205,8 @@ export interface ModelRowProps {
   onEditContextChange?: (value: string) => void;
   onEditMappedToModelChange?: (value: string) => void;
   onRemove?: () => void;
-  /** Toggle gateway mode for this model */
-  onToggleGateway?: () => void;
+  /** Set/clear explicit route override (null = auto) */
+  onSetRouteOverride?: (route: string | null) => void;
   /** Toggle 1M context for this model (only shown when defined, i.e. model supports it) */
   onToggle1MContext?: () => void;
   /** Toggle visibility in model selector */
@@ -206,6 +224,16 @@ export function ModelRow(props: ModelRowProps) {
     ? props.mappedToModel.slice(props.mappedToModel.indexOf(":") + 1) || props.mappedToModel
     : null;
   const mappedModelDisplayName = mappedModelId ? formatModelDisplayName(mappedModelId) : null;
+
+  const configuredRoutes = (props.availableRoutes ?? []).filter((route) => route.isConfigured);
+  // The Auto label must show the priority-walk result (ignoring overrides), not the
+  // currently-active route — otherwise it mirrors whatever explicit override is selected.
+  const autoRouteDisplayName =
+    props.autoResolvedRoute?.displayName ?? configuredRoutes[0]?.displayName ?? "Direct";
+  const routeDisplayName =
+    props.resolvedRoute?.displayName ?? configuredRoutes[0]?.displayName ?? "Direct";
+  const routeSelectValue =
+    props.resolvedRoute && !props.resolvedRoute.isAuto ? props.resolvedRoute.route : "auto";
 
   // Editing mode - render as a full-width row
   if (props.isEditing) {
@@ -292,18 +320,12 @@ export function ModelRow(props: ModelRowProps) {
         props.isHiddenFromSelector && "opacity-50"
       )}
     >
-      {/* Provider */}
-      <td className="w-20 py-1.5 pr-2 pl-2 md:w-24 md:pl-3">
-        <ProviderWithIcon
-          provider={props.provider}
-          displayName
-          className="text-muted overflow-hidden text-xs"
-        />
-      </td>
-
-      {/* Model ID + Aliases */}
-      <td className="min-w-0 py-1.5 pr-2">
+      {/* Model ID + Provider + Aliases */}
+      <td className="min-w-0 py-1.5 pr-2 pl-2 md:pl-3">
         <div className="flex min-w-0 items-center gap-2">
+          <span className="shrink-0" title={props.provider}>
+            <ProviderIcon provider={props.provider} className="text-muted h-3.5 w-3.5" />
+          </span>
           <span className="text-foreground min-w-0 truncate font-mono text-xs">
             {props.modelId}
           </span>
@@ -365,6 +387,30 @@ export function ModelRow(props: ModelRowProps) {
         )}
       </td>
 
+      {/* Route */}
+      <td className="w-32 py-1.5 pr-2 md:w-40">
+        {configuredRoutes.length > 1 && props.onSetRouteOverride ? (
+          <Select
+            value={routeSelectValue}
+            onValueChange={(value) => props.onSetRouteOverride?.(value === "auto" ? null : value)}
+          >
+            <SelectTrigger className="h-7 min-w-0 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="auto">Auto ({autoRouteDisplayName})</SelectItem>
+              {configuredRoutes.map((route) => (
+                <SelectItem key={route.route} value={route.route}>
+                  {route.displayName}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : (
+          <span className="text-muted block text-xs">{routeDisplayName}</span>
+        )}
+      </td>
+
       {/* Actions */}
       <td className="w-28 py-1.5 pr-2 md:w-32 md:pr-3">
         <div className="flex items-center justify-end gap-0.5">
@@ -409,13 +455,6 @@ export function ModelRow(props: ModelRowProps) {
                 <span className="bg-muted-light absolute inset-0 m-auto h-px w-4 rotate-45" />
               )}
             </button>
-          )}
-          {/* Gateway toggle button */}
-          {props.onToggleGateway && (
-            <GatewayToggleButton
-              active={props.isGatewayEnabled ?? false}
-              onToggle={() => props.onToggleGateway?.()}
-            />
           )}
           {/* Favorite/default button */}
           <Tooltip>

@@ -91,7 +91,11 @@ import {
   isSSHRuntime,
   isDockerRuntime,
 } from "@/common/types/runtime";
-import { isValidModelFormat, normalizeGatewayModel } from "@/common/utils/ai/models";
+import {
+  isValidModelFormat,
+  normalizeSelectedModel,
+  normalizeToCanonical,
+} from "@/common/utils/ai/models";
 import { coerceThinkingLevel, type ThinkingLevel } from "@/common/types/thinking";
 import { enforceThinkingPolicy } from "@/common/utils/thinking/policy";
 import { WORKSPACE_DEFAULTS } from "@/constants/workspaceDefaults";
@@ -3722,7 +3726,7 @@ export class WorkspaceService extends EventEmitter {
     aiSettings: WorkspaceAISettings
   ): Result<WorkspaceAISettings, string> {
     const rawModel = aiSettings.model;
-    const model = normalizeGatewayModel(rawModel).trim();
+    const model = normalizeSelectedModel(rawModel).trim();
     if (!model) {
       return Err("Model is required");
     }
@@ -3762,7 +3766,7 @@ export class WorkspaceService extends EventEmitter {
       return null;
     }
 
-    const model = normalizeGatewayModel(rawModel).trim();
+    const model = normalizeSelectedModel(rawModel).trim();
     if (!isValidModelFormat(model)) {
       return null;
     }
@@ -5952,7 +5956,7 @@ export class WorkspaceService extends EventEmitter {
     const globalCompactDefaultModel = globalCompactDefaults?.modelString;
     const normalizedGlobalCompactDefaultModel =
       typeof globalCompactDefaultModel === "string"
-        ? normalizeGatewayModel(globalCompactDefaultModel.trim())
+        ? normalizeToCanonical(globalCompactDefaultModel.trim())
         : undefined;
     const validGlobalCompactDefaultModel =
       normalizedGlobalCompactDefaultModel && isValidModelFormat(normalizedGlobalCompactDefaultModel)
@@ -5963,7 +5967,7 @@ export class WorkspaceService extends EventEmitter {
       config.agentAiDefaults?.[WORKSPACE_DEFAULTS.agentId]?.modelString;
     const normalizedGlobalExecDefaultModel =
       typeof globalExecDefaultModel === "string"
-        ? normalizeGatewayModel(globalExecDefaultModel.trim())
+        ? normalizeToCanonical(globalExecDefaultModel.trim())
         : undefined;
     const validGlobalExecDefaultModel =
       normalizedGlobalExecDefaultModel && isValidModelFormat(normalizedGlobalExecDefaultModel)
@@ -5978,7 +5982,7 @@ export class WorkspaceService extends EventEmitter {
       activity?.lastModel ??
       WORKSPACE_DEFAULTS.model;
 
-    let model = normalizeGatewayModel(fallbackModel);
+    let model = normalizeToCanonical(fallbackModel);
     if (!isValidModelFormat(model)) {
       log.warn("Idle compaction resolved invalid model; falling back to workspace default", {
         workspaceId,

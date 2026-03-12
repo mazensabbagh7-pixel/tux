@@ -1,6 +1,10 @@
 import { EventEmitter } from "events";
 import type { Config } from "@/node/config";
-import { SUPPORTED_PROVIDERS, type ProviderName } from "@/common/constants/providers";
+import {
+  PROVIDER_DEFINITIONS,
+  SUPPORTED_PROVIDERS,
+  type ProviderName,
+} from "@/common/constants/providers";
 import type { Result } from "@/common/types/result";
 import type {
   AWSCredentialStatus,
@@ -15,7 +19,11 @@ import {
   normalizeProviderModelEntries,
 } from "@/common/utils/providers/modelEntries";
 import { log } from "@/node/services/log";
-import { checkProviderConfigured } from "@/node/utils/providerRequirements";
+import {
+  checkProviderConfigured,
+  isProviderAutoRouteEligible,
+  resolveProviderCredentials,
+} from "@/node/utils/providerRequirements";
 import { parseCodexOauthAuth } from "@/node/utils/codexOauthAuth";
 import type { PolicyService } from "@/node/services/policyService";
 import { getErrorMessage } from "@/common/utils/errors";
@@ -285,12 +293,68 @@ export class ProviderService {
   }
 
   /**
+   * After a credential change, sync gateway presence in routePriority.
+   * Configured gateways auto-insert immediately before "direct" in routePriority,
+   * preserving existing user-defined order.
+   * Gateways that are explicitly disabled or fully deconfigured are removed;
+   * configured-but-not-auto-eligible gateways keep any manual route.
+   */
+  private async syncGatewayLifecycle(provider: string): Promise<void> {
+    if (!(provider in PROVIDER_DEFINITIONS)) return;
+    const providerName = provider as ProviderName;
+    const def = PROVIDER_DEFINITIONS[providerName];
+    if (def.kind !== "gateway") return;
+
+    const providersConfig = this.config.loadProvidersConfig() ?? {};
+    const isAutoRouteEligible = isProviderAutoRouteEligible(
+      providerName,
+      providersConfig[providerName] ?? {}
+    );
+    const config = this.config.loadConfigOrDefault();
+    const priority = config.routePriority ?? ["direct"];
+
+    if (isAutoRouteEligible && !priority.includes(providerName)) {
+      // Insert before "direct" to stay reachable while preserving the
+      // relative order of any user-configured routes already present.
+      const directIndex = priority.indexOf("direct");
+      const insertIndex = directIndex === -1 ? priority.length : directIndex;
+      const nextPriority = [...priority];
+      nextPriority.splice(insertIndex, 0, providerName);
+      await this.config.editConfig((c) => ({
+        ...c,
+        routePriority: nextPriority,
+        // Clear legacy disable — routePriority presence is now the authoritative
+        // routing signal, so a stale muxGatewayEnabled: false must not veto it.
+        ...(providerName === "mux-gateway" ? { muxGatewayEnabled: undefined } : {}),
+      }));
+    } else if (!isAutoRouteEligible && priority.includes(providerName)) {
+      // Only remove a gateway from routePriority when it is truly deconfigured
+      // or explicitly disabled. Configured-but-not-auto-eligible providers
+      // (e.g., Bedrock with IAM role auth that has no observable credentials)
+      // should keep any manually added route.
+      const providerConfig = providersConfig[providerName] ?? {};
+      const credentials = resolveProviderCredentials(providerName, providerConfig);
+      const shouldRemove = !credentials.isConfigured || isProviderDisabledInConfig(providerConfig);
+      if (shouldRemove) {
+        await this.config.editConfig((c) => ({
+          ...c,
+          routePriority: priority.filter((p) => p !== providerName),
+        }));
+      }
+    }
+  }
+
+  /**
    * Set provider config values that aren't representable as strings.
    *
    * Intended for persisted auth blobs (e.g. Codex OAuth tokens) that should never
    * cross the frontend boundary.
    */
-  public setConfigValue(provider: string, keyPath: string[], value: unknown): Result<void, string> {
+  public async setConfigValue(
+    provider: string,
+    keyPath: string[],
+    value: unknown
+  ): Promise<Result<void, string>> {
     try {
       // Load current providers config or create empty
       const providersConfig = this.config.loadProvidersConfig() ?? {};
@@ -343,6 +407,7 @@ export class ProviderService {
       // Save updated config
       this.config.saveProvidersConfig(providersConfig);
       this.notifyConfigChanged();
+      await this.syncGatewayLifecycle(provider);
 
       return { success: true, data: undefined };
     } catch (error) {
@@ -351,11 +416,11 @@ export class ProviderService {
     }
   }
 
-  public setConfig(
+  public async setConfig(
     provider: string,
     keyPath: string[],
     value: string | boolean
-  ): Result<void, string> {
+  ): Promise<Result<void, string>> {
     try {
       // Load current providers config or create empty
       const providersConfig = this.config.loadProvidersConfig() ?? {};
@@ -430,6 +495,7 @@ export class ProviderService {
       // Save updated config
       this.config.saveProvidersConfig(providersConfig);
       this.notifyConfigChanged();
+      await this.syncGatewayLifecycle(provider);
 
       return { success: true, data: undefined };
     } catch (error) {

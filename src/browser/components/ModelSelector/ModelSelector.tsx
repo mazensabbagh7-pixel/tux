@@ -14,17 +14,22 @@ import React, {
 } from "react";
 import { cn } from "@/common/lib/utils";
 import { Check, ChevronDown, Eye, Settings, ShieldCheck, Star } from "lucide-react";
-import { GatewayToggleButton } from "../GatewayToggleButton/GatewayToggleButton";
 
 import { ProviderIcon } from "../ProviderIcon/ProviderIcon";
 import { Tooltip, TooltipTrigger, TooltipContent } from "../Tooltip/Tooltip";
 import { useSettings } from "@/browser/contexts/SettingsContext";
 import { usePolicy } from "@/browser/contexts/PolicyContext";
-import { useGateway } from "@/browser/hooks/useGatewayModels";
+import { useRouting } from "@/browser/hooks/useRouting";
 
 import { stopKeyboardPropagation } from "@/browser/utils/events";
+import { PROVIDER_DISPLAY_NAMES } from "@/common/constants/providers";
 import { formatModelDisplayName } from "@/common/utils/ai/modelDisplay";
-import { getModelName, getModelProvider } from "@/common/utils/ai/models";
+import {
+  getExplicitGatewayPrefix,
+  getModelName,
+  getModelProvider,
+  normalizeToCanonical,
+} from "@/common/utils/ai/models";
 import { Button } from "../Button/Button";
 interface ModelSelectorProps {
   value: string;
@@ -72,7 +77,7 @@ export const ModelSelector = forwardRef<ModelSelectorRef, ModelSelectorProps>(
     useSettings(); // Context must be available for nested components
     const policyState = usePolicy();
     const policyEnforced = policyState.status.state === "enforced";
-    const gateway = useGateway();
+    const routing = useRouting();
     const [isOpen, setIsOpen] = useState(false);
     const [inputValue, setInputValue] = useState("");
     const [error, setError] = useState<string | null>(null);
@@ -255,10 +260,22 @@ export const ModelSelector = forwardRef<ModelSelectorRef, ModelSelectorProps>(
       : cn("bg-background rounded-sm text-[11px]", className ?? "w-32");
 
     const hasValue = value.trim().length > 0;
-    const selectedProvider = hasValue ? getModelProvider(value) : "";
+    const explicitGateway = hasValue ? getExplicitGatewayPrefix(value) : undefined;
+    const canonicalValue = hasValue ? normalizeToCanonical(value) : "";
+    const selectedProvider = hasValue ? getModelProvider(canonicalValue) : "";
     const displayValue = hasValue
-      ? formatModelDisplayName(getModelName(value))
+      ? formatModelDisplayName(getModelName(canonicalValue))
       : (emptyLabel ?? "");
+
+    // Explicit gateway selections short-circuit route resolution: the user
+    // intentionally pinned a gateway, so display that gateway directly instead
+    // of resolving route priority from the canonical (gateway-stripped) model.
+    const routeInfo = hasValue && !explicitGateway ? routing.resolveRoute(canonicalValue) : null;
+    const routedViaDisplayName = explicitGateway
+      ? PROVIDER_DISPLAY_NAMES[explicitGateway]
+      : routeInfo && routeInfo.route !== "direct"
+        ? routeInfo.displayName
+        : null;
 
     return (
       <div ref={containerRef} className={containerClassName}>
@@ -293,7 +310,13 @@ export const ModelSelector = forwardRef<ModelSelectorRef, ModelSelectorProps>(
             align={tooltipExtraContent ? "start" : "center"}
             className={cn(tooltipExtraContent && "max-w-80 whitespace-normal")}
           >
-            {value}
+            {explicitGateway ? value.trim() : canonicalValue}
+            {routedViaDisplayName ? (
+              <>
+                <br />
+                via {routedViaDisplayName}
+              </>
+            ) : null}
             {tooltipExtraContent ? (
               <>
                 <br />
@@ -350,20 +373,10 @@ export const ModelSelector = forwardRef<ModelSelectorRef, ModelSelectorProps>(
                       provider={getModelProvider(model)}
                       className="text-muted h-3 w-3 shrink-0"
                     />
-                    <span className="min-w-0 flex-1 truncate">{model}</span>
+                    <span className="min-w-0 flex-1 truncate">
+                      {formatModelDisplayName(getModelName(model))}
+                    </span>
 
-                    {/* Gateway toggle */}
-                    {gateway.canToggleModel(model) ? (
-                      <GatewayToggleButton
-                        active={gateway.modelUsesGateway(model)}
-                        onToggle={() => gateway.toggleModelGateway(model)}
-                        variant="bordered"
-                        size="sm"
-                        showTooltip
-                      />
-                    ) : (
-                      <span className="h-5 w-5" />
-                    )}
                     {/* Visibility toggle - Eye with line-through when hidden */}
                     {(onHideModel ?? onUnhideModel) && (
                       <Tooltip>

@@ -45,7 +45,7 @@ import {
   normalizeLayoutPresetsConfig,
 } from "@/common/types/uiLayouts";
 import { normalizeAgentAiDefaults } from "@/common/types/agentAiDefaults";
-import { isValidModelFormat, normalizeGatewayModel } from "@/common/utils/ai/models";
+import { isValidModelFormat, normalizeSelectedModel } from "@/common/utils/ai/models";
 import {
   DEFAULT_TASK_SETTINGS,
   normalizeSubagentAiDefaults,
@@ -581,6 +581,8 @@ export const router = (authToken?: string) => {
             taskSettings: config.taskSettings ?? DEFAULT_TASK_SETTINGS,
             muxGatewayEnabled: config.muxGatewayEnabled,
             muxGatewayModels: config.muxGatewayModels,
+            routePriority: config.routePriority,
+            routeOverrides: config.routeOverrides,
             defaultModel: config.defaultModel,
             hiddenModels: config.hiddenModels,
             stopCoderWorkspaceOnArchive: config.stopCoderWorkspaceOnArchive !== false,
@@ -595,6 +597,72 @@ export const router = (authToken?: string) => {
             llmDebugLogs: config.llmDebugLogs === true,
             onePasswordAccountName: config.onePasswordAccountName ?? null,
           };
+        }),
+      onConfigChanged: t
+        .input(schemas.config.onConfigChanged.input)
+        .output(schemas.config.onConfigChanged.output)
+        .handler(async function* ({ context, signal }) {
+          let resolveNext: (() => void) | null = null;
+          let pendingNotification = false;
+          let ended = false;
+
+          const push = () => {
+            if (ended) return;
+            if (resolveNext) {
+              const resolve = resolveNext;
+              resolveNext = null;
+              resolve();
+            } else {
+              pendingNotification = true;
+            }
+          };
+
+          const unsubscribe = context.config.onConfigChanged(push);
+
+          // Consumers often cancel this subscription while there are no pending config changes.
+          // If we block on a never-resolving Promise, AbortSignal cancellation can't unwind the
+          // generator, and we leak EventEmitter listeners across tests.
+          const onAbort = () => {
+            if (ended) return;
+            ended = true;
+            if (resolveNext) {
+              const resolve = resolveNext;
+              resolveNext = null;
+              resolve();
+            } else {
+              pendingNotification = true;
+            }
+          };
+
+          if (signal) {
+            if (signal.aborted) {
+              onAbort();
+            } else {
+              signal.addEventListener("abort", onAbort, { once: true });
+            }
+          }
+
+          try {
+            while (!ended) {
+              if (pendingNotification) {
+                pendingNotification = false;
+                if (ended) break;
+                yield undefined;
+                continue;
+              }
+
+              await new Promise<void>((resolve) => {
+                resolveNext = resolve;
+              });
+
+              if (ended) break;
+              yield undefined;
+            }
+          } finally {
+            ended = true;
+            signal?.removeEventListener("abort", onAbort);
+            unsubscribe();
+          }
         }),
       updateAgentAiDefaults: t
         .input(schemas.config.updateAgentAiDefaults.input)
@@ -642,6 +710,16 @@ export const router = (authToken?: string) => {
           // new gateway enabled/models state without needing localStorage.
           context.providerService.notifyConfigChanged();
         }),
+      updateRoutePreferences: t
+        .input(schemas.config.updateRoutePreferences.input)
+        .output(schemas.config.updateRoutePreferences.output)
+        .handler(async ({ context, input }) => {
+          await context.config.editConfig((config) => ({
+            ...config,
+            routePriority: input.routePriority,
+            routeOverrides: input.routeOverrides ?? config.routeOverrides,
+          }));
+        }),
       updateModelPreferences: t
         .input(schemas.config.updateModelPreferences.input)
         .output(schemas.config.updateModelPreferences.output)
@@ -657,7 +735,7 @@ export const router = (authToken?: string) => {
               return undefined;
             }
 
-            const normalized = normalizeGatewayModel(trimmed);
+            const normalized = normalizeSelectedModel(trimmed);
             if (!isValidModelFormat(normalized)) {
               return undefined;
             }
@@ -1168,9 +1246,14 @@ export const router = (authToken?: string) => {
       setProviderConfig: t
         .input(schemas.providers.setProviderConfig.input)
         .output(schemas.providers.setProviderConfig.output)
-        .handler(({ context, input }) =>
-          context.providerService.setConfig(input.provider, input.keyPath, input.value)
-        ),
+        .handler(async ({ context, input }) => {
+          const result = await context.providerService.setConfig(
+            input.provider,
+            input.keyPath,
+            input.value
+          );
+          return result;
+        }),
       setModels: t
         .input(schemas.providers.setModels.input)
         .output(schemas.providers.setModels.output)
@@ -1360,8 +1443,8 @@ export const router = (authToken?: string) => {
           if (response.status === 401) {
             try {
               // Best-effort auto-logout: clear local mux-gateway creds on session expiry.
-              context.providerService.setConfig("mux-gateway", ["couponCode"], "");
-              context.providerService.setConfig("mux-gateway", ["voucher"], "");
+              await context.providerService.setConfig("mux-gateway", ["couponCode"], "");
+              await context.providerService.setConfig("mux-gateway", ["voucher"], "");
             } catch {
               // Ignore failures clearing local credentials
             }

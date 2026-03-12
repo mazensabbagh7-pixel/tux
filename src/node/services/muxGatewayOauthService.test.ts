@@ -67,9 +67,13 @@ function createMockDeps(): MockDeps {
 
 function createMockProviderService(deps: MockDeps): Pick<ProviderService, "setConfig"> {
   return {
-    setConfig: (provider: string, keyPath: string[], value: string): Result<void, string> => {
+    setConfig: (
+      provider: string,
+      keyPath: string[],
+      value: string
+    ): Promise<Result<void, string>> => {
       deps.setConfigCalls.push({ provider, keyPath, value });
-      return deps.setConfigResult;
+      return Promise.resolve(deps.setConfigResult);
     },
   };
 }

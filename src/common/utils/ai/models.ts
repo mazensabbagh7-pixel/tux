@@ -3,6 +3,7 @@
  */
 
 import { DEFAULT_MODEL, MODEL_ABBREVIATIONS } from "@/common/constants/knownModels";
+import { PROVIDER_DEFINITIONS, type ProviderName } from "@/common/constants/providers";
 
 export const defaultModel = DEFAULT_MODEL;
 
@@ -27,24 +28,64 @@ export function isValidModelFormat(model: string): boolean {
   return colonIndex > 0 && colonIndex < model.length - 1;
 }
 
-const MUX_GATEWAY_PREFIX = "mux-gateway:";
-
 /**
- * Normalize gateway-prefixed model strings to standard format.
- * Converts "mux-gateway:provider/model" to "provider:model".
- * Returns non-gateway strings unchanged.
+ * Normalize gateway model strings to canonical provider:model format when possible.
+ * For gateway-only vendor/model IDs, keep the original gateway-scoped identity.
  */
-export function normalizeGatewayModel(modelString: string): string {
-  if (!modelString.startsWith(MUX_GATEWAY_PREFIX)) {
+export function normalizeToCanonical(modelString: string): string {
+  const colonIndex = modelString.indexOf(":");
+  if (colonIndex === -1) {
     return modelString;
   }
-  // mux-gateway:anthropic/claude-opus-4-5 → anthropic:claude-opus-4-5
-  const inner = modelString.slice(MUX_GATEWAY_PREFIX.length);
-  const slashIndex = inner.indexOf("/");
-  if (slashIndex === -1) {
-    return modelString; // Malformed, return as-is
+
+  const providerName = modelString.slice(0, colonIndex) as ProviderName;
+  const gatewayModelId = modelString.slice(colonIndex + 1);
+
+  const def = PROVIDER_DEFINITIONS[providerName];
+  if (def?.kind !== "gateway" || !("fromGatewayModelId" in def) || !def.fromGatewayModelId) {
+    return modelString; // direct/local provider or unknown — already canonical
   }
-  return `${inner.slice(0, slashIndex)}:${inner.slice(slashIndex + 1)}`;
+
+  const parsed = def.fromGatewayModelId(gatewayModelId);
+  if (!parsed) {
+    return modelString; // couldn't parse
+  }
+
+  // Only normalize if the origin is a known direct provider.
+  // Gateway-only models like "meta-llama/llama-3.1-405b" stay gateway-scoped.
+  const originDef = PROVIDER_DEFINITIONS[parsed.origin as ProviderName];
+  if (originDef?.kind !== "direct") {
+    return modelString; // origin is not a known direct provider
+  }
+
+  return `${parsed.origin}:${parsed.modelId}`;
+}
+
+/**
+ * Return the explicitly requested gateway provider prefix from a raw model string.
+ * This preserves user-selected gateway routing (for example, openrouter:openai/gpt-5)
+ * instead of canonicalizing back to a direct provider model string.
+ */
+export function getExplicitGatewayPrefix(modelString: string): ProviderName | undefined {
+  const trimmedModelString = modelString.trim();
+  const colonIndex = trimmedModelString.indexOf(":");
+  if (colonIndex <= 0 || colonIndex === trimmedModelString.length - 1) {
+    return undefined;
+  }
+
+  const providerName = trimmedModelString.slice(0, colonIndex) as ProviderName;
+  return PROVIDER_DEFINITIONS[providerName]?.kind === "gateway" ? providerName : undefined;
+}
+
+/**
+ * Normalize a selected model while preserving explicit gateway routing choices.
+ * User-selected gateway identities like openrouter:openai/gpt-5 should stay intact.
+ */
+export function normalizeSelectedModel(modelString: string): string {
+  const trimmedModelString = modelString.trim();
+  return getExplicitGatewayPrefix(trimmedModelString)
+    ? trimmedModelString
+    : normalizeToCanonical(trimmedModelString);
 }
 
 /**
@@ -53,7 +94,7 @@ export function normalizeGatewayModel(modelString: string): string {
  * @returns The model name part (after the colon), or the full string if no colon is found
  */
 export function getModelName(modelString: string): string {
-  const normalized = normalizeGatewayModel(modelString);
+  const normalized = normalizeToCanonical(modelString);
   const colonIndex = normalized.indexOf(":");
   if (colonIndex === -1) {
     return normalized;
@@ -67,7 +108,7 @@ export function getModelName(modelString: string): string {
  * @returns The provider part (before the colon), or empty string if no colon is found
  */
 export function getModelProvider(modelString: string): string {
-  const normalized = normalizeGatewayModel(modelString);
+  const normalized = normalizeToCanonical(modelString);
   const colonIndex = normalized.indexOf(":");
   if (colonIndex === -1) {
     return "";
@@ -88,7 +129,7 @@ export function getModelProvider(modelString: string): string {
  * @returns True if the model supports 1M context window mode
  */
 export function supports1MContext(modelString: string): boolean {
-  const normalized = normalizeGatewayModel(modelString);
+  const normalized = normalizeToCanonical(modelString);
   const [provider, modelName] = normalized.split(":", 2);
   const lowerModelName = modelName?.toLowerCase() ?? "";
 

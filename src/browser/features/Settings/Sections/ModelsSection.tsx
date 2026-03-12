@@ -13,13 +13,17 @@ import {
 import { useAPI } from "@/browser/contexts/API";
 import { useSettings } from "@/browser/contexts/SettingsContext";
 import { useModelsFromSettings } from "@/browser/hooks/useModelsFromSettings";
-import { useGateway } from "@/browser/hooks/useGatewayModels";
+import { useRouting } from "@/browser/hooks/useRouting";
 import { usePersistedState } from "@/browser/hooks/usePersistedState";
 import { useProvidersConfig } from "@/browser/hooks/useProvidersConfig";
 import { KNOWN_MODELS } from "@/common/constants/knownModels";
 import { isCodexOauthRequiredModelId } from "@/common/constants/codexOAuth";
 import { usePolicy } from "@/browser/contexts/PolicyContext";
-import { getModelProvider, supports1MContext } from "@/common/utils/ai/models";
+import {
+  getExplicitGatewayPrefix,
+  getModelProvider,
+  supports1MContext,
+} from "@/common/utils/ai/models";
 import { getAllowedProvidersForUi, isModelAllowedByPolicy } from "@/browser/utils/policyUi";
 import { LAST_CUSTOM_MODEL_PROVIDER_KEY } from "@/common/constants/storage";
 import type { ProviderModelEntry } from "@/common/orpc/types";
@@ -41,9 +45,9 @@ function ModelsTableHeader() {
   return (
     <thead>
       <tr className="border-border-medium bg-background-secondary/50 border-b">
-        <th className={`${headerCellBase} pl-2 text-left md:pl-3`}>Provider</th>
-        <th className={`${headerCellBase} text-left`}>Model</th>
+        <th className={`${headerCellBase} pl-2 text-left md:pl-3`}>Model</th>
         <th className={`${headerCellBase} w-16 text-right md:w-20`}>Context</th>
+        <th className={`${headerCellBase} w-32 text-left md:w-40`}>Route</th>
         <th className={`${headerCellBase} w-28 text-right md:w-32 md:pr-3`}>Actions</th>
       </tr>
     </thead>
@@ -105,6 +109,13 @@ export function shouldShowModelInSettings(modelId: string, codexOauthConfigured:
   return codexOauthConfigured || !isCodexOauthRequiredModelId(modelId);
 }
 
+export function shouldAllowRouteOverrideInSettings(modelId: string): boolean {
+  // Explicit gateway rows already pin their route in the model ID. Wiring the
+  // route picker here would mutate the canonical sibling row's override while
+  // leaving the explicit row itself pinned to its gateway.
+  return getExplicitGatewayPrefix(modelId) === undefined;
+}
+
 export function ModelsSection() {
   const policyState = usePolicy();
   const effectivePolicy =
@@ -127,7 +138,7 @@ export function ModelsSection() {
   );
   const { defaultModel, setDefaultModel, hiddenModels, hideModel, unhideModel } =
     useModelsFromSettings();
-  const gateway = useGateway();
+  const routing = useRouting();
   const { has1MContext, toggle1MContext } = useProviderOptions();
 
   // Read OAuth state from this component's provider config source to avoid
@@ -331,7 +342,7 @@ export function ModelsSection() {
     }> = [];
 
     for (const [provider, providerConfig] of Object.entries(config)) {
-      // Skip hidden providers (mux-gateway models are accessed via the cloud toggle, not listed separately)
+      // Skip hidden providers (mux-gateway models are routed, not managed as a standalone list)
       if (HIDDEN_PROVIDERS.has(provider)) continue;
       if (!providerConfig.models) continue;
 
@@ -428,6 +439,7 @@ export function ModelsSection() {
                   const isModelEditing =
                     editing?.provider === model.provider &&
                     editing?.originalModelId === model.modelId;
+                  const allowRouteOverride = shouldAllowRouteOverrideInSettings(model.fullId);
                   return (
                     <ModelRow
                       key={model.fullId}
@@ -447,7 +459,9 @@ export function ModelsSection() {
                       editError={isModelEditing ? error : undefined}
                       saving={false}
                       hasActiveEdit={editing !== null}
-                      isGatewayEnabled={gateway.modelUsesGateway(model.fullId)}
+                      resolvedRoute={routing.resolveRoute(model.fullId)}
+                      autoResolvedRoute={routing.resolveAutoRoute(model.fullId)}
+                      availableRoutes={routing.availableRoutes(model.fullId)}
                       is1MContextEnabled={has1MContext(model.fullId)}
                       onSetDefault={() => setDefaultModel(model.fullId)}
                       onStartEdit={() =>
@@ -486,9 +500,9 @@ export function ModelsSection() {
                           ? unhideModel(model.fullId)
                           : hideModel(model.fullId)
                       }
-                      onToggleGateway={
-                        gateway.canToggleModel(model.fullId)
-                          ? () => gateway.toggleModelGateway(model.fullId)
+                      onSetRouteOverride={
+                        allowRouteOverride
+                          ? (route) => routing.setRouteOverride(model.fullId, route)
                           : undefined
                       }
                       onToggle1MContext={
@@ -524,7 +538,9 @@ export function ModelsSection() {
                   isCustom={false}
                   isDefault={defaultModel === model.fullId}
                   isEditing={false}
-                  isGatewayEnabled={gateway.modelUsesGateway(model.fullId)}
+                  resolvedRoute={routing.resolveRoute(model.fullId)}
+                  autoResolvedRoute={routing.resolveAutoRoute(model.fullId)}
+                  availableRoutes={routing.availableRoutes(model.fullId)}
                   is1MContextEnabled={has1MContext(model.fullId)}
                   onSetDefault={() => setDefaultModel(model.fullId)}
                   isHiddenFromSelector={hiddenModels.includes(model.fullId)}
@@ -533,11 +549,7 @@ export function ModelsSection() {
                       ? unhideModel(model.fullId)
                       : hideModel(model.fullId)
                   }
-                  onToggleGateway={
-                    gateway.canToggleModel(model.fullId)
-                      ? () => gateway.toggleModelGateway(model.fullId)
-                      : undefined
-                  }
+                  onSetRouteOverride={(route) => routing.setRouteOverride(model.fullId, route)}
                   onToggle1MContext={
                     supports1MContext(model.fullId)
                       ? () => toggle1MContext(model.fullId)

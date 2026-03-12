@@ -2,6 +2,7 @@ import * as fs from "fs";
 import * as path from "path";
 import * as crypto from "crypto";
 import * as jsonc from "jsonc-parser";
+import { EventEmitter } from "events";
 import writeFileAtomic from "write-file-atomic";
 import { log } from "@/node/services/log";
 import type { WorkspaceMetadata, FrontendWorkspaceMetadata } from "@/common/types/workspace";
@@ -34,10 +35,16 @@ import { RUNTIME_ENABLEMENT_IDS, type RuntimeEnablementId } from "@/common/types
 import { DEFAULT_RUNTIME_CONFIG } from "@/common/constants/workspace";
 import { isIncompatibleRuntimeConfig } from "@/common/utils/runtimeCompatibility";
 import { getMuxHome } from "@/common/constants/paths";
+import { GATEWAY_PROVIDERS } from "@/common/constants/providers";
 import { PlatformPaths } from "@/common/utils/paths";
-import { isValidModelFormat, normalizeGatewayModel } from "@/common/utils/ai/models";
+import {
+  isValidModelFormat,
+  normalizeSelectedModel,
+  normalizeToCanonical,
+} from "@/common/utils/ai/models";
 import { ensurePrivateDirSync } from "@/node/utils/fs";
 import { stripTrailingSlashes } from "@/node/utils/pathUtils";
+import { isProviderAutoRouteEligible } from "@/node/utils/providerRequirements";
 import { getContainerName as getDockerContainerName } from "@/node/runtime/DockerRuntime";
 
 // Re-export project/provider types from dedicated schema/types files (for preload usage)
@@ -92,6 +99,49 @@ function parseOptionalStringArray(value: unknown): string[] | undefined {
 
   return value.filter((item): item is string => typeof item === "string");
 }
+function parseOptionalStringRecord(value: unknown): Record<string, string> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+
+  const out: Record<string, string> = {};
+  for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof item === "string") {
+      out[key] = item;
+    }
+  }
+
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+function normalizeRouteOverridesRecord(value: unknown): Record<string, string> | undefined {
+  const parsed = parseOptionalStringRecord(value);
+  if (!parsed) {
+    return undefined;
+  }
+
+  const out: Record<string, string> = {};
+  for (const [key, route] of Object.entries(parsed)) {
+    out[normalizeToCanonical(key)] = route;
+  }
+
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+function areStringArraysEqual(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) {
+    return false;
+  }
+
+  for (let i = 0; i < a.length; i += 1) {
+    if (a[i] !== b[i]) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 function normalizeOptionalModelString(value: unknown): string | undefined {
   if (typeof value !== "string") {
     return undefined;
@@ -107,7 +157,7 @@ function normalizeOptionalModelString(value: unknown): string | undefined {
     return undefined;
   }
 
-  const normalized = normalizeGatewayModel(trimmed);
+  const normalized = normalizeSelectedModel(trimmed);
   if (!isValidModelFormat(normalized)) {
     return undefined;
   }
@@ -132,6 +182,23 @@ function normalizeOptionalModelStringArray(value: unknown): string[] | undefined
   }
 
   return out;
+}
+
+function normalizeAiDefaultsModelStrings<T extends Record<string, { modelString?: string }>>(
+  value: T
+): T {
+  let modified = false;
+  const normalizedEntries = Object.entries(value).map(([id, entry]) => {
+    const normalizedModelString = normalizeOptionalModelString(entry.modelString);
+    if (normalizedModelString !== entry.modelString) {
+      modified = true;
+      return [id, { ...entry, modelString: normalizedModelString }];
+    }
+
+    return [id, entry];
+  });
+
+  return modified ? (Object.fromEntries(normalizedEntries) as T) : value;
 }
 
 function parseOptionalPort(value: unknown): number | undefined {
@@ -246,6 +313,7 @@ export class Config {
   private readonly configFile: string;
   private readonly providersFile: string;
   private readonly secretsFile: string;
+  private readonly emitter = new EventEmitter();
 
   constructor(rootDir?: string) {
     this.rootDir = rootDir ?? getMuxHome();
@@ -256,11 +324,212 @@ export class Config {
     this.secretsFile = path.join(this.rootDir, "secrets.json");
   }
 
+  onConfigChanged(callback: () => void): () => void {
+    this.emitter.on("configChanged", callback);
+    return () => {
+      this.emitter.off("configChanged", callback);
+    };
+  }
+
+  private notifyConfigChanged(): void {
+    this.emitter.emit("configChanged");
+  }
+
+  /**
+   * Derive routePriority from currently-configured gateway providers.
+   * Returns a priority array when at least one gateway is configured,
+   * undefined otherwise — letting callers fall back to their own defaults.
+   */
+  private seedRoutePriorityFromProviders(): string[] | undefined {
+    const providersConfig = this.loadProvidersConfig() ?? {};
+    const priority: string[] = [];
+
+    for (const gw of GATEWAY_PROVIDERS) {
+      if (isProviderAutoRouteEligible(gw, providersConfig[gw] ?? {})) {
+        priority.push(gw);
+      }
+    }
+    priority.push("direct");
+
+    return priority.length > 1 ? priority : undefined;
+  }
+
   loadConfigOrDefault(): ProjectsConfig {
     try {
       if (fs.existsSync(this.configFile)) {
         const data = fs.readFileSync(this.configFile, "utf-8");
-        const parsed = JSON.parse(data) as Partial<AppConfigOnDisk>;
+        const parsed = JSON.parse(data) as Partial<AppConfigOnDisk> & Record<string, unknown>;
+        let configModified = false;
+
+        const normalizeNestedModelStrings = (value: unknown): boolean => {
+          if (!value || typeof value !== "object" || Array.isArray(value)) {
+            return false;
+          }
+
+          let modified = false;
+          for (const entry of Object.values(value as Record<string, unknown>)) {
+            if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+              continue;
+            }
+
+            const modelString = (entry as { modelString?: unknown }).modelString;
+            if (typeof modelString !== "string") {
+              continue;
+            }
+
+            const normalized = normalizeSelectedModel(modelString.trim());
+            if (normalized !== modelString) {
+              (entry as { modelString?: string }).modelString = normalized;
+              modified = true;
+            }
+          }
+
+          return modified;
+        };
+
+        const normalizeLegacyGatewayModel = (value: string): string | undefined => {
+          const trimmed = value.trim();
+          if (!trimmed) {
+            return undefined;
+          }
+
+          const legacyModelString = trimmed.includes(":") ? trimmed : trimmed.replace("/", ":");
+          const canonicalModel = normalizeToCanonical(legacyModelString);
+          return isValidModelFormat(canonicalModel) ? canonicalModel : undefined;
+        };
+
+        // Migrate legacy gateway settings to the new route-based system.
+        // Legacy keys are intentionally preserved on disk for downgrade compatibility —
+        // older versions still read muxGatewayEnabled / muxGatewayModels directly.
+        if (
+          (parsed.muxGatewayModels != null || parsed.muxGatewayEnabled != null) &&
+          !Array.isArray(parsed.routePriority)
+        ) {
+          let nextPriority = this.seedRoutePriorityFromProviders() ?? ["direct"];
+          if (parsed.muxGatewayEnabled === false) {
+            nextPriority = nextPriority.filter((route) => route !== "mux-gateway");
+            if (nextPriority.length === 0) {
+              nextPriority = ["direct"];
+            }
+          }
+          parsed.routePriority = nextPriority;
+          configModified = true;
+
+          if (parsed.muxGatewayEnabled !== false) {
+            const legacyModels = parseOptionalStringArray(parsed.muxGatewayModels) ?? [];
+            if (legacyModels.length > 0) {
+              const mergedRouteOverrides =
+                normalizeRouteOverridesRecord(parsed.routeOverrides) ?? {};
+              let routeOverridesModified = false;
+
+              for (const legacyModel of legacyModels) {
+                const canonicalModel = normalizeLegacyGatewayModel(legacyModel);
+                if (!canonicalModel || Object.hasOwn(mergedRouteOverrides, canonicalModel)) {
+                  continue;
+                }
+
+                mergedRouteOverrides[canonicalModel] = "mux-gateway";
+                routeOverridesModified = true;
+              }
+
+              if (routeOverridesModified) {
+                parsed.routeOverrides = mergedRouteOverrides;
+              }
+            }
+          }
+        }
+
+        // Seed routePriority only when the field does not exist yet.
+        // Once routePriority is an array, it becomes user-owned state, so
+        // read-time backfill is intentionally skipped here. Credential-driven
+        // gateway additions/removals are handled at write time by
+        // providerService.syncGatewayLifecycle().
+        if (!Array.isArray(parsed.routePriority)) {
+          const seeded = this.seedRoutePriorityFromProviders();
+          if (seeded) {
+            parsed.routePriority = seeded;
+            configModified = true;
+          }
+        }
+
+        if (
+          Array.isArray(parsed.routePriority) &&
+          parsed.routePriority.includes("mux-gateway") &&
+          parsed.muxGatewayEnabled === false
+        ) {
+          // Once routePriority exists, it is the authoritative routing signal. Clear a stale
+          // legacy disable flag so downgrade-compat data cannot veto an explicitly enabled gateway.
+          delete parsed.muxGatewayEnabled;
+          configModified = true;
+        }
+
+        // Normalize persisted model preferences while preserving explicit gateway selections.
+        if (typeof parsed.defaultModel === "string") {
+          const normalized = normalizeSelectedModel(parsed.defaultModel.trim());
+          if (normalized !== parsed.defaultModel) {
+            parsed.defaultModel = normalized;
+            configModified = true;
+          }
+        }
+
+        if (Array.isArray(parsed.hiddenModels)) {
+          const sourceHiddenModels = parsed.hiddenModels.filter(
+            (model): model is string => typeof model === "string"
+          );
+          const normalizedHiddenModels = sourceHiddenModels.map((model) =>
+            normalizeSelectedModel(model.trim())
+          );
+
+          if (
+            sourceHiddenModels.length !== parsed.hiddenModels.length ||
+            !areStringArraysEqual(sourceHiddenModels, normalizedHiddenModels)
+          ) {
+            parsed.hiddenModels = normalizedHiddenModels;
+            configModified = true;
+          }
+        }
+
+        if (normalizeNestedModelStrings(parsed.agentAiDefaults)) {
+          configModified = true;
+        }
+        if (normalizeNestedModelStrings(parsed.subagentAiDefaults)) {
+          configModified = true;
+        }
+
+        if (configModified) {
+          // Invalidate stale usage caches: old files may contain gateway-prefixed model ids.
+          try {
+            if (fs.existsSync(this.sessionsDir)) {
+              for (const sessionEntry of fs.readdirSync(this.sessionsDir, {
+                withFileTypes: true,
+              })) {
+                if (!sessionEntry.isDirectory()) {
+                  continue;
+                }
+
+                const usagePath = path.join(
+                  this.getSessionDir(sessionEntry.name),
+                  "session-usage.json"
+                );
+                if (fs.existsSync(usagePath)) {
+                  fs.rmSync(usagePath, { force: true });
+                }
+              }
+            }
+          } catch (error) {
+            // Best-effort cleanup; never fail startup on cache invalidation issues.
+            log.warn("Failed to invalidate session usage cache during config migration", { error });
+          }
+
+          try {
+            writeFileAtomic.sync(this.configFile, JSON.stringify(parsed, null, 2), {
+              encoding: "utf-8",
+            });
+          } catch (error) {
+            // Keep startup resilient even if persisting migration fails.
+            log.warn("Failed to persist migrated config", { error });
+          }
+        }
 
         // Config is stored as array of [path, config] pairs.
         // Older/newer files may omit `projects`; treat missing/invalid values as an empty map
@@ -290,6 +559,8 @@ export class Config {
 
         const muxGatewayEnabled = parseOptionalBoolean(parsed.muxGatewayEnabled);
         const muxGatewayModels = parseOptionalStringArray(parsed.muxGatewayModels);
+        const routePriority = parseOptionalStringArray(parsed.routePriority);
+        const routeOverrides = normalizeRouteOverridesRecord(parsed.routeOverrides);
 
         const defaultModel = normalizeOptionalModelString(parsed.defaultModel);
         const hiddenModels = normalizeOptionalModelStringArray(parsed.hiddenModels);
@@ -329,6 +600,8 @@ export class Config {
           muxGatewayEnabled,
           llmDebugLogs: parseOptionalBoolean(parsed.llmDebugLogs),
           muxGatewayModels,
+          routePriority,
+          routeOverrides,
           defaultModel,
           hiddenModels,
           agentAiDefaults,
@@ -356,6 +629,7 @@ export class Config {
       taskSettings: DEFAULT_TASK_SETTINGS,
       agentAiDefaults: {},
       subagentAiDefaults: {},
+      routePriority: this.seedRoutePriorityFromProviders(),
     };
   }
 
@@ -398,6 +672,16 @@ export class Config {
       const hiddenModels = normalizeOptionalModelStringArray(config.hiddenModels);
       if (hiddenModels !== undefined) {
         data.hiddenModels = hiddenModels;
+      }
+
+      const routePriority = parseOptionalStringArray(config.routePriority);
+      if (routePriority !== undefined) {
+        data.routePriority = routePriority;
+      }
+
+      const routeOverrides = normalizeRouteOverridesRecord(config.routeOverrides);
+      if (routeOverrides !== undefined) {
+        data.routeOverrides = routeOverrides;
       }
 
       const apiServerBindHost = parseOptionalNonEmptyString(config.apiServerBindHost);
@@ -449,10 +733,11 @@ export class Config {
         data.viewedSplashScreens = config.viewedSplashScreens;
       }
       if (config.agentAiDefaults && Object.keys(config.agentAiDefaults).length > 0) {
-        data.agentAiDefaults = config.agentAiDefaults;
+        const normalizedAgentAiDefaults = normalizeAiDefaultsModelStrings(config.agentAiDefaults);
+        data.agentAiDefaults = normalizedAgentAiDefaults;
 
         const legacySubagent: Record<string, unknown> = {};
-        for (const [id, entry] of Object.entries(config.agentAiDefaults)) {
+        for (const [id, entry] of Object.entries(normalizedAgentAiDefaults)) {
           if (id === "plan" || id === "exec" || id === "compact") continue;
           legacySubagent[id] = entry;
         }
@@ -462,7 +747,7 @@ export class Config {
       } else {
         // Legacy only.
         if (config.subagentAiDefaults && Object.keys(config.subagentAiDefaults).length > 0) {
-          data.subagentAiDefaults = config.subagentAiDefaults;
+          data.subagentAiDefaults = normalizeAiDefaultsModelStrings(config.subagentAiDefaults);
         }
       }
 
@@ -524,6 +809,9 @@ export class Config {
     const config = this.loadConfigOrDefault();
     const newConfig = fn(config);
     await this.saveConfig(newConfig);
+    // Backend-initiated config edits (for example gateway auth changes) use this signal
+    // so frontend subscribers can refresh derived state without polling.
+    this.notifyConfigChanged();
   }
 
   getUpdateChannel(): UpdateChannel {

@@ -1653,6 +1653,8 @@ export const config = {
       taskSettings: ResolvedTaskSettingsSchema,
       muxGatewayEnabled: z.boolean().optional(),
       muxGatewayModels: z.array(z.string()).optional(),
+      routePriority: z.array(z.string()).optional(),
+      routeOverrides: z.record(z.string(), z.string()).optional(),
       defaultModel: z.string().optional(),
       hiddenModels: z.array(z.string()).optional(),
       stopCoderWorkspaceOnArchive: z.boolean(),
@@ -1677,6 +1679,10 @@ export const config = {
     }),
     output: z.void(),
   },
+  onConfigChanged: {
+    input: z.void(),
+    output: eventIterator(z.void()),
+  },
   updateAgentAiDefaults: {
     input: z.object({
       agentAiDefaults: AgentAiDefaultsSchema,
@@ -1687,6 +1693,13 @@ export const config = {
     input: z.object({
       muxGatewayEnabled: z.boolean(),
       muxGatewayModels: z.array(z.string()),
+    }),
+    output: z.void(),
+  },
+  updateRoutePreferences: {
+    input: z.object({
+      routePriority: z.array(z.string()),
+      routeOverrides: z.record(z.string(), z.string()).optional(),
     }),
     output: z.void(),
   },

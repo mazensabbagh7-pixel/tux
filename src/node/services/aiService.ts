@@ -59,7 +59,11 @@ import type { WorkspaceMCPOverrides } from "@/common/types/mcp";
 import type { MCPServerManager, MCPWorkspaceStats } from "@/node/services/mcpServerManager";
 import { WorkspaceMcpOverridesService } from "./workspaceMcpOverridesService";
 import type { TaskService } from "@/node/services/taskService";
-import { buildProviderOptions, buildRequestHeaders } from "@/common/utils/ai/providerOptions";
+import {
+  buildProviderOptions,
+  buildRequestHeaders,
+  resolveProviderOptionsNamespaceKey,
+} from "@/common/utils/ai/providerOptions";
 import { resolveModelParameterOverrides } from "@/common/utils/ai/modelParameterOverrides";
 import { isPlainObject } from "@/common/utils/isPlainObject";
 import { sliceMessagesFromLatestCompactionBoundary } from "@/common/utils/messages/compactionBoundary";
@@ -743,6 +747,7 @@ export class AIService extends EventEmitter {
         canonicalModelString,
         canonicalProviderName,
         routedThroughGateway,
+        routeProvider,
       } = modelResult.data;
 
       // Dump original messages for debugging
@@ -1228,6 +1233,7 @@ export class AIService extends EventEmitter {
           assistantMessageId,
           canonicalModelString,
           routedThroughGateway,
+          ...(routeProvider != null ? { routeProvider } : {}),
           historySequence,
           systemMessageTokens,
           effectiveAgentId,
@@ -1257,7 +1263,8 @@ export class AIService extends EventEmitter {
         effectiveMuxProviderOptions,
         workspaceId,
         truncationMode,
-        this.providerService.getConfig()
+        this.providerService.getConfig(),
+        routeProvider
       );
 
       // Build per-request HTTP headers (e.g., workspace correlation and
@@ -1268,7 +1275,8 @@ export class AIService extends EventEmitter {
         modelString,
         effectiveMuxProviderOptions,
         workspaceId,
-        this.providerService.getConfig()
+        this.providerService.getConfig(),
+        routeProvider
       );
 
       // --- Model parameter overrides from providers.jsonc ---
@@ -1284,13 +1292,17 @@ export class AIService extends EventEmitter {
       // Recursive merge within the provider namespace preserves non-conflicting nested
       // subfields (e.g., user reasoning.max_tokens alongside Mux reasoning.enabled).
       // Mux-built values win on leaf conflicts for safety of thinking/reasoning/cache.
+      const providerOptionsNamespaceKey = resolveProviderOptionsNamespaceKey(
+        canonicalProviderName,
+        routeProvider
+      );
       const muxProviderNamespace = (providerOptions as Record<string, unknown>)?.[
-        canonicalProviderName
+        providerOptionsNamespaceKey
       ];
       const mergedProviderOptions = resolvedOverrides.providerExtras
         ? {
             ...providerOptions,
-            [canonicalProviderName]: isPlainObject(muxProviderNamespace)
+            [providerOptionsNamespaceKey]: isPlainObject(muxProviderNamespace)
               ? mergeProviderExtrasUnderMux(resolvedOverrides.providerExtras, muxProviderNamespace)
               : resolvedOverrides.providerExtras,
           }
@@ -1376,6 +1388,7 @@ export class AIService extends EventEmitter {
               modelString,
               effectiveModelString,
               primaryModel: modelResult.data.model,
+              routeProvider,
               muxProviderOptions: effectiveMuxProviderOptions,
               workspaceId,
               effectiveMode,
@@ -1435,6 +1448,9 @@ export class AIService extends EventEmitter {
           agentId: effectiveAgentId,
           mode: effectiveMode,
           routedThroughGateway,
+          // Preserve the resolved route source so stream events and persisted messages
+          // keep non-gateway attribution even when the model ID itself is gateway-agnostic.
+          ...(routeProvider != null ? { routeProvider } : {}),
           ...(acpPromptId != null ? { acpPromptId } : {}),
           ...(modelCostsIncluded(modelResult.data.model) ? { costsIncluded: true } : {}),
         },

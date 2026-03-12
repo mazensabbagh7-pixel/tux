@@ -128,6 +128,10 @@ export interface MockORPCClientOptions {
   defaultRuntime?: RuntimeEnablementId | null;
   /** Initial 1Password account name for config.getConfig */
   onePasswordAccountName?: string | null;
+  /** Initial route priority for config.getConfig */
+  routePriority?: string[];
+  /** Initial per-model route overrides for config.getConfig */
+  routeOverrides?: Record<string, string>;
   /** Per-workspace chat callback. Return messages to emit, or use the callback for streaming. */
   onChat?: (workspaceId: string, emit: (msg: WorkspaceChatMessage) => void) => (() => void) | void;
   /** Mock for executeBash per workspace */
@@ -337,6 +341,8 @@ export function createMockORPCClient(options: MockORPCClientOptions = {}): APICl
     runtimeEnablement: initialRuntimeEnablement,
     defaultRuntime: initialDefaultRuntime,
     onePasswordAccountName: initialOnePasswordAccountName = null,
+    routePriority: initialRoutePriority = ["direct"],
+    routeOverrides: initialRouteOverrides = {},
     agentDefinitions: initialAgentDefinitions,
     listBranches: customListBranches,
     gitInit: customGitInit,
@@ -545,6 +551,14 @@ export function createMockORPCClient(options: MockORPCClientOptions = {}): APICl
 
   let defaultRuntime: RuntimeEnablementId | null = initialDefaultRuntime ?? null;
   let onePasswordAccountName: string | null = initialOnePasswordAccountName;
+  let routePriority = [...initialRoutePriority];
+  let routeOverrides = { ...initialRouteOverrides };
+  const configChangeSubscribers = new Set<(value: void) => void>();
+  const notifyConfigChanged = () => {
+    for (const push of configChangeSubscribers) {
+      push(undefined);
+    }
+  };
   let globalSecretsState: Secret[] = [...globalSecrets];
   const getInjectedGlobalSecretKeys = (projectPath: string): string[] => {
     const normalizedProjectPath = projectPath.trim();
@@ -717,6 +731,8 @@ export function createMockORPCClient(options: MockORPCClientOptions = {}): APICl
           taskSettings,
           muxGatewayEnabled,
           muxGatewayModels,
+          routePriority,
+          routeOverrides,
           stopCoderWorkspaceOnArchive,
           runtimeEnablement,
           defaultRuntime,
@@ -749,11 +765,31 @@ export function createMockORPCClient(options: MockORPCClientOptions = {}): APICl
           agentAiDefaults = normalizeAgentAiDefaults(nextAgentAiDefaults);
         }
 
+        notifyConfigChanged();
         return Promise.resolve(undefined);
+      },
+      onConfigChanged: async function* (_input: void, options?: { signal?: AbortSignal }) {
+        const { push, iterate, end } = createAsyncMessageQueue<void>();
+        configChangeSubscribers.add(push);
+
+        try {
+          if (options?.signal?.aborted) {
+            return;
+          }
+
+          const abort = () => end();
+          options?.signal?.addEventListener("abort", abort, { once: true });
+          yield* iterate();
+          options?.signal?.removeEventListener("abort", abort);
+        } finally {
+          configChangeSubscribers.delete(push);
+          end();
+        }
       },
       updateAgentAiDefaults: (input: { agentAiDefaults: unknown }) => {
         agentAiDefaults = normalizeAgentAiDefaults(input.agentAiDefaults);
         subagentAiDefaults = deriveSubagentAiDefaults();
+        notifyConfigChanged();
         return Promise.resolve(undefined);
       },
       updateMuxGatewayPrefs: (input: {
@@ -762,14 +798,26 @@ export function createMockORPCClient(options: MockORPCClientOptions = {}): APICl
       }) => {
         muxGatewayEnabled = input.muxGatewayEnabled ? undefined : false;
         muxGatewayModels = input.muxGatewayModels.length > 0 ? input.muxGatewayModels : undefined;
+        notifyConfigChanged();
+        return Promise.resolve(undefined);
+      },
+      updateRoutePreferences: (input: {
+        routePriority: string[];
+        routeOverrides?: Record<string, string>;
+      }) => {
+        routePriority = [...input.routePriority];
+        routeOverrides = { ...(input.routeOverrides ?? {}) };
+        notifyConfigChanged();
         return Promise.resolve(undefined);
       },
       updateCoderPrefs: (input: { stopCoderWorkspaceOnArchive: boolean }) => {
         stopCoderWorkspaceOnArchive = input.stopCoderWorkspaceOnArchive;
+        notifyConfigChanged();
         return Promise.resolve(undefined);
       },
       updateOnePasswordAccountName: (input: { onePasswordAccountName?: string | null }) => {
         onePasswordAccountName = input.onePasswordAccountName ?? null;
+        notifyConfigChanged();
         return Promise.resolve(undefined);
       },
       updateRuntimeEnablement: (input: {
@@ -831,6 +879,7 @@ export function createMockORPCClient(options: MockORPCClientOptions = {}): APICl
             projects.set(projectPath, nextProject);
           }
 
+          notifyConfigChanged();
           return Promise.resolve(undefined);
         }
 
@@ -846,6 +895,7 @@ export function createMockORPCClient(options: MockORPCClientOptions = {}): APICl
           defaultRuntime = input.defaultRuntime ?? null;
         }
 
+        notifyConfigChanged();
         return Promise.resolve(undefined);
       },
       unenrollMuxGovernor: () => Promise.resolve(undefined),

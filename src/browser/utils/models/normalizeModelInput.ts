@@ -1,5 +1,8 @@
-import { resolveModelAlias, isValidModelFormat } from "@/common/utils/ai/models";
-import { migrateGatewayModel } from "@/browser/hooks/useGatewayModels";
+import {
+  resolveModelAlias,
+  isValidModelFormat,
+  normalizeSelectedModel,
+} from "@/common/utils/ai/models";
 
 export interface ModelInputResult {
   model: string | null;
@@ -16,16 +19,16 @@ export function normalizeModelInput(raw: string | null | undefined): ModelInputR
 
   const resolved = resolveModelAlias(trimmed);
   const isAlias = resolved !== trimmed;
-  const canonical = migrateGatewayModel(resolved).trim();
+  const selectedModel = normalizeSelectedModel(resolved);
 
-  if (!isValidModelFormat(canonical)) {
+  if (!isValidModelFormat(selectedModel)) {
     return { model: null, isAlias, error: "invalid-format" };
   }
 
-  const separatorIndex = canonical.indexOf(":");
-  if (canonical.slice(separatorIndex + 1).startsWith(":")) {
+  const separatorIndex = selectedModel.indexOf(":");
+  if (selectedModel.slice(separatorIndex + 1).startsWith(":")) {
     return { model: null, isAlias, error: "invalid-format" };
   }
 
-  return { model: canonical, isAlias };
+  return { model: selectedModel, isAlias };
 }

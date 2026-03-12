@@ -24,7 +24,8 @@ import {
 import type { BashOutputEvent } from "@/common/types/stream";
 import type { TaskSettings } from "@/common/types/tasks";
 import { DEFAULT_TASK_SETTINGS, SYSTEM1_BASH_OUTPUT_COMPACTION_LIMITS } from "@/common/types/tasks";
-import { normalizeGatewayModel } from "@/common/utils/ai/models";
+import type { ProviderName } from "@/common/constants/providers";
+import { getExplicitGatewayPrefix, normalizeToCanonical } from "@/common/utils/ai/models";
 import { buildProviderOptions } from "@/common/utils/ai/providerOptions";
 import { createDisplayUsage } from "@/common/utils/tokens/displayUsage";
 import { enforceThinkingPolicy } from "@/common/utils/thinking/policy";
@@ -53,6 +54,8 @@ export interface System1WrapOptions {
   effectiveModelString: string;
   /** Already-created primary model instance. */
   primaryModel: LanguageModel;
+  /** Route provider for the primary stream when System1 reuses that model. */
+  routeProvider?: ProviderName;
   muxProviderOptions: MuxProviderOptions;
   workspaceId: string;
   effectiveMode: string;
@@ -188,7 +191,7 @@ interface System1ModelContext {
 function buildSystem1ModelContext(opts: System1WrapOptions): System1ModelContext {
   const raw = typeof opts.system1Model === "string" ? opts.system1Model.trim() : "";
   // Canonical form (gateway prefix stripped) for provider checks like thinking level.
-  const canonical = raw ? normalizeGatewayModel(raw) : "";
+  const canonical = raw ? normalizeToCanonical(raw) : "";
   const effectiveModelForThinking = canonical || opts.modelString;
   const thinkingLevel = enforceThinkingPolicy(
     effectiveModelForThinking,
@@ -341,13 +344,22 @@ async function maybeFilterBashOutput(
     const system1 = await getSystem1Model();
     if (!system1) return undefined;
 
+    // When System1 uses a gateway-prefixed model, keep that explicit gateway so
+    // buildProviderOptions uses the override's gateway namespace. Canonical
+    // System1 models inherit the primary stream's active route provider.
+    const system1RouteProvider = system1Ctx.modelString
+      ? (getExplicitGatewayPrefix(system1Ctx.modelString) ?? opts.routeProvider)
+      : opts.routeProvider;
     const system1ProviderOptions = buildProviderOptions(
       system1.modelString,
       system1Ctx.thinkingLevel,
       undefined,
       undefined,
       opts.muxProviderOptions,
-      opts.workspaceId
+      opts.workspaceId,
+      undefined,
+      undefined,
+      system1RouteProvider
     ) as unknown as Record<string, unknown>;
 
     const numberedOutput = formatNumberedLinesForSystem1(lines);
@@ -400,7 +412,7 @@ async function maybeFilterBashOutput(
         // same cost bucket as direct calls. Pass providerMetadata so cache
         // tokens and costsIncluded are honored.
         if (keepRangesResult.usage && opts.sessionUsageService) {
-          const normalizedModel = normalizeGatewayModel(system1.modelString);
+          const normalizedModel = normalizeToCanonical(system1.modelString);
           const displayUsage = createDisplayUsage(
             keepRangesResult.usage,
             normalizedModel,

@@ -10,6 +10,7 @@ import type { AnthropicProviderOptions } from "@ai-sdk/anthropic";
 import type { OpenAIResponsesProviderOptions } from "@ai-sdk/openai";
 import type { GoogleGenerativeAIProviderOptions } from "@ai-sdk/google";
 import type { XaiProviderOptions } from "@ai-sdk/xai";
+import { PROVIDER_DEFINITIONS, type ProviderName } from "@/common/constants/providers";
 import type { ProvidersConfigMap } from "@/common/orpc/types";
 import type { MuxProviderOptions } from "@/common/types/providerOptions";
 import type { ThinkingLevel } from "@/common/types/thinking";
@@ -23,7 +24,7 @@ import {
 import { resolveModelForMetadata } from "@/common/utils/providers/modelEntries";
 import { log } from "@/node/services/log";
 import type { MuxMessage } from "@/common/types/message";
-import { normalizeGatewayModel, supports1MContext } from "./models";
+import { normalizeToCanonical, supports1MContext } from "./models";
 
 /**
  * OpenRouter reasoning options
@@ -37,6 +38,11 @@ interface OpenRouterReasoningOptions {
   };
 }
 
+type OpenAICompatibleGatewayProviderOptions = Pick<
+  OpenAIResponsesProviderOptions,
+  "reasoningEffort"
+>;
+
 /**
  * Provider-specific options structure for AI SDK
  */
@@ -46,6 +52,7 @@ type ProviderOptions =
   | { google: GoogleGenerativeAIProviderOptions }
   | { openrouter: OpenRouterReasoningOptions }
   | { xai: XaiProviderOptions }
+  | { "github-copilot": OpenAICompatibleGatewayProviderOptions }
   | Record<string, never>; // Empty object for unsupported providers
 
 const OPENAI_REASONING_SUMMARY_UNSUPPORTED_MODELS = new Set<string>([
@@ -58,6 +65,24 @@ function supportsOpenAIReasoningSummary(modelName: string): boolean {
   return !OPENAI_REASONING_SUMMARY_UNSUPPORTED_MODELS.has(modelName);
 }
 
+export function resolveProviderOptionsNamespaceKey(
+  canonicalProviderName: string,
+  routeProvider?: ProviderName
+): string {
+  const routeDefinition = routeProvider ? PROVIDER_DEFINITIONS[routeProvider] : undefined;
+  if (
+    !routeProvider ||
+    routeProvider === canonicalProviderName ||
+    (routeDefinition != null &&
+      "passthrough" in routeDefinition &&
+      routeDefinition.passthrough === true)
+  ) {
+    return canonicalProviderName;
+  }
+
+  return routeProvider;
+}
+
 function resolveAnthropic1MCapabilityModel(
   modelString: string,
   providersConfig?: ProvidersConfigMap | null
@@ -65,7 +90,7 @@ function resolveAnthropic1MCapabilityModel(
   normalizedModel: string;
   capabilityModel: string;
 } {
-  const normalizedModel = normalizeGatewayModel(modelString);
+  const normalizedModel = normalizeToCanonical(modelString);
   return {
     normalizedModel,
     capabilityModel: resolveModelForMetadata(normalizedModel, providersConfig ?? null),
@@ -91,7 +116,7 @@ function hasAnthropic1MIntentForModel(
     return false;
   }
 
-  const normalizedModel = normalizeGatewayModel(modelString);
+  const normalizedModel = normalizeToCanonical(modelString);
   const candidateModels = new Set([modelString, normalizedModel, capabilityModel]);
   return enabledModels.some((enabledModel) => candidateModels.has(enabledModel));
 }
@@ -174,6 +199,7 @@ export function preserveAnthropic1MContextForFollowUp(
  * @param workspaceId - Optional for non-OpenAI providers
  * @param openaiTruncationMode - Optional truncation mode for OpenAI responses (auto/disabled)
  * @param providersConfig - Optional providers config for mapped model capability detection
+ * @param routeProvider - Optional route provider (gateway/direct) for SDK format selection
  * @returns Provider options object for AI SDK
  */
 export function buildProviderOptions(
@@ -184,14 +210,27 @@ export function buildProviderOptions(
   muxProviderOptions?: MuxProviderOptions,
   workspaceId?: string, // Optional for non-OpenAI providers
   openaiTruncationMode?: OpenAIResponsesProviderOptions["truncation"],
-  providersConfig?: ProvidersConfigMap | null
+  providersConfig?: ProvidersConfigMap | null,
+  routeProvider?: ProviderName
 ): ProviderOptions {
   // Caller is responsible for enforcing thinking policy before calling this function.
   // agentSession.ts is the canonical enforcement point.
   const effectiveThinking = thinkingLevel;
-  // Parse provider from normalized model string
-  const normalizedModel = normalizeGatewayModel(modelString);
-  const [provider, modelName] = normalizedModel.split(":", 2);
+  // Parse origin from normalized model string
+  const normalizedModel = normalizeToCanonical(modelString);
+  const [origin, modelName] = normalizedModel.split(":", 2);
+
+  if (!origin || !modelName) {
+    log.debug("buildProviderOptions: No origin or model name found, returning empty");
+    return {};
+  }
+
+  const providerOptionsNamespaceKey = resolveProviderOptionsNamespaceKey(origin, routeProvider);
+
+  // SDK payload-family selection: passthrough gateways use origin payloads,
+  // while transforming gateways use the route provider's payload schema.
+  const formatProvider =
+    providerOptionsNamespaceKey === origin ? origin : (routeProvider ?? origin);
 
   // Resolve aliases to their base model for capability detection while keeping
   // the original modelString for provider routing and metadata lookups.
@@ -201,20 +240,18 @@ export function buildProviderOptions(
 
   log.debug("buildProviderOptions", {
     modelString,
-    provider,
+    origin,
+    routeProvider,
+    providerOptionsNamespaceKey,
+    formatProvider,
     modelName,
     capabilityModel,
     capModelName,
     thinkingLevel,
   });
 
-  if (!provider || !modelName) {
-    log.debug("buildProviderOptions: No provider or model name found, returning empty");
-    return {};
-  }
-
   // Build Anthropic-specific options
-  if (provider === "anthropic") {
+  if (formatProvider === "anthropic") {
     const disableBeta = muxProviderOptions?.anthropic?.disableBetaFeatures === true;
     const cacheTtl = disableBeta ? undefined : muxProviderOptions?.anthropic?.cacheTtl;
     const cacheControl = cacheTtl ? { type: "ephemeral" as const, ttl: cacheTtl } : undefined;
@@ -247,7 +284,7 @@ export function buildProviderOptions(
         thinkingLevel: effectiveThinking,
       });
 
-      return {
+      const options = {
         anthropic: {
           disableParallelToolUse: false,
           sendReasoning: true,
@@ -255,7 +292,9 @@ export function buildProviderOptions(
           ...(cacheControl && { cacheControl }),
           effort: effortLevel,
         },
-      };
+      } satisfies { anthropic: AnthropicProviderOptions };
+
+      return options;
     }
 
     // Other Anthropic models: Use thinking parameter with budgetTokens
@@ -265,7 +304,7 @@ export function buildProviderOptions(
       thinkingLevel: effectiveThinking,
     });
 
-    const options: ProviderOptions = {
+    const options = {
       anthropic: {
         disableParallelToolUse: false, // Always enable concurrent tool execution
         sendReasoning: true, // Include reasoning traces in requests sent to the model
@@ -278,13 +317,13 @@ export function buildProviderOptions(
           },
         }),
       },
-    };
+    } satisfies { anthropic: AnthropicProviderOptions };
     log.debug("buildProviderOptions: Returning Anthropic options", options);
     return options;
   }
 
   // Build OpenAI-specific options
-  if (provider === "openai") {
+  if (formatProvider === "openai") {
     const reasoningEffort = OPENAI_REASONING_EFFORT[effectiveThinking];
 
     // Mux always sends the latest conversation history explicitly. OpenAI's
@@ -314,7 +353,7 @@ export function buildProviderOptions(
       wireFormat,
     });
 
-    const options: ProviderOptions = {
+    const options = {
       openai: {
         parallelToolCalls: true, // Always enable concurrent tool execution
         serviceTier,
@@ -341,13 +380,13 @@ export function buildProviderOptions(
           }),
         }),
       },
-    };
+    } satisfies { openai: OpenAIResponsesProviderOptions };
     log.info("buildProviderOptions: Returning OpenAI options", options);
     return options;
   }
 
   // Build Google-specific options
-  if (provider === "google") {
+  if (formatProvider === "google") {
     const isGemini3 = capModelName.includes("gemini-3");
     let thinkingConfig: GoogleGenerativeAIProviderOptions["thinkingConfig"];
 
@@ -373,17 +412,17 @@ export function buildProviderOptions(
       }
     }
 
-    const options: ProviderOptions = {
+    const options = {
       google: {
         thinkingConfig,
       },
-    };
+    } satisfies { google: GoogleGenerativeAIProviderOptions };
     log.debug("buildProviderOptions: Google options", options);
     return options;
   }
 
   // Build OpenRouter-specific options
-  if (provider === "openrouter") {
+  if (formatProvider === "openrouter") {
     const reasoningEffort = OPENROUTER_REASONING_EFFORT[effectiveThinking];
 
     log.debug("buildProviderOptions: OpenRouter config", {
@@ -393,7 +432,7 @@ export function buildProviderOptions(
 
     // Only add reasoning config if thinking is enabled
     if (reasoningEffort) {
-      const options: ProviderOptions = {
+      const options = {
         openrouter: {
           reasoning: {
             enabled: true,
@@ -402,7 +441,7 @@ export function buildProviderOptions(
             exclude: false,
           },
         },
-      };
+      } satisfies { openrouter: OpenRouterReasoningOptions };
       log.debug("buildProviderOptions: Returning OpenRouter options", options);
       return options;
     }
@@ -413,7 +452,7 @@ export function buildProviderOptions(
   }
 
   // Build xAI-specific options
-  if (provider === "xai") {
+  if (formatProvider === "xai") {
     const overrides = muxProviderOptions?.xai ?? {};
 
     const defaultSearchParameters: XaiProviderOptions["searchParameters"] = {
@@ -421,18 +460,47 @@ export function buildProviderOptions(
       returnCitations: true,
     };
 
-    const options: ProviderOptions = {
+    const options = {
       xai: {
         ...overrides,
         searchParameters: overrides.searchParameters ?? defaultSearchParameters,
       },
-    };
+    } satisfies { xai: XaiProviderOptions };
     log.debug("buildProviderOptions: Returning xAI options", options);
     return options;
   }
 
+  if (origin === "openai" && formatProvider !== origin) {
+    const reasoningEffort = OPENAI_REASONING_EFFORT[effectiveThinking];
+    if (!reasoningEffort) {
+      log.debug(
+        "buildProviderOptions: OpenAI-compatible gateway (thinking off, no provider options)",
+        {
+          formatProvider,
+          origin,
+          routeProvider,
+          providerOptionsNamespaceKey,
+        }
+      );
+      return {};
+    }
+
+    const options = {
+      "github-copilot": {
+        reasoningEffort,
+      },
+    } satisfies { "github-copilot": OpenAICompatibleGatewayProviderOptions };
+    log.debug("buildProviderOptions: Returning OpenAI-compatible gateway options", options);
+    return options;
+  }
+
   // No provider-specific options for unsupported providers
-  log.debug("buildProviderOptions: Unsupported provider", provider);
+  log.debug("buildProviderOptions: Unsupported format provider", {
+    formatProvider,
+    origin,
+    routeProvider,
+    providerOptionsNamespaceKey,
+  });
   return {};
 }
 
@@ -476,7 +544,8 @@ export function buildRequestHeaders(
   modelString: string,
   muxProviderOptions?: MuxProviderOptions,
   workspaceId?: string,
-  providersConfig?: ProvidersConfigMap | null
+  providersConfig?: ProvidersConfigMap | null,
+  routeProvider?: ProviderName
 ): Record<string, string> | undefined {
   const headers: Record<string, string> = {};
 
@@ -484,13 +553,16 @@ export function buildRequestHeaders(
     headers[MUX_WORKSPACE_ID_HEADER] = toWorkspaceHeaderValue(workspaceId);
   }
 
-  const normalized = normalizeGatewayModel(modelString);
-  // Route provider-specific headers by the runtime provider from the original model
-  // string. Capability resolution is handled by the shared effective-1M helper below.
-  const [provider] = normalized.split(":", 2);
+  const normalized = normalizeToCanonical(modelString);
+  const [origin] = normalized.split(":", 2);
+
+  // 1M context header — only when origin supports it AND route is passthrough (or direct)
+  const routePassesHeaders =
+    origin != null && resolveProviderOptionsNamespaceKey(origin, routeProvider) === origin;
 
   if (
-    provider === "anthropic" &&
+    origin === "anthropic" &&
+    routePassesHeaders &&
     isAnthropic1MEffectivelyEnabled(modelString, muxProviderOptions, providersConfig)
   ) {
     headers["anthropic-beta"] = ANTHROPIC_1M_CONTEXT_HEADER;

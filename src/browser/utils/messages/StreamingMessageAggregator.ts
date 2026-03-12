@@ -4,7 +4,6 @@ import type {
   MuxFilePart,
   DisplayedMessage,
   CompactionRequestData,
-  MuxMessageMetadata,
 } from "@/common/types/message";
 import { createMuxMessage, getCompactionFollowUpContent } from "@/common/types/message";
 
@@ -117,6 +116,7 @@ interface StreamingContext {
   isReplay: boolean;
   model: string;
   routedThroughGateway?: boolean;
+  routeProvider?: string;
 
   /** Timestamp of first content token (text or reasoning delta) - backend Date.now() */
   serverFirstTokenTime: number | null;
@@ -153,6 +153,32 @@ function hasFailureResult(result: unknown): boolean {
   // Implicit failure - error field present
   if ("error" in result && result.error) return true;
   return false;
+}
+
+function resolveRouteProvider(
+  routeProvider: string | undefined,
+  routedThroughGateway: boolean | undefined
+): string | undefined {
+  return routeProvider ?? (routedThroughGateway === true ? "mux-gateway" : undefined);
+}
+
+function normalizeMessageRouteProvider(message: MuxMessage): MuxMessage {
+  const routeProvider = resolveRouteProvider(
+    message.metadata?.routeProvider,
+    message.metadata?.routedThroughGateway
+  );
+
+  if (!message.metadata || routeProvider === message.metadata.routeProvider) {
+    return message;
+  }
+
+  return {
+    ...message,
+    metadata: {
+      ...message.metadata,
+      routeProvider,
+    },
+  };
 }
 
 /**
@@ -810,10 +836,13 @@ export class StreamingMessageAggregator {
   }
 
   addMessage(message: MuxMessage): void {
-    const existing = this.messages.get(message.id);
+    const normalizedMessage = normalizeMessageRouteProvider(message);
+    const existing = this.messages.get(normalizedMessage.id);
     if (existing) {
       const existingParts = Array.isArray(existing.parts) ? existing.parts.length : 0;
-      const incomingParts = Array.isArray(message.parts) ? message.parts.length : 0;
+      const incomingParts = Array.isArray(normalizedMessage.parts)
+        ? normalizedMessage.parts.length
+        : 0;
 
       // Prefer richer content when duplicates arrive (e.g., placeholder vs completed message)
       if (incomingParts < existingParts) {
@@ -822,8 +851,8 @@ export class StreamingMessageAggregator {
     }
 
     // Just store the message - backend assigns historySequence
-    this.messages.set(message.id, message);
-    this.markMessageDirty(message.id);
+    this.messages.set(normalizedMessage.id, normalizedMessage);
+    this.markMessageDirty(normalizedMessage.id);
   }
 
   /**
@@ -882,11 +911,14 @@ export class StreamingMessageAggregator {
 
     // Add/overwrite messages in the map
     for (const message of messages) {
-      const existing = mode === "append" ? this.messages.get(message.id) : undefined;
+      const normalizedMessage = normalizeMessageRouteProvider(message);
+      const existing = mode === "append" ? this.messages.get(normalizedMessage.id) : undefined;
 
       if (existing) {
         const existingParts = Array.isArray(existing.parts) ? existing.parts.length : 0;
-        const incomingParts = Array.isArray(message.parts) ? message.parts.length : 0;
+        const incomingParts = Array.isArray(normalizedMessage.parts)
+          ? normalizedMessage.parts.length
+          : 0;
 
         // Since-replay can include a stale boundary row for an active stream message while
         // richer in-memory parts already exist. Keep the richer message to avoid dropping
@@ -895,11 +927,11 @@ export class StreamingMessageAggregator {
           continue;
         }
 
-        overwrittenMessageIds.push(message.id);
+        overwrittenMessageIds.push(normalizedMessage.id);
       }
 
-      this.messages.set(message.id, message);
-      appliedMessages.push(message);
+      this.messages.set(normalizedMessage.id, normalizedMessage);
+      appliedMessages.push(normalizedMessage);
     }
 
     if (mode === "append") {
@@ -1492,6 +1524,8 @@ export class StreamingMessageAggregator {
     // They are cleared when a new user message arrives (see handleMessage),
     // ensuring consistent behavior whether loading from history or processing live events.
 
+    const routeProvider = resolveRouteProvider(data.routeProvider, data.routedThroughGateway);
+
     const now = Date.now();
     const context: StreamingContext = {
       serverStartTime: data.startTime,
@@ -1503,6 +1537,7 @@ export class StreamingMessageAggregator {
       isReplay: data.replay === true,
       model: data.model,
       routedThroughGateway: data.routedThroughGateway,
+      routeProvider,
       serverFirstTokenTime: null,
       toolExecutionMs: 0,
       pendingToolStarts: new Map(),
@@ -1535,6 +1570,7 @@ export class StreamingMessageAggregator {
       if (existingMessage.metadata) {
         existingMessage.metadata.model = data.model;
         existingMessage.metadata.routedThroughGateway = data.routedThroughGateway;
+        existingMessage.metadata.routeProvider = routeProvider;
         existingMessage.metadata.mode = data.mode;
         existingMessage.metadata.thinkingLevel = data.thinkingLevel;
       }
@@ -1552,6 +1588,7 @@ export class StreamingMessageAggregator {
       timestamp: Date.now(),
       model: data.model,
       routedThroughGateway: data.routedThroughGateway,
+      routeProvider,
       mode: data.mode,
       thinkingLevel: data.thinkingLevel,
     });
@@ -1602,6 +1639,10 @@ export class StreamingMessageAggregator {
           ...message.metadata,
           ...data.metadata,
         };
+        updatedMetadata.routeProvider = resolveRouteProvider(
+          updatedMetadata.routeProvider,
+          updatedMetadata.routedThroughGateway
+        );
 
         const durationMs = data.metadata.duration;
         if (typeof durationMs === "number" && Number.isFinite(durationMs)) {
@@ -1673,11 +1714,16 @@ export class StreamingMessageAggregator {
       // Backend MUST provide historySequence in metadata
 
       // Create the complete message
+      const routeProvider = resolveRouteProvider(
+        data.metadata.routeProvider,
+        data.metadata.routedThroughGateway
+      );
       const message: MuxMessage = {
         id: data.messageId,
         role: "assistant",
         metadata: {
           ...data.metadata,
+          routeProvider,
           timestamp: data.metadata.timestamp ?? Date.now(),
         },
         parts: data.parts,
@@ -2223,7 +2269,7 @@ export class StreamingMessageAggregator {
     // Handle regular messages (user messages, historical messages)
     // Check if it's a MuxMessage (has role property but no type)
     if (isMuxMessage(data)) {
-      const incomingMessage = data;
+      const incomingMessage = normalizeMessageRouteProvider(data);
 
       // Smart replacement logic for edits:
       // If a message arrives with a historySequence that already exists,
@@ -2274,7 +2320,7 @@ export class StreamingMessageAggregator {
           | undefined;
 
         // Capture pending compaction metadata for pre-stream UI ("starting" phase).
-        const muxMetadata = incomingMessage.metadata?.muxMetadata as MuxMessageMetadata | undefined;
+        const muxMetadata = incomingMessage.metadata?.muxMetadata;
         this.pendingCompactionRequest =
           muxMetadata?.type === "compaction-request" ? muxMetadata.parsed : null;
 
@@ -2546,6 +2592,10 @@ export class StreamingMessageAggregator {
             isIdleCompacted: message.metadata?.compacted === "idle",
             model: message.metadata?.model,
             routedThroughGateway: message.metadata?.routedThroughGateway,
+            routeProvider: resolveRouteProvider(
+              message.metadata?.routeProvider,
+              message.metadata?.routedThroughGateway
+            ),
             mode: message.metadata?.mode,
             agentId: message.metadata?.agentId ?? message.metadata?.mode,
             timestamp: part.timestamp ?? baseTimestamp,
