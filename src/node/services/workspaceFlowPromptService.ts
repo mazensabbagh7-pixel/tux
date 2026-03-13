@@ -208,15 +208,30 @@ function getFlowPromptNextHeadingContent(content: string): string | null {
   return nextHeadingContent.length > 0 ? nextHeadingContent : null;
 }
 
+function buildSafeMarkdownFence(content: string, minimumLength: number = 3): string {
+  let maxFenceLength = minimumLength - 1;
+  for (const match of content.matchAll(/`+/g)) {
+    maxFenceLength = Math.max(maxFenceLength, match[0].length);
+  }
+  return "`".repeat(maxFenceLength + 1);
+}
+
+function buildFencedSection(
+  content: string,
+  language: string,
+  minimumFenceLength: number = 3
+): string {
+  const fence = buildSafeMarkdownFence(content, minimumFenceLength);
+  return `${fence}${language}\n${content}\n${fence}`;
+}
+
 function buildFlowPromptNextHeadingSection(nextHeadingContent: string | null | undefined): string {
   const trimmedNextHeadingContent = nextHeadingContent?.trim() ?? "";
   if (trimmedNextHeadingContent.length === 0) {
     return "";
   }
 
-  // Use a longer outer fence so ordinary triple-backtick code blocks inside the user's Next
-  // section remain part of the preview/update payload instead of terminating the wrapper early.
-  return `\n\nCurrent Next heading:\n\`\`\`\`md\n${trimmedNextHeadingContent}\n\`\`\`\``;
+  return `\n\nCurrent Next heading:\n${buildFencedSection(trimmedNextHeadingContent, "md")}`;
 }
 
 export function buildFlowPromptUpdateMessage(params: {
@@ -250,9 +265,7 @@ The flow prompt file is now empty. Stop relying on any prior flow prompt instruc
 ${markerLine}${nextHeadingSection}
 
 Latest flow prompt changes:
-\`\`\`diff
-${diff}
-\`\`\``;
+${buildFencedSection(diff, "diff")}`;
   }
 
   return `[Flow prompt updated. Follow current agent instructions.]
@@ -260,9 +273,7 @@ ${diff}
 ${markerLine}${nextHeadingSection}
 
 Current flow prompt contents:
-\`\`\`md
-${params.nextContent}
-\`\`\``;
+${buildFencedSection(params.nextContent, "md")}`;
 }
 
 export function buildFlowPromptAttachMessage(params: {

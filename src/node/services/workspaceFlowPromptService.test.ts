@@ -1247,16 +1247,17 @@ describe("buildFlowPromptUpdateMessage", () => {
     expect(message).toContain("Implement the UI and keep tests green.");
   });
 
-  it("includes the current Next heading when present, even with fenced code blocks", () => {
+  it("includes the current Next heading when present, even with nested fenced examples", () => {
     const message = buildFlowPromptUpdateMessage({
       path: flowPromptPath,
       previousContent: "",
       nextContent: "Implement the UI and keep tests green.",
       nextHeadingContent:
-        "Only work on the test coverage and do not edit later plan stages.\n\n```ts\nconst stage = 2;\n```",
+        "Only work on the test coverage and do not edit later plan stages.\n\n````md\n```ts\nconst stage = 2;\n```\n````",
     });
 
     expect(message).toContain("Current Next heading:");
+    expect(message).toContain("`````md");
     expect(message).toContain("````md");
     expect(message).toContain("```ts");
     expect(message).toContain("Only work on the test coverage");

@@ -83,6 +83,33 @@ function stripLeadingNextHeadingSection(body: string): string {
   return fencedSection.slice(closingFenceIndex + `\n${openingFence}`.length).replace(/^\n+/, "");
 }
 
+function extractLeadingLabeledFencedSection(body: string, label: string): string | null {
+  const prefix = `${label}\n`;
+  if (!body.startsWith(prefix)) {
+    return null;
+  }
+
+  const fencedSection = body.slice(prefix.length);
+  const openingFenceLineEnd = fencedSection.indexOf("\n");
+  if (openingFenceLineEnd === -1) {
+    return null;
+  }
+
+  const openingFenceLine = fencedSection.slice(0, openingFenceLineEnd);
+  const openingFenceMatch = /^(?<fence>`{3,}|~{3,})[a-z0-9_-]*$/i.exec(openingFenceLine);
+  const openingFence = openingFenceMatch?.groups?.fence;
+  if (!openingFence) {
+    return null;
+  }
+
+  const closingFenceIndex = fencedSection.indexOf(`\n${openingFence}`, openingFenceLineEnd + 1);
+  if (closingFenceIndex === -1) {
+    return null;
+  }
+
+  return fencedSection.slice(openingFenceLineEnd + 1, closingFenceIndex);
+}
+
 function getFlowPromptPreviewDisplay(
   previewText: string | null | undefined
 ): FlowPromptPreviewDisplay | null {
@@ -90,8 +117,6 @@ function getFlowPromptPreviewDisplay(
     return null;
   }
 
-  const diffPrefix = "Latest flow prompt changes:\n```diff\n";
-  const contentsPrefix = "Current flow prompt contents:\n```md\n";
   const emptyText = "The flow prompt file is now empty.";
 
   const firstSectionBreak = previewText.indexOf("\n\n");
@@ -101,28 +126,19 @@ function getFlowPromptPreviewDisplay(
     secondSectionBreak === -1 ? previewText : previewText.slice(secondSectionBreak + "\n\n".length)
   );
 
-  if (body.startsWith(diffPrefix)) {
-    const diffStart = diffPrefix.length;
-    const closingFenceIndex = body.lastIndexOf("\n```");
+  const diffContent = extractLeadingLabeledFencedSection(body, "Latest flow prompt changes:");
+  if (diffContent != null) {
     return {
       kind: "diff",
-      content:
-        closingFenceIndex >= diffStart
-          ? body.slice(diffStart, closingFenceIndex)
-          : body.slice(diffStart),
+      content: diffContent,
     };
   }
 
-  if (body.startsWith(contentsPrefix)) {
-    const contentStart = contentsPrefix.length;
-    const closingFenceIndex = body.lastIndexOf("\n```");
-
+  const contentsContent = extractLeadingLabeledFencedSection(body, "Current flow prompt contents:");
+  if (contentsContent != null) {
     return {
       kind: "contents",
-      content:
-        closingFenceIndex >= contentStart
-          ? body.slice(contentStart, closingFenceIndex)
-          : body.slice(contentStart),
+      content: contentsContent,
     };
   }
 

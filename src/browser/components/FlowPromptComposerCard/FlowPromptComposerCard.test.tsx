@@ -149,14 +149,14 @@ describe("FlowPromptComposerCard", () => {
       "````",
       "",
       "Current flow prompt contents:",
-      "```md",
+      "````md",
       "Keep these exact notes in the prompt body:",
       "Latest flow prompt changes:",
       "```diff",
       "-not actually a diff preview",
       "+still just prompt contents",
       "```",
-      "```",
+      "````",
     ].join("\n");
 
     const view = renderCard({
