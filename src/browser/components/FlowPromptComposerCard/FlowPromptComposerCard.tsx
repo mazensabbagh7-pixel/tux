@@ -57,17 +57,30 @@ export function shouldShowFlowPromptComposerCard(
 }
 
 function stripLeadingNextHeadingSection(body: string): string {
-  const nextHeadingPrefix = "Current Next heading:\n```md\n";
+  const nextHeadingPrefix = "Current Next heading:\n";
   if (!body.startsWith(nextHeadingPrefix)) {
     return body;
   }
 
-  const closingFenceIndex = body.indexOf("\n```", nextHeadingPrefix.length);
+  const fencedSection = body.slice(nextHeadingPrefix.length);
+  const openingFenceLineEnd = fencedSection.indexOf("\n");
+  if (openingFenceLineEnd === -1) {
+    return body;
+  }
+
+  const openingFenceLine = fencedSection.slice(0, openingFenceLineEnd);
+  const openingFenceMatch = /^(?<fence>`{3,}|~{3,})[a-z0-9_-]*$/i.exec(openingFenceLine);
+  const openingFence = openingFenceMatch?.groups?.fence;
+  if (!openingFence) {
+    return body;
+  }
+
+  const closingFenceIndex = fencedSection.indexOf(`\n${openingFence}`, openingFenceLineEnd + 1);
   if (closingFenceIndex === -1) {
     return body;
   }
 
-  return body.slice(closingFenceIndex + "\n```".length).replace(/^\n+/, "");
+  return fencedSection.slice(closingFenceIndex + `\n${openingFence}`.length).replace(/^\n+/, "");
 }
 
 function getFlowPromptPreviewDisplay(

@@ -214,7 +214,9 @@ function buildFlowPromptNextHeadingSection(nextHeadingContent: string | null | u
     return "";
   }
 
-  return `\n\nCurrent Next heading:\n\`\`\`md\n${trimmedNextHeadingContent}\n\`\`\``;
+  // Use a longer outer fence so ordinary triple-backtick code blocks inside the user's Next
+  // section remain part of the preview/update payload instead of terminating the wrapper early.
+  return `\n\nCurrent Next heading:\n\`\`\`\`md\n${trimmedNextHeadingContent}\n\`\`\`\``;
 }
 
 export function buildFlowPromptUpdateMessage(params: {
