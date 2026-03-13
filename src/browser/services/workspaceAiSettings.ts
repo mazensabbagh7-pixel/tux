@@ -130,6 +130,35 @@ function readLegacyPerModelThinking(rawModel: string): ThinkingLevel | undefined
   return undefined;
 }
 
+/**
+ * Resolve thinking level for any scope (project, global, pending, draft, etc.)
+ * without requiring a workspace ID. Handles the full legacy fallback chain:
+ * scope key → legacy per-model key → default, with lazy migration.
+ */
+export function resolveScopedThinkingLevel(scopeId: string, fallbackModel: string): ThinkingLevel {
+  const scopeThinking = coerceThinkingLevel(
+    readPersistedState<unknown>(getThinkingLevelKey(scopeId), undefined)
+  );
+  if (scopeThinking !== undefined) {
+    return scopeThinking;
+  }
+
+  const rawModel = readPersistedState<string>(getModelKey(scopeId), fallbackModel);
+  const model = normalizeModelString(rawModel) ?? fallbackModel;
+  const legacyThinking = readLegacyPerModelThinking(model);
+  const thinkingLevel = legacyThinking ?? WORKSPACE_DEFAULTS.thinkingLevel;
+
+  // Seed the scope key the first time we recover legacy per-model thinking so later
+  // reads can stay on the flat per-scope storage boundary.
+  updatePersistedState(
+    getThinkingLevelKey(scopeId),
+    thinkingLevel,
+    WORKSPACE_DEFAULTS.thinkingLevel
+  );
+
+  return thinkingLevel;
+}
+
 export function normalizeAgentId(agentId: string): string {
   return typeof agentId === "string" && agentId.trim().length > 0
     ? agentId.trim().toLowerCase()

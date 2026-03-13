@@ -12,6 +12,7 @@ import {
   getAgentIdKey,
   getModelKey,
   getProjectScopeId,
+  getThinkingLevelByModelKey,
   getThinkingLevelKey,
   getWorkspaceAISettingsByAgentKey,
 } from "@/common/constants/storage";
@@ -124,6 +125,33 @@ describe("ThinkingContext", () => {
     });
 
     expect(unmounts).toBe(0);
+  });
+
+  test("falls back to legacy per-model thinking in creation flow and migrates the project scope key", async () => {
+    const projectPath = "/Users/dev/legacy-project";
+    const projectScopeId = getProjectScopeId(projectPath);
+    const model = "openai:gpt-5.2";
+
+    updatePersistedState(getModelKey(projectScopeId), model);
+    updatePersistedState(getThinkingLevelByModelKey(model), "high");
+
+    const ProjectChild: React.FC = () => {
+      const [thinkingLevel] = useThinkingLevel();
+      return <div data-testid="thinking-project-legacy">{thinkingLevel}</div>;
+    };
+
+    const view = renderWithAPI(
+      <ThinkingProvider projectPath={projectPath}>
+        <ProjectChild />
+      </ThinkingProvider>
+    );
+
+    await waitFor(() => {
+      expect(view.getByTestId("thinking-project-legacy").textContent).toBe("high");
+    });
+    expect(
+      readPersistedState<string | undefined>(getThinkingLevelKey(projectScopeId), undefined)
+    ).toBe("high");
   });
 
   test("uses the persisted project-scoped thinking key in creation flow", async () => {

@@ -14,6 +14,7 @@ import { normalizeToCanonical } from "@/common/utils/ai/models";
 import { enforceThinkingPolicy, getThinkingPolicyForModel } from "@/common/utils/thinking/policy";
 import { useAPI } from "@/browser/contexts/API";
 import {
+  resolveScopedThinkingLevel,
   setWorkspaceAiSettings,
   useWorkspaceAiSettings,
 } from "@/browser/services/workspaceAiSettings";
@@ -55,11 +56,22 @@ export const ThinkingProvider: React.FC<ThinkingProviderProps> = (props) => {
 
   const thinkingLevel = useMemo(() => {
     if (!props.workspaceId) {
-      return persistedThinkingLevel;
+      const resolvedThinkingLevel = resolveScopedThinkingLevel(scopeId, defaultModel);
+      // Keep listening to the flat scope key so this memo reruns after lazy
+      // migration writes legacy per-model thinking into the scoped key.
+      return persistedThinkingLevel === resolvedThinkingLevel
+        ? persistedThinkingLevel
+        : resolvedThinkingLevel;
     }
 
     return workspaceAiSettings.thinkingLevel;
-  }, [persistedThinkingLevel, props.workspaceId, workspaceAiSettings.thinkingLevel]);
+  }, [
+    persistedThinkingLevel,
+    props.workspaceId,
+    scopeId,
+    defaultModel,
+    workspaceAiSettings.thinkingLevel,
+  ]);
 
   const setThinkingLevel = useCallback(
     (level: ThinkingLevel) => {
