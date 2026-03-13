@@ -94,6 +94,25 @@ describe("getSendOptionsFromStorage", () => {
     expect(options.thinkingLevel).toBe("medium");
   });
 
+  test("uses legacy thinking level when auto agent has only legacy plan/exec workspace cache entries", () => {
+    const workspaceId = "ws-legacy-auto";
+
+    window.localStorage.setItem(getModelKey(workspaceId), JSON.stringify("openai:gpt-5.2"));
+    window.localStorage.setItem(getAgentIdKey(workspaceId), JSON.stringify("auto"));
+    window.localStorage.setItem(getThinkingLevelKey(workspaceId), JSON.stringify("high"));
+    window.localStorage.setItem(
+      getWorkspaceAISettingsByAgentKey(workspaceId),
+      JSON.stringify({
+        exec: { model: "openai:gpt-5.2", thinkingLevel: "low" },
+        plan: { model: "openai:gpt-5.2", thinkingLevel: "low" },
+      })
+    );
+
+    const options = getSendOptionsFromStorage(workspaceId);
+
+    expect(options.thinkingLevel).toBe("high");
+  });
+
   test("omits system1 thinking when set to off", () => {
     const workspaceId = "ws-2";
 
