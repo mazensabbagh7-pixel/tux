@@ -72,12 +72,7 @@ export const SectionHeader: React.FC<SectionHeaderProps> = ({
 
   return (
     <div
-      className="group relative flex items-center gap-1 border-t border-white/5 px-2 py-1.5 select-none"
-      style={{
-        backgroundColor: `${sectionColor}10`,
-        borderLeftWidth: 3,
-        borderLeftColor: sectionColor,
-      }}
+      className="group relative flex items-center gap-1 border-t border-white/5 py-1.5 pr-2 pl-3 select-none"
       data-section-id={section.id}
     >
       {/* Expand/Collapse Button */}
@@ -116,7 +111,8 @@ export const SectionHeader: React.FC<SectionHeaderProps> = ({
         <button
           onClick={onToggleExpand}
           onDoubleClick={() => setIsEditing(true)}
-          className="text-foreground min-w-0 flex-1 cursor-pointer truncate border-none bg-transparent p-0 text-left text-xs font-medium"
+          className="min-w-0 flex-1 cursor-pointer truncate border-none bg-transparent p-0 text-left text-xs font-medium"
+          style={{ color: sectionColor }}
         >
           {section.name}
           <span className="text-muted ml-1.5 font-normal">({workspaceCount})</span>
@@ -218,18 +214,18 @@ export const SectionHeader: React.FC<SectionHeaderProps> = ({
         </Tooltip>
       </div>
 
-      {/* Add Workspace — always visible on touch devices */}
+      {/* Add Chat — always visible on touch devices */}
       <Tooltip>
         <TooltipTrigger asChild>
           <button
             onClick={onAddWorkspace}
             className="text-secondary hover:text-foreground hover:bg-hover flex h-5 w-5 cursor-pointer items-center justify-center rounded border-none bg-transparent p-0 text-sm opacity-0 transition-[colors,opacity] group-hover:opacity-100 [@media(hover:none)_and_(pointer:coarse)]:opacity-100"
-            aria-label="New workspace in section"
+            aria-label="New chat in section"
           >
             +
           </button>
         </TooltipTrigger>
-        <TooltipContent>New workspace</TooltipContent>
+        <TooltipContent>New chat</TooltipContent>
       </Tooltip>
     </div>
   );

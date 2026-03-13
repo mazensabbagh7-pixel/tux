@@ -2342,7 +2342,7 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
                                             )
                                           ) : sectionDrafts.length === 0 ? (
                                             <div className="text-muted px-3 py-2 text-center text-xs italic">
-                                              No workspaces in this section
+                                              No chats in this section
                                             </div>
                                           ) : null}
                                         </div>

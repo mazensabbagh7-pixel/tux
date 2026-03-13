@@ -265,9 +265,7 @@ describeIntegration("Workspace Sections", () => {
       const sectionHeader = view.container.querySelector(`[data-section-id="${sectionId}"]`);
       expect(sectionHeader).not.toBeNull();
 
-      const addButton = sectionHeader!.querySelector(
-        'button[aria-label="New workspace in section"]'
-      );
+      const addButton = sectionHeader!.querySelector('button[aria-label="New chat in section"]');
       expect(addButton).not.toBeNull();
 
       // Click the add button - this should navigate to create page with section context
