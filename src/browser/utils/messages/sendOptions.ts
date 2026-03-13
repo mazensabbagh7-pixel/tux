@@ -100,6 +100,10 @@ export function getSendOptionsFromStorage(workspaceId: string): SendMessageOptio
         ),
         fallbackModel: defaultModel,
         currentModel: baseModel,
+        legacyThinkingLevel: readPersistedState<ThinkingLevel>(
+          getThinkingLevelKey(workspaceId),
+          WORKSPACE_DEFAULTS.thinkingLevel
+        ),
       })
     : readLegacyScopedThinkingLevel(workspaceId, baseModel);
 

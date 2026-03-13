@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import type { ThinkingLevel } from "@/common/types/thinking";
-import { resolveWorkspaceAiSettingsForAgent } from "./workspaceModeAi";
+import {
+  resolveActiveWorkspaceThinkingForAgent,
+  resolveWorkspaceAiSettingsForAgent,
+} from "./workspaceModeAi";
 
 describe("resolveWorkspaceAiSettingsForAgent", () => {
   test("uses global agent defaults when configured", () => {
@@ -135,5 +138,20 @@ describe("resolveWorkspaceAiSettingsForAgent", () => {
       resolvedModel: "openai:gpt-5.2",
       resolvedThinking: "off",
     });
+  });
+});
+
+describe("resolveActiveWorkspaceThinkingForAgent", () => {
+  test("falls back to legacy thinking when workspaceByAgent has no entry for agent", () => {
+    const thinkingLevel = resolveActiveWorkspaceThinkingForAgent({
+      agentId: "exec",
+      agentAiDefaults: {},
+      workspaceByAgent: {},
+      fallbackModel: "openai:gpt-5.2",
+      currentModel: "openai:gpt-5.2",
+      legacyThinkingLevel: "high",
+    });
+
+    expect(thinkingLevel).toBe("high");
   });
 });

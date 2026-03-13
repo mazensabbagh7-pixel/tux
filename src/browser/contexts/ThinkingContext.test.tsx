@@ -153,6 +153,22 @@ describe("ThinkingContext", () => {
     expect(JSON.parse(persisted!)).toBe("low");
   });
 
+  test("existing workspace with legacy thinkingLevel key but empty workspaceByAgent shows legacy level", async () => {
+    const workspaceId = "ws-legacy-thinking";
+
+    updatePersistedState(getThinkingLevelKey(workspaceId), "high");
+
+    const view = renderWithAPI(
+      <ThinkingProvider workspaceId={workspaceId}>
+        <TestComponent workspaceId={workspaceId} />
+      </ThinkingProvider>
+    );
+
+    await waitFor(() => {
+      expect(view.getByTestId("thinking").textContent).toBe("high:ws-legacy-thinking");
+    });
+  });
+
   test("manual workspace thinking updates the per-agent cache without bounce-back", async () => {
     const workspaceId = "ws-manual";
 

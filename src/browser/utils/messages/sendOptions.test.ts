@@ -84,6 +84,16 @@ describe("getSendOptionsFromStorage", () => {
     expect(withWorkspaceCache.thinkingLevel).toBe("low");
   });
 
+  test("uses legacy thinking level for existing workspace with empty agent cache", () => {
+    const workspaceId = "ws-legacy";
+
+    window.localStorage.setItem(getThinkingLevelKey(workspaceId), JSON.stringify("medium"));
+
+    const options = getSendOptionsFromStorage(workspaceId);
+
+    expect(options.thinkingLevel).toBe("medium");
+  });
+
   test("omits system1 thinking when set to off", () => {
     const workspaceId = "ws-2";
 

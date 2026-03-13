@@ -12,6 +12,7 @@ import {
   getPendingWorkspaceSendErrorKey,
   getProjectScopeId,
   getThinkingLevelKey,
+  getWorkspaceAISettingsByAgentKey,
 } from "@/common/constants/storage";
 import type { WorkspaceChatMessage } from "@/common/orpc/types";
 import {
@@ -51,16 +52,23 @@ const readPersistedStateMock = mock((key: string, defaultValue: unknown) => {
 });
 
 const updatePersistedStateCalls: Array<[string, unknown]> = [];
-const updatePersistedStateMock = mock((key: string, value: unknown) => {
+const updatePersistedStateMock = mock((key: string, value: unknown, defaultValue?: unknown) => {
   updatePersistedStateCalls.push([key, value]);
   if (typeof window === "undefined" || !window.localStorage) {
     return;
   }
-  if (value === undefined || value === null) {
+
+  const resolvedValue =
+    typeof value === "function"
+      ? (value as (prev: unknown) => unknown)(readPersistedStateMock(key, defaultValue))
+      : value;
+
+  if (resolvedValue === undefined || resolvedValue === null) {
     window.localStorage.removeItem(key);
     return;
   }
-  window.localStorage.setItem(key, JSON.stringify(value));
+
+  window.localStorage.setItem(key, JSON.stringify(resolvedValue));
 });
 
 const readPersistedStringMock = mock((key: string) => {
@@ -785,6 +793,76 @@ describe("useCreationWorkspace", () => {
     }
     const [sendRequest] = sendCall;
     expect(sendRequest?.options?.agentId).toBe("ask");
+  });
+
+  test("seeds per-agent thinking into workspace cache when project model is unset", async () => {
+    const listBranchesMock = mock(
+      (): Promise<BranchListResult> =>
+        Promise.resolve({
+          branches: ["main"],
+          recommendedTrunk: "main",
+        })
+    );
+    const sendMessageMock = mock(
+      (_args: WorkspaceSendMessageArgs): Promise<WorkspaceSendMessageResult> =>
+        Promise.resolve({
+          success: true as const,
+          data: {},
+        })
+    );
+    const createMock = mock(
+      (_args: WorkspaceCreateArgs): Promise<WorkspaceCreateResult> =>
+        Promise.resolve({
+          success: true,
+          metadata: TEST_METADATA,
+        } as WorkspaceCreateResult)
+    );
+    const nameGenerationMock = mock(
+      (_args: NameGenerationArgs): Promise<NameGenerationResult> =>
+        Promise.resolve({
+          success: true,
+          data: { name: "generated-name", modelUsed: "anthropic:claude-haiku-4-5" },
+        } as NameGenerationResult)
+    );
+    setupWindow({
+      listBranches: listBranchesMock,
+      sendMessage: sendMessageMock,
+      create: createMock,
+      nameGeneration: nameGenerationMock,
+    });
+
+    persistedPreferences[getAgentIdKey(GLOBAL_SCOPE_ID)] = "ask";
+    persistedPreferences[getModelKey(GLOBAL_SCOPE_ID)] = "openai:global-default";
+    persistedPreferences[getThinkingLevelKey(getProjectScopeId(TEST_PROJECT_PATH))] = "medium";
+
+    draftSettingsState = createDraftSettingsHarness({
+      selectedRuntime: { mode: "ssh", host: "example.com" },
+      runtimeString: "ssh example.com",
+      trunkBranch: "dev",
+      agentId: "ask",
+    });
+    const onWorkspaceCreated = mock((metadata: FrontendWorkspaceMetadata) => metadata);
+
+    const getHook = renderUseCreationWorkspace({
+      projectPath: TEST_PROJECT_PATH,
+      onWorkspaceCreated,
+      message: "launch workspace",
+    });
+
+    await waitFor(() => expect(getHook().branches).toEqual(["main"]));
+    await waitFor(() => expect(nameGenerationMock.mock.calls.length).toBe(1));
+
+    let handleSendResult: CreationSendResult | undefined;
+    await act(async () => {
+      handleSendResult = await getHook().handleSend("launch workspace");
+    });
+
+    expect(handleSendResult).toEqual({ success: true });
+    expect(
+      JSON.parse(window.localStorage.getItem(getWorkspaceAISettingsByAgentKey(TEST_WORKSPACE_ID))!)
+    ).toEqual({
+      ask: { model: "openai:global-default", thinkingLevel: "medium" },
+    });
   });
 
   test("handleSend returns failure when sendMessage fails and clears draft", async () => {

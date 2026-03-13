@@ -65,6 +65,7 @@ export function resolveActiveWorkspaceThinkingForAgent(args: {
   workspaceByAgent?: WorkspaceAISettingsCache;
   fallbackModel: string;
   currentModel: string;
+  legacyThinkingLevel?: ThinkingLevel;
 }): ThinkingLevel {
   const normalizedAgentId = normalizeAgentId(args.agentId);
 
@@ -74,6 +75,11 @@ export function resolveActiveWorkspaceThinkingForAgent(args: {
     workspaceByAgent: args.workspaceByAgent,
     fallbackModel: args.fallbackModel,
     existingModel: args.currentModel,
-    existingThinking: args.workspaceByAgent?.[normalizedAgentId]?.thinkingLevel ?? "off",
+    // Older workspaces can still have the flat thinking key populated before the
+    // per-agent cache is seeded, so keep that key as a read-only compatibility fallback.
+    existingThinking:
+      args.workspaceByAgent?.[normalizedAgentId]?.thinkingLevel ??
+      args.legacyThinkingLevel ??
+      "off",
   }).resolvedThinking;
 }

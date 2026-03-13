@@ -41,6 +41,7 @@ import {
   getAgentsInitNudgeKey,
   getModelKey,
   getNotifyOnResponseKey,
+  getThinkingLevelKey,
   getWorkspaceAISettingsByAgentKey,
   getWorkspaceLastReadKey,
   EXPANDED_PROJECTS_KEY,
@@ -390,6 +391,10 @@ function AppInner() {
         ),
         fallbackModel: getDefaultModel(),
         currentModel: getModelForWorkspace(workspaceId),
+        legacyThinkingLevel: readPersistedState<ThinkingLevel>(
+          getThinkingLevelKey(workspaceId),
+          "off"
+        ),
       });
     },
     [getModelForWorkspace]

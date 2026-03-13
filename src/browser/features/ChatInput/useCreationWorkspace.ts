@@ -100,22 +100,24 @@ function syncCreationPreferences(projectPath: string, workspaceId: string): void
     getThinkingLevelKey(projectScopeId),
     null
   );
+  const effectiveModel =
+    projectModel ??
+    readPersistedState<string>(getModelKey(GLOBAL_SCOPE_ID), WORKSPACE_DEFAULTS.model);
+  const effectiveThinking: ThinkingLevel = projectThinkingLevel ?? "off";
 
-  if (projectModel) {
-    const effectiveThinking: ThinkingLevel = projectThinkingLevel ?? "off";
-
-    updatePersistedState<Partial<Record<string, { model: string; thinkingLevel: ThinkingLevel }>>>(
-      getWorkspaceAISettingsByAgentKey(workspaceId),
-      (prev) => {
-        const record = prev && typeof prev === "object" ? prev : {};
-        return {
-          ...(record as Partial<Record<string, { model: string; thinkingLevel: ThinkingLevel }>>),
-          [effectiveAgentId]: { model: projectModel, thinkingLevel: effectiveThinking },
-        };
-      },
-      {}
-    );
-  }
+  // Seed the per-agent workspace cache even when the model inherits from global defaults so
+  // migrated workspaces keep their thinking level before the first send persists new settings.
+  updatePersistedState<Partial<Record<string, { model: string; thinkingLevel: ThinkingLevel }>>>(
+    getWorkspaceAISettingsByAgentKey(workspaceId),
+    (prev) => {
+      const record = prev && typeof prev === "object" ? prev : {};
+      return {
+        ...(record as Partial<Record<string, { model: string; thinkingLevel: ThinkingLevel }>>),
+        [effectiveAgentId]: { model: effectiveModel, thinkingLevel: effectiveThinking },
+      };
+    },
+    {}
+  );
 
   // Auto-enable notifications if the project-level preference is set
   const autoEnableNotifications = readPersistedState<boolean>(

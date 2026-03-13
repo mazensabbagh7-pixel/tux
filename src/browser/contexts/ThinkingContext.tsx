@@ -95,6 +95,7 @@ export const ThinkingProvider: React.FC<ThinkingProviderProps> = (props) => {
       workspaceByAgent,
       fallbackModel: defaultModel,
       currentModel: getCanonicalModelForScope(scopeId, defaultModel),
+      legacyThinkingLevel: persistedThinkingLevel,
     });
   }, [
     activeAgentId,
