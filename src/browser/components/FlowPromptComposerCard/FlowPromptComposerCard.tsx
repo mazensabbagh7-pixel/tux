@@ -56,6 +56,20 @@ export function shouldShowFlowPromptComposerCard(
   );
 }
 
+function stripLeadingNextHeadingSection(body: string): string {
+  const nextHeadingPrefix = "Current Next heading:\n```md\n";
+  if (!body.startsWith(nextHeadingPrefix)) {
+    return body;
+  }
+
+  const closingFenceIndex = body.indexOf("\n```", nextHeadingPrefix.length);
+  if (closingFenceIndex === -1) {
+    return body;
+  }
+
+  return body.slice(closingFenceIndex + "\n```".length).replace(/^\n+/, "");
+}
+
 function getFlowPromptPreviewDisplay(
   previewText: string | null | undefined
 ): FlowPromptPreviewDisplay | null {
@@ -70,8 +84,9 @@ function getFlowPromptPreviewDisplay(
   const firstSectionBreak = previewText.indexOf("\n\n");
   const secondSectionBreak =
     firstSectionBreak === -1 ? -1 : previewText.indexOf("\n\n", firstSectionBreak + 2);
-  const body =
-    secondSectionBreak === -1 ? previewText : previewText.slice(secondSectionBreak + "\n\n".length);
+  const body = stripLeadingNextHeadingSection(
+    secondSectionBreak === -1 ? previewText : previewText.slice(secondSectionBreak + "\n\n".length)
+  );
 
   if (body.startsWith(diffPrefix)) {
     const diffStart = diffPrefix.length;

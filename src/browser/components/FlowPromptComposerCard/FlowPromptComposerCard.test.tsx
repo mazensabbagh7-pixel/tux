@@ -96,6 +96,11 @@ describe("FlowPromptComposerCard", () => {
       "",
       "Flow prompt file path: /tmp/workspace/.mux/prompts/feature.md (MUST use this exact path string for tool calls; do NOT rewrite it into another form, even if it resolves to the same file)",
       "",
+      "Current Next heading:",
+      "```md",
+      "Only work on stage 2 of the plan.",
+      "```",
+      "",
       "Latest flow prompt changes:",
       "```diff",
       "Index: /tmp/workspace/.mux/prompts/feature.md",
@@ -109,7 +114,10 @@ describe("FlowPromptComposerCard", () => {
     ].join("\n");
 
     const view = renderCard({
-      state: createState({ updatePreviewText: diffPreviewText }),
+      state: createState({
+        nextHeadingContent: "Only work on stage 2 of the plan.",
+        updatePreviewText: diffPreviewText,
+      }),
       onOpen: () => undefined,
       onDisable: () => undefined,
       onSendNow: () => undefined,
@@ -119,6 +127,7 @@ describe("FlowPromptComposerCard", () => {
 
     expect(view.container.textContent).not.toContain("Flow prompt file path:");
     expect(view.container.textContent).not.toContain("[Flow prompt updated.");
+    expect(view.container.textContent).not.toContain("Current Next heading:");
     expect(view.container.textContent).not.toContain("Latest flow prompt changes:");
     expect(view.container.querySelector('[data-diff-indicator="true"]')).toBeTruthy();
     expect(view.getByText("Live flow prompt diff")).toBeTruthy();
@@ -129,6 +138,11 @@ describe("FlowPromptComposerCard", () => {
       "[Flow prompt updated. Follow current agent instructions.]",
       "",
       "Flow prompt file path: /tmp/workspace/.mux/prompts/feature.md (MUST use this exact path string for tool calls; do NOT rewrite it into another form, even if it resolves to the same file)",
+      "",
+      "Current Next heading:",
+      "```md",
+      "Only work on the markdown formatter.",
+      "```",
       "",
       "Current flow prompt contents:",
       "```md",
@@ -142,7 +156,10 @@ describe("FlowPromptComposerCard", () => {
     ].join("\n");
 
     const view = renderCard({
-      state: createState({ updatePreviewText: contentsPreviewText }),
+      state: createState({
+        nextHeadingContent: "Only work on the markdown formatter.",
+        updatePreviewText: contentsPreviewText,
+      }),
       onOpen: () => undefined,
       onDisable: () => undefined,
       onSendNow: () => undefined,
