@@ -51,12 +51,7 @@ export const ThinkingProvider: React.FC<ThinkingProviderProps> = (props) => {
   // Project/new-workspace flows still use the flat thinking key directly.
   const [persistedThinkingLevel, setPersistedThinkingLevelInternal] =
     usePersistedState<ThinkingLevel>(thinkingKey, THINKING_LEVEL_OFF, { listener: true });
-  const [activeAgentId] = usePersistedState<string>(
-    getAgentIdKey(scopeId),
-    WORKSPACE_DEFAULTS.agentId,
-    { listener: true }
-  );
-  const workspaceAiSettings = useWorkspaceAiSettings(props.workspaceId, activeAgentId);
+  const workspaceAiSettings = useWorkspaceAiSettings(props.workspaceId);
 
   const thinkingLevel = useMemo(() => {
     if (!props.workspaceId) {

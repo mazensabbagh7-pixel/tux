@@ -240,6 +240,14 @@ export function setWorkspaceAiSettings(
       agentId: normalizedAgentId,
       aiSettings: merged,
     })
+    .then((result) => {
+      if (result && typeof result === "object" && "success" in result && !result.success) {
+        // Backend write resolved with a failure payload — remove the guard so
+        // stale-but-closer-to-truth metadata from the backend can reseed this
+        // agent's settings.
+        clearPendingWorkspaceAiSettings(workspaceId, normalizedAgentId, merged);
+      }
+    })
     .catch(() => {
       // Backend write failed — remove the guard so stale-but-closer-to-truth
       // metadata from the backend can reseed this agent's settings.
