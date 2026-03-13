@@ -73,14 +73,23 @@ export const ThinkingProvider: React.FC<ThinkingProviderProps> = (props) => {
         return;
       }
 
+      // Read agent ID directly from localStorage to avoid stale closure values.
+      // React state updates from cross-component usePersistedState listeners may
+      // not have propagated yet when this fires during rapid UI interactions
+      // (e.g., agent switch immediately followed by thinking level change).
+      const currentAgentId = readPersistedState<string>(
+        getAgentIdKey(scopeId),
+        WORKSPACE_DEFAULTS.agentId
+      );
+
       setWorkspaceAiSettings(
         props.workspaceId,
-        activeAgentId,
+        currentAgentId,
         { thinkingLevel: level },
         api ?? undefined
       );
     },
-    [activeAgentId, api, props.workspaceId, setPersistedThinkingLevelInternal]
+    [api, props.workspaceId, scopeId, setPersistedThinkingLevelInternal]
   );
 
   // Global keybind: cycle thinking level (Ctrl/Cmd+Shift+T).
