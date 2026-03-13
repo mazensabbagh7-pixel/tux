@@ -22,6 +22,7 @@ import {
   normalizeSystem1Model,
   normalizeSystem1ThinkingLevel,
 } from "@/browser/utils/messages/buildSendMessageOptions";
+import { normalizeToCanonical } from "@/common/utils/ai/models";
 import type { SendMessageOptions } from "@/common/orpc/types";
 import type { AgentAiDefaults } from "@/common/types/agentAiDefaults";
 import type { ThinkingLevel } from "@/common/types/thinking";
@@ -65,7 +66,7 @@ export function readLegacyScopedThinkingLevel(scopeId: string, baseModel: string
   const thinkingLevel =
     existingScoped ??
     readPersistedState<ThinkingLevel>(
-      getThinkingLevelByModelKey(baseModel),
+      getThinkingLevelByModelKey(normalizeToCanonical(baseModel)),
       WORKSPACE_DEFAULTS.thinkingLevel
     );
 

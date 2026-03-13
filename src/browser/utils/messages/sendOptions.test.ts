@@ -11,7 +11,7 @@ import {
   PREFERRED_SYSTEM_1_THINKING_LEVEL_KEY,
 } from "@/common/constants/storage";
 import { WORKSPACE_DEFAULTS } from "@/constants/workspaceDefaults";
-import { getSendOptionsFromStorage } from "./sendOptions";
+import { getSendOptionsFromStorage, readLegacyScopedThinkingLevel } from "./sendOptions";
 import { normalizeModelPreference } from "./buildSendMessageOptions";
 
 /* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access */
@@ -105,6 +105,34 @@ describe("getSendOptionsFromStorage", () => {
     const options = getSendOptionsFromStorage(workspaceId);
 
     expect(options.thinkingLevel).toBe("high");
+  });
+
+  test("resolves legacy canonical per-model key when current model is gateway-prefixed", () => {
+    const workspaceId = "ws-gateway-legacy";
+    const gatewayModel = "openrouter:openai/gpt-5";
+    const canonicalModel = "openai:gpt-5";
+
+    window.localStorage.setItem(getThinkingLevelByModelKey(canonicalModel), JSON.stringify("high"));
+
+    const thinkingLevel = readLegacyScopedThinkingLevel(workspaceId, gatewayModel);
+
+    expect(thinkingLevel).toBe("high");
+  });
+
+  test("migrates correct value from canonical key when model is gateway-prefixed", () => {
+    const workspaceId = "ws-gateway-migrate";
+    const gatewayModel = "openrouter:openai/gpt-5";
+    const canonicalModel = "openai:gpt-5";
+
+    window.localStorage.setItem(getModelKey(workspaceId), JSON.stringify(gatewayModel));
+    window.localStorage.setItem(getThinkingLevelByModelKey(canonicalModel), JSON.stringify("high"));
+
+    const options = getSendOptionsFromStorage(workspaceId);
+
+    expect(options.thinkingLevel).toBe("high");
+    expect(window.localStorage.getItem(getThinkingLevelKey(workspaceId))).toBe(
+      JSON.stringify("high")
+    );
   });
 
   test("migrates per-model thinking to workspace key on first read", () => {
