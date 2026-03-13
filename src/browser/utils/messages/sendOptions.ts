@@ -60,15 +60,32 @@ function isExistingWorkspaceScopeId(scopeId: string): boolean {
   );
 }
 
+export function readLegacyPerModelThinking(rawModel: string): ThinkingLevel | undefined {
+  const canonicalModel = normalizeToCanonical(rawModel);
+  const canonicalThinking = readPersistedState<ThinkingLevel | undefined>(
+    getThinkingLevelByModelKey(canonicalModel),
+    undefined
+  );
+
+  if (canonicalThinking !== undefined) {
+    return canonicalThinking;
+  }
+
+  if (canonicalModel !== rawModel) {
+    return readPersistedState<ThinkingLevel | undefined>(
+      getThinkingLevelByModelKey(rawModel),
+      undefined
+    );
+  }
+
+  return undefined;
+}
+
 export function readLegacyScopedThinkingLevel(scopeId: string, baseModel: string): ThinkingLevel {
   const scopedKey = getThinkingLevelKey(scopeId);
   const existingScoped = readPersistedState<ThinkingLevel | undefined>(scopedKey, undefined);
   const thinkingLevel =
-    existingScoped ??
-    readPersistedState<ThinkingLevel>(
-      getThinkingLevelByModelKey(normalizeToCanonical(baseModel)),
-      WORKSPACE_DEFAULTS.thinkingLevel
-    );
+    existingScoped ?? readLegacyPerModelThinking(baseModel) ?? WORKSPACE_DEFAULTS.thinkingLevel;
 
   if (existingScoped === undefined) {
     // Best-effort: avoid losing a user's existing per-model preference.

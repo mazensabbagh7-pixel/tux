@@ -12,7 +12,6 @@ import {
   getAgentIdKey,
   getModelKey,
   getProjectScopeId,
-  getThinkingLevelByModelKey,
   getThinkingLevelKey,
   getWorkspaceAISettingsByAgentKey,
   GLOBAL_SCOPE_ID,
@@ -30,6 +29,7 @@ import {
   markPendingWorkspaceAiSettings,
 } from "@/browser/utils/workspaceAiSettingsSync";
 import { KEYBINDS, matchesKeybind } from "@/browser/utils/ui/keybinds";
+import { readLegacyPerModelThinking } from "@/browser/utils/messages/sendOptions";
 import { WORKSPACE_DEFAULTS } from "@/constants/workspaceDefaults";
 
 interface ThinkingContextType {
@@ -114,9 +114,8 @@ export const ThinkingProvider: React.FC<ThinkingProviderProps> = (props) => {
       return;
     }
 
-    const model = getCanonicalModelForScope(scopeId, defaultModel);
-    const legacyKey = getThinkingLevelByModelKey(model);
-    const legacy = readPersistedState<ThinkingLevel | undefined>(legacyKey, undefined);
+    const rawModel = readPersistedState<string>(getModelKey(scopeId), defaultModel);
+    const legacy = readLegacyPerModelThinking(rawModel);
     if (legacy === undefined) {
       return;
     }

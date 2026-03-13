@@ -11,7 +11,11 @@ import {
   PREFERRED_SYSTEM_1_THINKING_LEVEL_KEY,
 } from "@/common/constants/storage";
 import { WORKSPACE_DEFAULTS } from "@/constants/workspaceDefaults";
-import { getSendOptionsFromStorage, readLegacyScopedThinkingLevel } from "./sendOptions";
+import {
+  getSendOptionsFromStorage,
+  readLegacyPerModelThinking,
+  readLegacyScopedThinkingLevel,
+} from "./sendOptions";
 import { normalizeModelPreference } from "./buildSendMessageOptions";
 
 /* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access */
@@ -117,6 +121,39 @@ describe("getSendOptionsFromStorage", () => {
     const thinkingLevel = readLegacyScopedThinkingLevel(workspaceId, gatewayModel);
 
     expect(thinkingLevel).toBe("high");
+  });
+
+  test("recovers gateway-only legacy per-model thinking when canonical key is absent", () => {
+    const gatewayModel = "openrouter:openai/gpt-5";
+
+    window.localStorage.setItem(getThinkingLevelByModelKey(gatewayModel), JSON.stringify("medium"));
+
+    expect(readLegacyPerModelThinking(gatewayModel)).toBe("medium");
+  });
+
+  test("prefers canonical legacy per-model thinking over gateway-keyed legacy data", () => {
+    const gatewayModel = "openrouter:openai/gpt-5";
+    const canonicalModel = "openai:gpt-5";
+
+    window.localStorage.setItem(getThinkingLevelByModelKey(gatewayModel), JSON.stringify("medium"));
+    window.localStorage.setItem(getThinkingLevelByModelKey(canonicalModel), JSON.stringify("high"));
+
+    expect(readLegacyPerModelThinking(gatewayModel)).toBe("high");
+  });
+
+  test("migrates recovered gateway-keyed legacy thinking to the workspace key", () => {
+    const workspaceId = "ws-gateway-raw-migrate";
+    const gatewayModel = "openrouter:openai/gpt-5";
+
+    window.localStorage.setItem(getModelKey(workspaceId), JSON.stringify(gatewayModel));
+    window.localStorage.setItem(getThinkingLevelByModelKey(gatewayModel), JSON.stringify("medium"));
+
+    const options = getSendOptionsFromStorage(workspaceId);
+
+    expect(options.thinkingLevel).toBe("medium");
+    expect(window.localStorage.getItem(getThinkingLevelKey(workspaceId))).toBe(
+      JSON.stringify("medium")
+    );
   });
 
   test("migrates correct value from canonical key when model is gateway-prefixed", () => {

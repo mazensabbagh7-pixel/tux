@@ -1,30 +1,39 @@
 import { useEffect, useRef } from "react";
 import { useAgent } from "@/browser/contexts/AgentContext";
-import { readPersistedState, usePersistedState } from "@/browser/hooks/usePersistedState";
+import {
+  readPersistedState,
+  updatePersistedState,
+  usePersistedState,
+} from "@/browser/hooks/usePersistedState";
 import {
   getModelKey,
+  getThinkingLevelKey,
   getWorkspaceAISettingsByAgentKey,
   AGENT_AI_DEFAULTS_KEY,
 } from "@/common/constants/storage";
 import { getDefaultModel } from "@/browser/hooks/useModelsFromSettings";
 import { setWorkspaceModelWithOrigin } from "@/browser/utils/modelChange";
+import { readLegacyPerModelThinking } from "@/browser/utils/messages/sendOptions";
 import {
+  resolveActiveWorkspaceThinkingForAgent,
   resolveWorkspaceAiSettingsForAgent,
   type WorkspaceAISettingsCache,
 } from "@/browser/utils/workspaceModeAi";
 import type { AgentAiDefaults } from "@/common/types/agentAiDefaults";
+import type { ThinkingLevel } from "@/common/types/thinking";
 
 export function WorkspaceModeAISync(props: { workspaceId: string }): null {
   const workspaceId = props.workspaceId;
   const { agentId } = useAgent();
 
+  const workspaceAiSettingsKey = getWorkspaceAISettingsByAgentKey(workspaceId);
   const [agentAiDefaults] = usePersistedState<AgentAiDefaults>(
     AGENT_AI_DEFAULTS_KEY,
     {},
     { listener: true }
   );
   const [workspaceByAgent] = usePersistedState<WorkspaceAISettingsCache>(
-    getWorkspaceAISettingsByAgentKey(workspaceId),
+    workspaceAiSettingsKey,
     {},
     { listener: true }
   );
@@ -43,18 +52,31 @@ export function WorkspaceModeAISync(props: { workspaceId: string }): null {
       typeof agentId === "string" && agentId.trim().length > 0
         ? agentId.trim().toLowerCase()
         : "exec";
-
+    const previousAgentId = prevAgentIdRef.current;
     const isExplicitAgentSwitch =
-      prevAgentIdRef.current !== null &&
+      previousAgentId !== null &&
       prevWorkspaceIdRef.current === workspaceId &&
-      prevAgentIdRef.current !== normalizedAgentId;
+      previousAgentId !== normalizedAgentId;
+    const sourceAgentId =
+      isExplicitAgentSwitch && previousAgentId !== null ? previousAgentId : normalizedAgentId;
 
     // Update refs for the next run (even if no model changes).
     prevAgentIdRef.current = normalizedAgentId;
     prevWorkspaceIdRef.current = workspaceId;
 
     const existingModel = readPersistedState<string>(modelKey, fallbackModel);
-    const { resolvedModel } = resolveWorkspaceAiSettingsForAgent({
+    const legacyThinkingLevel =
+      readPersistedState<ThinkingLevel | undefined>(getThinkingLevelKey(workspaceId), undefined) ??
+      readLegacyPerModelThinking(existingModel);
+    const existingThinking = resolveActiveWorkspaceThinkingForAgent({
+      agentId: sourceAgentId,
+      agentAiDefaults,
+      workspaceByAgent,
+      fallbackModel,
+      currentModel: existingModel,
+      legacyThinkingLevel,
+    });
+    const { resolvedModel, resolvedThinking } = resolveWorkspaceAiSettingsForAgent({
       agentId: normalizedAgentId,
       agentAiDefaults,
       // Keep deterministic handoff behavior: background sync should trust the
@@ -64,8 +86,30 @@ export function WorkspaceModeAISync(props: { workspaceId: string }): null {
       useWorkspaceByAgentFallback: isExplicitAgentSwitch,
       fallbackModel,
       existingModel,
-      existingThinking: workspaceByAgent[normalizedAgentId]?.thinkingLevel ?? "off",
+      existingThinking,
     });
+
+    // Preserve first-switch inheritance in the per-agent cache without backfilling the
+    // legacy flat thinking key from this sync path.
+    if (isExplicitAgentSwitch) {
+      const existingTargetSettings = workspaceByAgent[normalizedAgentId];
+      if (
+        existingTargetSettings?.model !== resolvedModel ||
+        existingTargetSettings?.thinkingLevel !== resolvedThinking
+      ) {
+        updatePersistedState<WorkspaceAISettingsCache>(
+          workspaceAiSettingsKey,
+          (prev) => {
+            const record: WorkspaceAISettingsCache = prev && typeof prev === "object" ? prev : {};
+            return {
+              ...record,
+              [normalizedAgentId]: { model: resolvedModel, thinkingLevel: resolvedThinking },
+            };
+          },
+          {}
+        );
+      }
+    }
 
     if (existingModel !== resolvedModel) {
       setWorkspaceModelWithOrigin(
@@ -74,7 +118,7 @@ export function WorkspaceModeAISync(props: { workspaceId: string }): null {
         isExplicitAgentSwitch ? "agent" : "sync"
       );
     }
-  }, [agentAiDefaults, agentId, workspaceByAgent, workspaceId]);
+  }, [agentAiDefaults, agentId, workspaceAiSettingsKey, workspaceByAgent, workspaceId]);
 
   return null;
 }

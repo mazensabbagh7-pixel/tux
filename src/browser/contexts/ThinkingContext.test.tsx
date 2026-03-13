@@ -153,6 +153,34 @@ describe("ThinkingContext", () => {
     expect(JSON.parse(persisted!)).toBe("low");
   });
 
+  test("migrates gateway-keyed legacy per-model thinking on mount", async () => {
+    const projectPath = "/Users/dev/gateway-migration-project";
+    const projectScopeId = getProjectScopeId(projectPath);
+    const gatewayModel = "openrouter:openai/gpt-5";
+
+    updatePersistedState(getModelKey(projectScopeId), gatewayModel);
+    updatePersistedState(getThinkingLevelByModelKey(gatewayModel), "medium");
+
+    const ProjectChild: React.FC = () => {
+      const [thinkingLevel] = useThinkingLevel();
+      return <div data-testid="thinking-project-gateway-migration">{thinkingLevel}</div>;
+    };
+
+    const view = renderWithAPI(
+      <ThinkingProvider projectPath={projectPath}>
+        <ProjectChild />
+      </ThinkingProvider>
+    );
+
+    await waitFor(() => {
+      expect(view.getByTestId("thinking-project-gateway-migration").textContent).toBe("medium");
+    });
+
+    const persisted = window.localStorage.getItem(getThinkingLevelKey(projectScopeId));
+    expect(persisted).toBeTruthy();
+    expect(JSON.parse(persisted!)).toBe("medium");
+  });
+
   test("existing workspace with legacy thinkingLevel key but empty workspaceByAgent shows legacy level", async () => {
     const workspaceId = "ws-legacy-thinking";
 

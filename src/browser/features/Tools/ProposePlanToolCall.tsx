@@ -45,9 +45,13 @@ import {
 } from "@/common/constants/storage";
 import { getDefaultModel } from "@/browser/hooks/useModelsFromSettings";
 import { readPersistedState, updatePersistedState } from "@/browser/hooks/usePersistedState";
-import { getSendOptionsFromStorage } from "@/browser/utils/messages/sendOptions";
+import {
+  getSendOptionsFromStorage,
+  readLegacyScopedThinkingLevel,
+} from "@/browser/utils/messages/sendOptions";
 import { setWorkspaceModelWithOrigin } from "@/browser/utils/modelChange";
 import {
+  resolveActiveWorkspaceThinkingForAgent,
   resolveWorkspaceAiSettingsForAgent,
   type WorkspaceAISettingsCache,
 } from "@/browser/utils/workspaceModeAi";
@@ -480,6 +484,17 @@ export const ProposePlanToolCall: React.FC<ProposePlanToolCallProps> = (props) =
       {}
     );
 
+    // First-switch plan actions should inherit the workspace's currently resolved thinking,
+    // even before the target agent has its own cached workspace settings.
+    const existingThinking = resolveActiveWorkspaceThinkingForAgent({
+      agentId: currentAgentId,
+      agentAiDefaults,
+      workspaceByAgent,
+      fallbackModel,
+      currentModel: existingModel,
+      legacyThinkingLevel: readLegacyScopedThinkingLevel(args.workspaceId, existingModel),
+    });
+
     const { resolvedModel, resolvedThinking } = resolveWorkspaceAiSettingsForAgent({
       agentId: args.targetAgentId,
       agentAiDefaults,
@@ -489,7 +504,7 @@ export const ProposePlanToolCall: React.FC<ProposePlanToolCallProps> = (props) =
       useWorkspaceByAgentFallback: true,
       fallbackModel,
       existingModel,
-      existingThinking: workspaceByAgent[args.targetAgentId]?.thinkingLevel ?? "off",
+      existingThinking,
     });
 
     updatePersistedState<WorkspaceAISettingsCache>(
