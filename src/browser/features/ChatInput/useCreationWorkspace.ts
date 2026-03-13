@@ -21,13 +21,11 @@ import {
   getModelKey,
   getNotifyOnResponseAutoEnableKey,
   getNotifyOnResponseKey,
-  getThinkingLevelKey,
   getWorkspaceAISettingsByAgentKey,
   getPendingScopeId,
   getDraftScopeId,
   getPendingWorkspaceSendErrorKey,
   getProjectScopeId,
-  GLOBAL_SCOPE_ID,
 } from "@/common/constants/storage";
 import type { SendMessageError } from "@/common/types/errors";
 import { useOptionalWorkspaceContext } from "@/browser/contexts/WorkspaceContext";
@@ -73,7 +71,11 @@ interface UseCreationWorkspaceOptions {
   userModel?: string;
 }
 
-function syncCreationPreferences(projectPath: string, workspaceId: string): void {
+function syncCreationPreferences(
+  projectPath: string,
+  workspaceId: string,
+  creationSettings: { model: string; thinkingLevel: ThinkingLevel; agentId: string }
+): void {
   const projectScopeId = getProjectScopeId(projectPath);
 
   // Sync model from project scope to workspace scope
@@ -83,37 +85,24 @@ function syncCreationPreferences(projectPath: string, workspaceId: string): void
     setWorkspaceModelWithOrigin(workspaceId, projectModel, "sync");
   }
 
-  const projectAgentId = readPersistedState<string | null>(getAgentIdKey(projectScopeId), null);
-  const globalDefaultAgentId = readPersistedState<string>(
-    getAgentIdKey(GLOBAL_SCOPE_ID),
-    WORKSPACE_DEFAULTS.agentId
-  );
-  const effectiveAgentId =
-    typeof projectAgentId === "string" && projectAgentId.trim().length > 0
-      ? projectAgentId.trim().toLowerCase()
-      : typeof globalDefaultAgentId === "string" && globalDefaultAgentId.trim().length > 0
-        ? globalDefaultAgentId.trim().toLowerCase()
-        : WORKSPACE_DEFAULTS.agentId;
-  updatePersistedState(getAgentIdKey(workspaceId), effectiveAgentId);
+  const normalizedAgentId =
+    typeof creationSettings.agentId === "string" && creationSettings.agentId.trim().length > 0
+      ? creationSettings.agentId.trim().toLowerCase()
+      : WORKSPACE_DEFAULTS.agentId;
+  updatePersistedState(getAgentIdKey(workspaceId), normalizedAgentId);
 
-  const projectThinkingLevel = readPersistedState<ThinkingLevel | null>(
-    getThinkingLevelKey(projectScopeId),
-    null
-  );
-  const effectiveModel =
-    projectModel ??
-    readPersistedState<string>(getModelKey(GLOBAL_SCOPE_ID), WORKSPACE_DEFAULTS.model);
-  const effectiveThinking: ThinkingLevel = projectThinkingLevel ?? "off";
-
-  // Seed the per-agent workspace cache even when the model inherits from global defaults so
-  // migrated workspaces keep their thinking level before the first send persists new settings.
+  // Seed the per-agent workspace cache from the already-resolved creation settings so the
+  // first persisted workspace state matches what the creation UI showed the user.
   updatePersistedState<Partial<Record<string, { model: string; thinkingLevel: ThinkingLevel }>>>(
     getWorkspaceAISettingsByAgentKey(workspaceId),
     (prev) => {
       const record = prev && typeof prev === "object" ? prev : {};
       return {
         ...(record as Partial<Record<string, { model: string; thinkingLevel: ThinkingLevel }>>),
-        [effectiveAgentId]: { model: effectiveModel, thinkingLevel: effectiveThinking },
+        [normalizedAgentId]: {
+          model: creationSettings.model,
+          thinkingLevel: creationSettings.thinkingLevel,
+        },
       };
     },
     {}
@@ -546,7 +535,11 @@ export function useCreationWorkspace({
         };
 
         // Sync preferences before switching (keeps workspace settings consistent).
-        syncCreationPreferences(projectPath, metadata.id);
+        syncCreationPreferences(projectPath, metadata.id, {
+          model: settings.model,
+          thinkingLevel: settings.thinkingLevel,
+          agentId: settings.agentId,
+        });
 
         // Switch to the workspace immediately after creation unless the user navigated away
         // from the draft that initiated the creation (avoid yanking focus to the new workspace).
