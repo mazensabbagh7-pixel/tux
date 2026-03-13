@@ -1,3 +1,4 @@
+import { getDefaultModel } from "@/browser/hooks/useModelsFromSettings";
 import {
   usePersistedState,
   readPersistedState,
@@ -67,10 +68,12 @@ function readWorkspaceAiSettingsCache(workspaceId: string): WorkspaceAISettingsC
 }
 
 function readCurrentWorkspaceModel(workspaceId: string): string {
+  // When a workspace has no model key yet, inherit the user's configured default
+  // model instead of reseeding storage with the built-in workspace fallback.
+  const defaultModel = getDefaultModel();
   return (
-    normalizeModelString(
-      readPersistedState<string>(getModelKey(workspaceId), WORKSPACE_DEFAULTS.model)
-    ) ?? WORKSPACE_DEFAULTS.model
+    normalizeModelString(readPersistedState<string>(getModelKey(workspaceId), defaultModel)) ??
+    defaultModel
   );
 }
 
@@ -238,11 +241,13 @@ export function setWorkspaceAiSettings(
       aiSettings: merged,
     })
     .catch(() => {
-      // Best-effort only; local storage remains authoritative for the current session.
-    })
-    .finally(() => {
+      // Backend write failed — remove the guard so stale-but-closer-to-truth
+      // metadata from the backend can reseed this agent's settings.
       clearPendingWorkspaceAiSettings(workspaceId, normalizedAgentId, merged);
     });
+  // On success the guard stays until shouldApplyWorkspaceAiSettingsFromBackend
+  // observes matching metadata from the backend stream, preventing stale payloads
+  // from overwriting the just-selected settings.
 }
 
 export function useWorkspaceAiSettings(
