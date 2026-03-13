@@ -240,14 +240,14 @@ describe("workspaceAiSettings", () => {
     });
 
     test("uses pending guards while the backend write is in flight and clears them afterward", async () => {
-      const workspaceId = nextWorkspaceId();
+      const successfulWorkspaceId = nextWorkspaceId();
       let resolveRequest!: () => void;
       const requestComplete = new Promise<void>((resolve) => {
         resolveRequest = resolve;
       });
 
       setWorkspaceAiSettings(
-        workspaceId,
+        successfulWorkspaceId,
         "exec",
         { model: "openai:gpt-5.4", thinkingLevel: "xhigh" },
         {
@@ -258,7 +258,7 @@ describe("workspaceAiSettings", () => {
       );
 
       expect(
-        shouldApplyWorkspaceAiSettingsFromBackend(workspaceId, "exec", {
+        shouldApplyWorkspaceAiSettingsFromBackend(successfulWorkspaceId, "exec", {
           model: "openai:gpt-5.4",
           thinkingLevel: "off",
         })
@@ -268,7 +268,53 @@ describe("workspaceAiSettings", () => {
       await flushMicrotasks();
 
       expect(
-        shouldApplyWorkspaceAiSettingsFromBackend(workspaceId, "exec", {
+        shouldApplyWorkspaceAiSettingsFromBackend(successfulWorkspaceId, "exec", {
+          model: "openai:gpt-5.4",
+          thinkingLevel: "off",
+        })
+      ).toBe(false);
+      expect(
+        shouldApplyWorkspaceAiSettingsFromBackend(successfulWorkspaceId, "exec", {
+          model: "openai:gpt-5.4",
+          thinkingLevel: "xhigh",
+        })
+      ).toBe(true);
+      expect(
+        shouldApplyWorkspaceAiSettingsFromBackend(successfulWorkspaceId, "exec", {
+          model: "openai:gpt-5.4",
+          thinkingLevel: "off",
+        })
+      ).toBe(true);
+
+      const failedWorkspaceId = nextWorkspaceId();
+      let rejectRequest!: (reason?: unknown) => void;
+      const requestFailure = new Promise<void>((_, reject) => {
+        rejectRequest = reject;
+      });
+
+      setWorkspaceAiSettings(
+        failedWorkspaceId,
+        "exec",
+        { model: "openai:gpt-5.4", thinkingLevel: "medium" },
+        {
+          workspace: {
+            updateAgentAISettings: mock(() => requestFailure),
+          },
+        }
+      );
+
+      expect(
+        shouldApplyWorkspaceAiSettingsFromBackend(failedWorkspaceId, "exec", {
+          model: "openai:gpt-5.4",
+          thinkingLevel: "off",
+        })
+      ).toBe(false);
+
+      rejectRequest(new Error("backend write failed"));
+      await flushMicrotasks();
+
+      expect(
+        shouldApplyWorkspaceAiSettingsFromBackend(failedWorkspaceId, "exec", {
           model: "openai:gpt-5.4",
           thinkingLevel: "off",
         })

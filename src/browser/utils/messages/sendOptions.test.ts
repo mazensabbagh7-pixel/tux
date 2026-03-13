@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { GlobalWindow } from "happy-dom";
+import { getDefaultModel } from "@/browser/hooks/useModelsFromSettings";
 import {
   AGENT_AI_DEFAULTS_KEY,
   getAgentIdKey,
@@ -99,7 +100,7 @@ describe("getSendOptionsFromStorage", () => {
 
     expect(options.thinkingLevel).toBe("medium");
     expect(readWorkspaceCache(workspaceId)).toEqual({
-      auto: { model: WORKSPACE_DEFAULTS.model, thinkingLevel: "medium" },
+      auto: { model: getDefaultModel(), thinkingLevel: "medium" },
     });
   });
 
