@@ -10,6 +10,7 @@ import {
   generatePerTaskTable,
   generateReportWithRenderer,
   generateSummaryTable,
+  modelShort,
   type TrialResult,
 } from "./generate_report";
 
@@ -76,6 +77,107 @@ const SAMPLE_DATA: TrialResult[] = [
   },
 ];
 
+const DUPLICATE_AGENT_DATA: TrialResult[] = [
+  {
+    agent: "mux",
+    model: "openai/gpt-5.2-pro",
+    task_id: "task-a",
+    passed: true,
+    score: 1,
+    n_input_tokens: 100,
+    n_output_tokens: 50,
+    total_tokens: 150,
+    n_cached_tokens: null,
+    n_cache_create_tokens: null,
+    n_reasoning_tokens: null,
+    cost_usd: 0.03,
+    duration_sec: 12,
+  },
+  {
+    agent: "mux",
+    model: "openai/gpt-5.2-pro",
+    task_id: "task-b",
+    passed: false,
+    score: 0,
+    n_input_tokens: 140,
+    n_output_tokens: 60,
+    total_tokens: 200,
+    n_cached_tokens: null,
+    n_cache_create_tokens: null,
+    n_reasoning_tokens: null,
+    cost_usd: 0.05,
+    duration_sec: 18,
+  },
+  {
+    agent: "mux",
+    model: "openai/gpt-5.3-codex",
+    task_id: "task-a",
+    passed: false,
+    score: 0,
+    n_input_tokens: 90,
+    n_output_tokens: 40,
+    total_tokens: 130,
+    n_cached_tokens: null,
+    n_cache_create_tokens: null,
+    n_reasoning_tokens: null,
+    cost_usd: 0.04,
+    duration_sec: 10,
+  },
+  {
+    agent: "mux",
+    model: "openai/gpt-5.3-codex",
+    task_id: "task-b",
+    passed: true,
+    score: 1,
+    n_input_tokens: 160,
+    n_output_tokens: 90,
+    total_tokens: 250,
+    n_cached_tokens: null,
+    n_cache_create_tokens: null,
+    n_reasoning_tokens: null,
+    cost_usd: 0.06,
+    duration_sec: 16,
+  },
+  {
+    agent: "codex",
+    model: "openai/gpt-5.3-codex",
+    task_id: "task-a",
+    passed: true,
+    score: 1,
+    n_input_tokens: 120,
+    n_output_tokens: 30,
+    total_tokens: 150,
+    n_cached_tokens: null,
+    n_cache_create_tokens: null,
+    n_reasoning_tokens: null,
+    cost_usd: 0.02,
+    duration_sec: 8,
+  },
+  {
+    agent: "codex",
+    model: "openai/gpt-5.3-codex",
+    task_id: "task-b",
+    passed: false,
+    score: 0,
+    n_input_tokens: 130,
+    n_output_tokens: 20,
+    total_tokens: 150,
+    n_cached_tokens: null,
+    n_cache_create_tokens: null,
+    n_reasoning_tokens: null,
+    cost_usd: 0.04,
+    duration_sec: 12,
+  },
+];
+
+describe("modelShort", () => {
+  test("strips provider prefixes and normalizes missing models", () => {
+    expect(modelShort("openai/gpt-5.2-pro")).toBe("gpt-5.2-pro");
+    expect(modelShort("anthropic/claude-opus-4-6")).toBe("claude-opus-4-6");
+    expect(modelShort(null)).toBe("unknown");
+  });
+});
+
 describe("computeAgentSummary", () => {
   test("computes aggregate metrics per agent", () => {
     const summaries = computeAgentSummary(SAMPLE_DATA);
@@ -119,6 +221,31 @@ describe("computeAgentSummary", () => {
     expect(muxSummary?.avgDurationSec).toBeCloseTo(35);
     expect(muxSummary?.medianDurationSec).toBeCloseTo(35);
   });
+
+  test("keeps duplicate agent names separate by model", () => {
+    const summaries = computeAgentSummary(DUPLICATE_AGENT_DATA);
+
+    expect(summaries).toHaveLength(3);
+    expect(
+      summaries.map((summary) => ({
+        agent: summary.agent,
+        model: summary.model,
+      }))
+    ).toEqual([
+      {
+        agent: "codex",
+        model: "openai/gpt-5.3-codex",
+      },
+      {
+        agent: "mux",
+        model: "openai/gpt-5.2-pro",
+      },
+      {
+        agent: "mux",
+        model: "openai/gpt-5.3-codex",
+      },
+    ]);
+  });
 });
 
 describe("table generators", () => {
@@ -145,6 +272,14 @@ describe("table generators", () => {
     expect(table).toContain("| task-b | Pass | Fail |");
   });
 
+  test("disambiguates duplicate agents in the per-task comparison matrix", () => {
+    const table = generatePerTaskTable(DUPLICATE_AGENT_DATA);
+
+    expect(table).toContain("| Task ID | codex | mux (gpt-5.2-pro) | mux (gpt-5.3-codex) |");
+    expect(table).toContain("| task-a | Pass | Pass | Fail |");
+    expect(table).toContain("| task-b | Fail | Fail | Pass |");
+  });
+
   test("generates efficiency metrics table", () => {
     const summaries = computeAgentSummary(SAMPLE_DATA);
     const table = generateEfficiencyTable(summaries);
@@ -152,6 +287,15 @@ describe("table generators", () => {
     expect(table).toContain("| Agent | Tokens / Dollar | Passes / Dollar | Tokens / Second |");
     expect(table).toContain("| codex | 15000.00 | 10.00 | 60.00 |");
     expect(table).toContain("| mux | 10000.00 | 3.33 | 42.86 |");
+  });
+
+  test("disambiguates duplicate agents in the efficiency table", () => {
+    const summaries = computeAgentSummary(DUPLICATE_AGENT_DATA);
+    const table = generateEfficiencyTable(summaries);
+
+    expect(table).toContain("| codex | 5000.00 | 16.67 | 15.00 |");
+    expect(table).toContain("| mux (gpt-5.2-pro) | 4375.00 | 12.50 | 11.67 |");
+    expect(table).toContain("| mux (gpt-5.3-codex) | 3800.00 | 10.00 | 14.62 |");
   });
 });
 
@@ -167,6 +311,36 @@ describe("report assembly", () => {
     expect(report).toContain("## Duration Distribution");
     expect(report).toContain("## Efficiency Metrics");
     expect(report).toContain("## Per-Task Comparison");
+  });
+
+  test("uses duplicate-aware chart labels in rendered chart data", async () => {
+    const outputDir = mkdtempSync(join(tmpdir(), "benchmark-report-"));
+
+    try {
+      writeFileSync(
+        join(outputDir, "data.json"),
+        JSON.stringify(DUPLICATE_AGENT_DATA, null, 2),
+        "utf8"
+      );
+
+      const chartLabels = new Set<string>();
+
+      await generateReportWithRenderer(outputDir, async (spec) => {
+        const values = Array.isArray(spec.data?.values) ? spec.data.values : [];
+        for (const value of values) {
+          if (typeof value.agent === "string") {
+            chartLabels.add(value.agent);
+          }
+        }
+        return "<svg><text>mock chart</text></svg>";
+      });
+
+      expect(chartLabels).toContain("codex");
+      expect(chartLabels).toContain("mux\ngpt-5.2-pro");
+      expect(chartLabels).toContain("mux\ngpt-5.3-codex");
+    } finally {
+      rmSync(outputDir, { recursive: true, force: true });
+    }
   });
 
   test("writes report and svg files using a mocked chart renderer", async () => {

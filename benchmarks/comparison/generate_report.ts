@@ -50,6 +50,7 @@ export interface AgentSummary {
 
 type ChartRenderer = (vlSpec: vl.TopLevelSpec) => Promise<string>;
 type ChartDatum = Record<string, number | string>;
+type AgentModelIdentity = Pick<TrialResult, "agent" | "model">;
 
 interface ChartDefinition {
   readonly specFile: string;
@@ -60,43 +61,99 @@ interface ChartDefinition {
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const CHART_SPECS_DIR = resolve(SCRIPT_DIR, "chart_specs");
 
+export function modelShort(model: string | null): string {
+  if (model == null) {
+    return "unknown";
+  }
+
+  const slashIndex = model.indexOf("/");
+  return slashIndex >= 0 ? model.slice(slashIndex + 1) : model;
+}
+
+function runKey(agent: string, model: string | null): string {
+  return `${agent}::${modelShort(model)}`;
+}
+
+function duplicatedAgents(runs: readonly AgentModelIdentity[]): Set<string> {
+  const modelsByAgent = new Map<string, Set<string>>();
+
+  for (const run of runs) {
+    const models = modelsByAgent.get(run.agent) ?? new Set<string>();
+    models.add(modelShort(run.model));
+    modelsByAgent.set(run.agent, models);
+  }
+
+  return new Set(
+    [...modelsByAgent.entries()].filter(([, models]) => models.size > 1).map(([agent]) => agent)
+  );
+}
+
+function tableLabel(run: AgentModelIdentity, duplicateAgents: ReadonlySet<string>): string {
+  if (!duplicateAgents.has(run.agent)) {
+    return run.agent;
+  }
+
+  return `${run.agent} (${modelShort(run.model)})`;
+}
+
+function chartLabel(run: AgentModelIdentity, duplicateAgents: ReadonlySet<string>): string {
+  if (!duplicateAgents.has(run.agent)) {
+    return run.agent;
+  }
+
+  return `${run.agent}\n${modelShort(run.model)}`;
+}
+
+function chartValuesFromSummaries(
+  summaries: AgentSummary[],
+  valuesForSummary: (summary: AgentSummary, label: string) => ChartDatum[]
+): ChartDatum[] {
+  const duplicateAgents = duplicatedAgents(summaries);
+
+  return summaries.flatMap((summary) =>
+    valuesForSummary(summary, chartLabel(summary, duplicateAgents))
+  );
+}
+
 const CHART_DEFINITIONS: readonly ChartDefinition[] = [
   {
     specFile: "pass_rate.json",
     outputFile: "pass_rate.svg",
     valuesFromSummaries: (summaries) =>
-      summaries.map((summary) => ({
-        agent: summary.agent,
-        pass_rate: summary.passRatePct,
-      })),
+      chartValuesFromSummaries(summaries, (summary, label) => [
+        {
+          agent: label,
+          pass_rate: summary.passRatePct,
+        },
+      ]),
   },
   {
     specFile: "token_usage.json",
     outputFile: "token_usage.svg",
     valuesFromSummaries: (summaries) =>
-      summaries.flatMap((summary) => [
+      chartValuesFromSummaries(summaries, (summary, label) => [
         {
-          agent: summary.agent,
+          agent: label,
           token_type: "input",
           tokens: summary.totalInputTokens,
         },
         {
-          agent: summary.agent,
+          agent: label,
           token_type: "output",
           tokens: summary.totalOutputTokens,
         },
         {
-          agent: summary.agent,
+          agent: label,
           token_type: "cached",
           tokens: summary.totalCachedTokens,
         },
         {
-          agent: summary.agent,
+          agent: label,
           token_type: "cache_create",
           tokens: summary.totalCacheCreateTokens,
         },
         {
-          agent: summary.agent,
+          agent: label,
           token_type: "reasoning",
           tokens: summary.totalReasoningTokens,
         },
@@ -106,19 +163,23 @@ const CHART_DEFINITIONS: readonly ChartDefinition[] = [
     specFile: "cost_comparison.json",
     outputFile: "cost_comparison.svg",
     valuesFromSummaries: (summaries) =>
-      summaries.map((summary) => ({
-        agent: summary.agent,
-        total_cost_usd: summary.totalCostUsd,
-      })),
+      chartValuesFromSummaries(summaries, (summary, label) => [
+        {
+          agent: label,
+          total_cost_usd: summary.totalCostUsd,
+        },
+      ]),
   },
   {
     specFile: "duration_comparison.json",
     outputFile: "duration_comparison.svg",
     valuesFromSummaries: (summaries) =>
-      summaries.map((summary) => ({
-        agent: summary.agent,
-        avg_duration_sec: summary.avgDurationSec,
-      })),
+      chartValuesFromSummaries(summaries, (summary, label) => [
+        {
+          agent: label,
+          avg_duration_sec: summary.avgDurationSec,
+        },
+      ]),
   },
 ] as const;
 
@@ -203,44 +264,62 @@ function withDataValues(spec: vl.TopLevelSpec, values: ChartDatum[]): vl.TopLeve
 }
 
 export function computeAgentSummary(data: TrialResult[]): AgentSummary[] {
-  const byAgent = new Map<string, TrialResult[]>();
+  const byRun = new Map<
+    string,
+    {
+      agent: string;
+      model: string | null;
+      trials: TrialResult[];
+    }
+  >();
 
   for (const result of data) {
-    const existing = byAgent.get(result.agent);
+    const key = runKey(result.agent, result.model);
+    const existing = byRun.get(key);
     if (existing) {
-      existing.push(result);
+      existing.trials.push(result);
       continue;
     }
 
-    byAgent.set(result.agent, [result]);
+    byRun.set(key, {
+      agent: result.agent,
+      model: result.model,
+      trials: [result],
+    });
   }
 
-  return [...byAgent.entries()]
-    .sort(([leftAgent], [rightAgent]) => leftAgent.localeCompare(rightAgent))
-    .map(([agent, trials]) => {
-      const tasks = trials.length;
-      const passes = trials.reduce((count, trial) => count + (trial.passed ? 1 : 0), 0);
+  return [...byRun.entries()]
+    .sort(([leftKey], [rightKey]) => leftKey.localeCompare(rightKey))
+    .map(([, run]) => {
+      const tasks = run.trials.length;
+      const passes = run.trials.reduce((count, trial) => count + (trial.passed ? 1 : 0), 0);
       // Treat null metrics as 0 so sums stay numeric
-      const totalInputTokens = trials.reduce((sum, trial) => sum + (trial.n_input_tokens ?? 0), 0);
-      const totalOutputTokens = trials.reduce(
+      const totalInputTokens = run.trials.reduce(
+        (sum, trial) => sum + (trial.n_input_tokens ?? 0),
+        0
+      );
+      const totalOutputTokens = run.trials.reduce(
         (sum, trial) => sum + (trial.n_output_tokens ?? 0),
         0
       );
-      const totalTokens = trials.reduce((sum, trial) => sum + (trial.total_tokens ?? 0), 0);
-      const totalCachedTokens = trials.reduce(
+      const totalTokens = run.trials.reduce((sum, trial) => sum + (trial.total_tokens ?? 0), 0);
+      const totalCachedTokens = run.trials.reduce(
         (sum, trial) => sum + (trial.n_cached_tokens ?? 0),
         0
       );
-      const totalCacheCreateTokens = trials.reduce(
+      const totalCacheCreateTokens = run.trials.reduce(
         (sum, trial) => sum + (trial.n_cache_create_tokens ?? 0),
         0
       );
-      const totalReasoningTokens = trials.reduce(
+      const totalReasoningTokens = run.trials.reduce(
         (sum, trial) => sum + (trial.n_reasoning_tokens ?? 0),
         0
       );
-      const totalCostUsd = trials.reduce((sum, trial) => sum + (trial.cost_usd ?? 0), 0);
-      const totalDurationSec = trials.reduce((sum, trial) => sum + (trial.duration_sec ?? 0), 0);
+      const totalCostUsd = run.trials.reduce((sum, trial) => sum + (trial.cost_usd ?? 0), 0);
+      const totalDurationSec = run.trials.reduce(
+        (sum, trial) => sum + (trial.duration_sec ?? 0),
+        0
+      );
 
       const passRatePct = tasks === 0 ? 0 : (passes / tasks) * 100;
       const avgCostUsd = tasks === 0 ? 0 : totalCostUsd / tasks;
@@ -252,15 +331,15 @@ export function computeAgentSummary(data: TrialResult[]): AgentSummary[] {
       const avgReasoningTokens = tasks === 0 ? 0 : totalReasoningTokens / tasks;
       const avgDurationSec = tasks === 0 ? 0 : totalDurationSec / tasks;
       const medianDurationSec = median(
-        trials.map((trial) => trial.duration_sec).filter((v): v is number => v != null)
+        run.trials.map((trial) => trial.duration_sec).filter((v): v is number => v != null)
       );
       const tokensPerDollar = totalCostUsd > 0 ? totalTokens / totalCostUsd : 0;
       const passesPerDollar = totalCostUsd > 0 ? passes / totalCostUsd : 0;
       const tokensPerSecond = totalDurationSec > 0 ? totalTokens / totalDurationSec : 0;
 
       return {
-        agent,
-        model: trials[0]?.model ?? null,
+        agent: run.agent,
+        model: run.model,
         tasks,
         passes,
         passRatePct,
@@ -301,28 +380,37 @@ export function generateSummaryTable(summaries: AgentSummary[]): string {
 }
 
 export function generatePerTaskTable(data: TrialResult[]): string {
-  const agents = [...new Set(data.map((result) => result.agent))].sort((left, right) =>
-    left.localeCompare(right)
-  );
+  const runs = [
+    ...new Map(
+      data.map((result) => [runKey(result.agent, result.model), result] as const)
+    ).entries(),
+  ]
+    .sort(([leftKey], [rightKey]) => leftKey.localeCompare(rightKey))
+    .map(([key, result]) => ({
+      key,
+      agent: result.agent,
+      model: result.model,
+    }));
+  const duplicateAgents = duplicatedAgents(runs);
   const tasks = [...new Set(data.map((result) => result.task_id))].sort((left, right) =>
     left.localeCompare(right)
   );
 
-  const taskToAgentOutcome = new Map<string, Map<string, boolean | null>>();
+  const taskToRunOutcome = new Map<string, Map<string, boolean | null>>();
 
   for (const result of data) {
-    const row = taskToAgentOutcome.get(result.task_id) ?? new Map<string, boolean | null>();
-    row.set(result.agent, result.passed);
-    taskToAgentOutcome.set(result.task_id, row);
+    const row = taskToRunOutcome.get(result.task_id) ?? new Map<string, boolean | null>();
+    row.set(runKey(result.agent, result.model), result.passed);
+    taskToRunOutcome.set(result.task_id, row);
   }
 
-  const header = `| Task ID | ${agents.join(" | ")} |`;
-  const separator = `| --- | ${agents.map(() => "---").join(" | ")} |`;
+  const header = `| Task ID | ${runs.map((run) => tableLabel(run, duplicateAgents)).join(" | ")} |`;
+  const separator = `| --- | ${runs.map(() => "---").join(" | ")} |`;
 
   const rows = tasks.map((taskId) => {
-    const outcomes = taskToAgentOutcome.get(taskId);
-    const cells = agents.map((agent) => {
-      const outcome = outcomes?.get(agent);
+    const outcomes = taskToRunOutcome.get(taskId);
+    const cells = runs.map((run) => {
+      const outcome = outcomes?.get(run.key);
       if (outcome === undefined) {
         return "N/A";
       }
@@ -340,11 +428,12 @@ export function generatePerTaskTable(data: TrialResult[]): string {
 }
 
 export function generateEfficiencyTable(summaries: AgentSummary[]): string {
+  const duplicateAgents = duplicatedAgents(summaries);
   const header = "| Agent | Tokens / Dollar | Passes / Dollar | Tokens / Second |";
   const separator = "| --- | ---: | ---: | ---: |";
   const rows = summaries.map(
     (summary) =>
-      `| ${summary.agent} | ${summary.tokensPerDollar.toFixed(2)} | ${summary.passesPerDollar.toFixed(2)} | ${summary.tokensPerSecond.toFixed(2)} |`
+      `| ${tableLabel(summary, duplicateAgents)} | ${summary.tokensPerDollar.toFixed(2)} | ${summary.passesPerDollar.toFixed(2)} | ${summary.tokensPerSecond.toFixed(2)} |`
   );
 
   return [header, separator, ...rows].join("\n");
