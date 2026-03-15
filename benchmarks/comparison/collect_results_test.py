@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from benchmarks.comparison.collect_results import (
+    RESULT_COLUMNS,
     collect_results,
     extract_duration_sec,
     extract_task_id,
@@ -35,6 +36,13 @@ def _write_trial(base: Path, agent: str, trial: str, payload: dict) -> Path:
     return trial_dir
 
 
+def _write_mux_token_file(trial_dir: Path, payload: dict) -> Path:
+    token_path = trial_dir / "agent" / "mux-tokens.json"
+    token_path.parent.mkdir(parents=True, exist_ok=True)
+    token_path.write_text(json.dumps(payload), encoding="utf-8")
+    return token_path
+
+
 @pytest.mark.parametrize(
     ("agent", "trial", "payload", "expected"),
     [
@@ -57,6 +65,9 @@ def _write_trial(base: Path, agent: str, trial: str, payload: dict) -> Path:
                 "n_input_tokens": 15420,
                 "n_output_tokens": 3201,
                 "total_tokens": 18621,
+                "n_cached_tokens": None,
+                "n_cache_create_tokens": None,
+                "n_reasoning_tokens": None,
                 "cost_usd": 0.12,
                 "duration_sec": 45.3,
             },
@@ -78,6 +89,9 @@ def _write_trial(base: Path, agent: str, trial: str, payload: dict) -> Path:
                 "n_input_tokens": 120,
                 "n_output_tokens": 80,
                 "total_tokens": 200,
+                "n_cached_tokens": None,
+                "n_cache_create_tokens": None,
+                "n_reasoning_tokens": None,
                 "cost_usd": 0.04,
                 "duration_sec": 5.0,
             },
@@ -99,6 +113,9 @@ def _write_trial(base: Path, agent: str, trial: str, payload: dict) -> Path:
                 "n_input_tokens": 10,
                 "n_output_tokens": 7,
                 "total_tokens": 17,
+                "n_cached_tokens": None,
+                "n_cache_create_tokens": None,
+                "n_reasoning_tokens": None,
                 "cost_usd": 0.003,
                 "duration_sec": None,
             },
@@ -179,11 +196,96 @@ def test_parse_trial_result_handles_missing_or_malformed_fields(tmp_path: Path) 
     assert row["n_input_tokens"] is None
     assert row["n_output_tokens"] is None
     assert row["total_tokens"] is None
+    assert row["n_cached_tokens"] is None
+    assert row["n_cache_create_tokens"] is None
+    assert row["n_reasoning_tokens"] is None
     assert row["cost_usd"] is None
     assert row["duration_sec"] is None
 
 
+def test_parse_trial_result_reads_metadata_tokens(tmp_path: Path) -> None:
+    row = parse_trial_result(
+        "mux",
+        _write_trial(
+            tmp_path,
+            "mux",
+            "metadata-tokens__abc",
+            {
+                "passed": True,
+                "agent_result": {
+                    "n_input_tokens": 500,
+                    "n_output_tokens": 200,
+                    "cost_usd": 0.05,
+                    "metadata": {
+                        "n_cached_tokens": 100,
+                        "n_cache_create_tokens": 50,
+                        "n_reasoning_tokens": 25,
+                    },
+                },
+            },
+        ),
+    )
+
+    assert row is not None
+    assert row["n_cached_tokens"] == 100
+    assert row["n_cache_create_tokens"] == 50
+    assert row["n_reasoning_tokens"] == 25
+
+
+def test_parse_trial_result_falls_back_to_mux_token_file(tmp_path: Path) -> None:
+    trial_dir = _write_trial(
+        tmp_path,
+        "mux",
+        "mux-token-file__abc",
+        {
+            "passed": True,
+            "agent_result": {
+                "n_input_tokens": 500,
+                "n_output_tokens": 200,
+                "cost_usd": 0.05,
+            },
+        },
+    )
+    _write_mux_token_file(
+        trial_dir,
+        {
+            "input": 500,
+            "output": 200,
+            "cached": 80,
+            "cache_create": 40,
+            "reasoning": 20,
+            "cost_usd": 0.05,
+        },
+    )
+
+    row = parse_trial_result("mux", trial_dir)
+
+    assert row is not None
+    assert row["n_cached_tokens"] == 80
+    assert row["n_cache_create_tokens"] == 40
+    assert row["n_reasoning_tokens"] == 20
+
+
+def test_parse_trial_result_new_columns_null_when_absent(tmp_path: Path) -> None:
+    row = parse_trial_result(
+        "claude-code",
+        _write_trial(
+            tmp_path,
+            "claude-code",
+            "no-token-metrics__abc",
+            {"passed": True, "n_input_tokens": 5, "n_output_tokens": 7},
+        ),
+    )
+
+    assert row is not None
+    assert row["n_cached_tokens"] is None
+    assert row["n_cache_create_tokens"] is None
+    assert row["n_reasoning_tokens"] is None
+
+
 def test_write_outputs_generates_expected_json_and_csv(tmp_path: Path) -> None:
+    assert len(RESULT_COLUMNS) == 13
+
     rows = [
         {
             "agent": "mux",
@@ -194,6 +296,9 @@ def test_write_outputs_generates_expected_json_and_csv(tmp_path: Path) -> None:
             "n_input_tokens": 5,
             "n_output_tokens": 7,
             "total_tokens": 12,
+            "n_cached_tokens": None,
+            "n_cache_create_tokens": None,
+            "n_reasoning_tokens": None,
             "cost_usd": 0.01,
             "duration_sec": 2.5,
         }
@@ -212,6 +317,9 @@ def test_write_outputs_generates_expected_json_and_csv(tmp_path: Path) -> None:
             "n_input_tokens": "5",
             "n_output_tokens": "7",
             "total_tokens": "12",
+            "n_cached_tokens": "",
+            "n_cache_create_tokens": "",
+            "n_reasoning_tokens": "",
             "cost_usd": "0.01",
             "duration_sec": "2.5",
         }

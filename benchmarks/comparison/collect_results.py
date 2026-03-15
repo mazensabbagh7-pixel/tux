@@ -17,6 +17,9 @@ RESULT_COLUMNS = [
     "n_input_tokens",
     "n_output_tokens",
     "total_tokens",
+    "n_cached_tokens",
+    "n_cache_create_tokens",
+    "n_reasoning_tokens",
     "cost_usd",
     "duration_sec",
 ]
@@ -90,6 +93,26 @@ def _pick(data: dict[str, Any], key: str) -> Any:
     return None
 
 
+def _read_mux_token_file(trial_dir: Path) -> dict[str, int]:
+    """Read extended token metrics from agent/mux-tokens.json fallback."""
+    token_path = trial_dir / "agent" / "mux-tokens.json"
+    if not token_path.is_file():
+        return {}
+    try:
+        data = json.loads(token_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+    if not isinstance(data, dict):
+        return {}
+
+    return {
+        "n_cached_tokens": _as_int(data.get("cached")) or 0,
+        "n_cache_create_tokens": _as_int(data.get("cache_create")) or 0,
+        "n_reasoning_tokens": _as_int(data.get("reasoning")) or 0,
+    }
+
+
 def _parse_iso(value: Any) -> datetime | None:
     if not isinstance(value, str):
         return None
@@ -155,6 +178,27 @@ def parse_trial_result(
         else None
     )
 
+    n_cached_tokens: int | None = None
+    n_cache_create_tokens: int | None = None
+    n_reasoning_tokens: int | None = None
+
+    agent_result_data = data.get("agent_result")
+    metadata = agent_result_data.get("metadata") if isinstance(agent_result_data, dict) else None
+    if isinstance(metadata, dict):
+        n_cached_tokens = _as_int(metadata.get("n_cached_tokens"))
+        n_cache_create_tokens = _as_int(metadata.get("n_cache_create_tokens"))
+        n_reasoning_tokens = _as_int(metadata.get("n_reasoning_tokens"))
+
+    if (
+        n_cached_tokens is None
+        and n_cache_create_tokens is None
+        and n_reasoning_tokens is None
+    ):
+        mux_tokens = _read_mux_token_file(trial_dir)
+        n_cached_tokens = mux_tokens.get("n_cached_tokens")
+        n_cache_create_tokens = mux_tokens.get("n_cache_create_tokens")
+        n_reasoning_tokens = mux_tokens.get("n_reasoning_tokens")
+
     return {
         "agent": agent,
         "model": model,
@@ -164,6 +208,9 @@ def parse_trial_result(
         "n_input_tokens": n_input_tokens,
         "n_output_tokens": n_output_tokens,
         "total_tokens": total_tokens,
+        "n_cached_tokens": n_cached_tokens,
+        "n_cache_create_tokens": n_cache_create_tokens,
+        "n_reasoning_tokens": n_reasoning_tokens,
         "cost_usd": _as_float(_pick(data, "cost_usd")),
         "duration_sec": extract_duration_sec(data),
     }
