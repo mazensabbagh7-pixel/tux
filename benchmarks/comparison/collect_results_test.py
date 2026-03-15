@@ -175,7 +175,7 @@ def test_duration_and_task_id_helpers() -> None:
 
 
 def test_parse_agent_dir_name() -> None:
-    assert parse_agent_dir_name("mux__gpt-5.2-pro") == ("mux", "gpt-5.2-pro")
+    assert parse_agent_dir_name("mux__gpt-5.4") == ("mux", "gpt-5.4")
     assert parse_agent_dir_name("claude-code__claude-opus-4-6") == (
         "claude-code",
         "claude-opus-4-6",
@@ -389,10 +389,10 @@ def test_main_handles_empty_output_directory(
 def test_collect_results_uses_base_agent_name_for_agent_model_slug_dirs(
     tmp_path: Path,
 ) -> None:
-    _write_timing(tmp_path, "mux__gpt-5.2-pro", "openai/gpt-5.2-pro")
+    _write_timing(tmp_path, "mux__gpt-5.4", "openai/gpt-5.4")
     _write_trial(
         tmp_path,
-        "mux__gpt-5.2-pro",
+        "mux__gpt-5.4",
         "task-a__111",
         {"passed": True, "n_input_tokens": 1, "n_output_tokens": 2},
     )
@@ -410,13 +410,13 @@ def test_collect_results_uses_base_agent_name_for_agent_model_slug_dirs(
     assert {row["agent"] for row in rows} == {"mux"}
     assert {row["task_id"] for row in rows} == {"task-a", "task-b"}
     assert {row["model"] for row in rows} == {
-        "openai/gpt-5.2-pro",
+        "openai/gpt-5.4",
         "openai/gpt-5.3-codex",
     }
 
 
 def test_collect_results_preserves_legacy_plain_agent_dirs(tmp_path: Path) -> None:
-    _write_timing(tmp_path, "mux", "openai/gpt-5.2-pro")
+    _write_timing(tmp_path, "mux", "openai/gpt-5.4")
     _write_trial(
         tmp_path,
         "mux",
@@ -436,7 +436,7 @@ def test_collect_results_preserves_legacy_plain_agent_dirs(tmp_path: Path) -> No
     assert len(rows) == 2
     assert {row["agent"] for row in rows} == {"mux", "codex"}
     assert {row["model"] for row in rows} == {
-        "openai/gpt-5.2-pro",
+        "openai/gpt-5.4",
         "openai/gpt-5.2-codex",
     }
 

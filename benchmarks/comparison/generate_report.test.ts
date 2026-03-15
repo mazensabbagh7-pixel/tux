@@ -80,7 +80,7 @@ const SAMPLE_DATA: TrialResult[] = [
 const DUPLICATE_AGENT_DATA: TrialResult[] = [
   {
     agent: "mux",
-    model: "openai/gpt-5.2-pro",
+    model: "openai/gpt-5.4",
     task_id: "task-a",
     passed: true,
     score: 1,
@@ -95,7 +95,7 @@ const DUPLICATE_AGENT_DATA: TrialResult[] = [
   },
   {
     agent: "mux",
-    model: "openai/gpt-5.2-pro",
+    model: "openai/gpt-5.4",
     task_id: "task-b",
     passed: false,
     score: 0,
@@ -172,7 +172,7 @@ const DUPLICATE_AGENT_DATA: TrialResult[] = [
 
 describe("modelShort", () => {
   test("strips provider prefixes and normalizes missing models", () => {
-    expect(modelShort("openai/gpt-5.2-pro")).toBe("gpt-5.2-pro");
+    expect(modelShort("openai/gpt-5.4")).toBe("gpt-5.4");
     expect(modelShort("anthropic/claude-opus-4-6")).toBe("claude-opus-4-6");
     expect(modelShort(null)).toBe("unknown");
   });
@@ -238,11 +238,11 @@ describe("computeAgentSummary", () => {
       },
       {
         agent: "mux",
-        model: "openai/gpt-5.2-pro",
+        model: "openai/gpt-5.3-codex",
       },
       {
         agent: "mux",
-        model: "openai/gpt-5.3-codex",
+        model: "openai/gpt-5.4",
       },
     ]);
   });
@@ -275,9 +275,9 @@ describe("table generators", () => {
   test("disambiguates duplicate agents in the per-task comparison matrix", () => {
     const table = generatePerTaskTable(DUPLICATE_AGENT_DATA);
 
-    expect(table).toContain("| Task ID | codex | mux (gpt-5.2-pro) | mux (gpt-5.3-codex) |");
-    expect(table).toContain("| task-a | Pass | Pass | Fail |");
-    expect(table).toContain("| task-b | Fail | Fail | Pass |");
+    expect(table).toContain("| Task ID | codex | mux (gpt-5.3-codex) | mux (gpt-5.4) |");
+    expect(table).toContain("| task-a | Pass | Fail | Pass |");
+    expect(table).toContain("| task-b | Fail | Pass | Fail |");
   });
 
   test("generates efficiency metrics table", () => {
@@ -294,7 +294,7 @@ describe("table generators", () => {
     const table = generateEfficiencyTable(summaries);
 
     expect(table).toContain("| codex | 5000.00 | 16.67 | 15.00 |");
-    expect(table).toContain("| mux (gpt-5.2-pro) | 4375.00 | 12.50 | 11.67 |");
+    expect(table).toContain("| mux (gpt-5.4) | 4375.00 | 12.50 | 11.67 |");
     expect(table).toContain("| mux (gpt-5.3-codex) | 3800.00 | 10.00 | 14.62 |");
   });
 });
@@ -336,7 +336,7 @@ describe("report assembly", () => {
       });
 
       expect(chartLabels).toContain("codex");
-      expect(chartLabels).toContain("mux\ngpt-5.2-pro");
+      expect(chartLabels).toContain("mux\ngpt-5.4");
       expect(chartLabels).toContain("mux\ngpt-5.3-codex");
     } finally {
       rmSync(outputDir, { recursive: true, force: true });
