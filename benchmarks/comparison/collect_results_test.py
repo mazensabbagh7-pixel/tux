@@ -12,6 +12,7 @@ from benchmarks.comparison.collect_results import (
     extract_duration_sec,
     extract_task_id,
     main,
+    parse_agent_dir_name,
     parse_trial_result,
     write_outputs,
 )
@@ -171,6 +172,16 @@ def test_duration_and_task_id_helpers() -> None:
     assert extract_task_id("name__HASH") == "name"
     assert extract_task_id("name__with__extra") == "name__with"
     assert extract_task_id("plain") == "plain"
+
+
+def test_parse_agent_dir_name() -> None:
+    assert parse_agent_dir_name("mux__gpt-5.2-pro") == ("mux", "gpt-5.2-pro")
+    assert parse_agent_dir_name("claude-code__claude-opus-4-6") == (
+        "claude-code",
+        "claude-opus-4-6",
+    )
+    assert parse_agent_dir_name("mux") == ("mux", None)
+    assert parse_agent_dir_name("codex") == ("codex", None)
 
 
 def test_parse_trial_result_handles_missing_or_malformed_fields(tmp_path: Path) -> None:
@@ -373,6 +384,61 @@ def test_main_handles_empty_output_directory(
     assert main([str(tmp_path)]) == 0
     assert json.loads((tmp_path / "data.json").read_text(encoding="utf-8")) == []
     assert "Collected 0 trial(s) across 0 agent(s)." in capsys.readouterr().out
+
+
+def test_collect_results_uses_base_agent_name_for_agent_model_slug_dirs(
+    tmp_path: Path,
+) -> None:
+    _write_timing(tmp_path, "mux__gpt-5.2-pro", "openai/gpt-5.2-pro")
+    _write_trial(
+        tmp_path,
+        "mux__gpt-5.2-pro",
+        "task-a__111",
+        {"passed": True, "n_input_tokens": 1, "n_output_tokens": 2},
+    )
+    _write_timing(tmp_path, "mux__gpt-5.3-codex", "openai/gpt-5.3-codex")
+    _write_trial(
+        tmp_path,
+        "mux__gpt-5.3-codex",
+        "task-b__222",
+        {"passed": False, "n_input_tokens": 2, "n_output_tokens": 3},
+    )
+
+    rows = collect_results(tmp_path)
+
+    assert len(rows) == 2
+    assert {row["agent"] for row in rows} == {"mux"}
+    assert {row["task_id"] for row in rows} == {"task-a", "task-b"}
+    assert {row["model"] for row in rows} == {
+        "openai/gpt-5.2-pro",
+        "openai/gpt-5.3-codex",
+    }
+
+
+def test_collect_results_preserves_legacy_plain_agent_dirs(tmp_path: Path) -> None:
+    _write_timing(tmp_path, "mux", "openai/gpt-5.2-pro")
+    _write_trial(
+        tmp_path,
+        "mux",
+        "task-a__111",
+        {"passed": True, "n_input_tokens": 1, "n_output_tokens": 1},
+    )
+    _write_timing(tmp_path, "codex", "openai/gpt-5.2-codex")
+    _write_trial(
+        tmp_path,
+        "codex",
+        "task-b__222",
+        {"passed": False, "n_input_tokens": 2, "n_output_tokens": 1},
+    )
+
+    rows = collect_results(tmp_path)
+
+    assert len(rows) == 2
+    assert {row["agent"] for row in rows} == {"mux", "codex"}
+    assert {row["model"] for row in rows} == {
+        "openai/gpt-5.2-pro",
+        "openai/gpt-5.2-codex",
+    }
 
 
 def test_collect_results_reads_model_from_timing_json(tmp_path: Path) -> None:

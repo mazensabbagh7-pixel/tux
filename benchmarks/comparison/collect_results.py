@@ -30,6 +30,19 @@ def extract_task_id(folder_name: str) -> str:
     return folder_name.rsplit("__", 1)[0] if "__" in folder_name else folder_name
 
 
+def parse_agent_dir_name(dir_name: str) -> tuple[str, str | None]:
+    """Split agent directory names into base agent and optional model slug.
+
+    We split on the first ``__`` so legacy plain directories still work and
+    model slugs may contain additional separators without affecting the base
+    agent name.
+    """
+    if "__" not in dir_name:
+        return dir_name, None
+    agent, model_slug = dir_name.split("__", 1)
+    return agent, model_slug
+
+
 def _as_float(value: Any) -> float | None:
     if value is None or isinstance(value, bool):
         return None
@@ -246,6 +259,7 @@ def collect_agent_results(agent_dir: Path) -> list[dict[str, Any]]:
     ``jobs/`` prefix for older layouts.
     """
     rows: list[dict[str, Any]] = []
+    agent_name, _ = parse_agent_dir_name(agent_dir.name)
     model = read_agent_model(agent_dir)
 
     # Candidate job root dirs: Harbor default (<agent_dir>/<timestamp>/)
@@ -265,7 +279,7 @@ def collect_agent_results(agent_dir: Path) -> list[dict[str, Any]]:
     for job_dir in job_roots:
         for trial_dir in sorted(job_dir.iterdir()):
             if trial_dir.is_dir():
-                row = parse_trial_result(agent_dir.name, trial_dir, model)
+                row = parse_trial_result(agent_name, trial_dir, model)
                 if row is not None:
                     rows.append(row)
     return rows
