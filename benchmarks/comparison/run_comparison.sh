@@ -14,6 +14,7 @@ MUX_MODEL="${MUX_MODEL:-anthropic/claude-sonnet-4-5}"
 CLAUDE_MODEL="${CLAUDE_MODEL:-anthropic/claude-sonnet-4-5}"
 CODEX_MODEL="${CODEX_MODEL:-openai/gpt-5.2-codex}"
 DRY_RUN="${DRY_RUN:-}"
+RUNS="${RUNS:-}"
 AGENTS="${AGENTS:-mux claude-code codex}"
 
 # Harbor requires Python ≥3.12; ensure uv uses it
@@ -62,34 +63,124 @@ declare -A AGENT_EXTRAS=(
   [codex]=""
 )
 
-read -r -a selected_agents <<<"${AGENTS}"
 read -r -a selected_tasks <<<"${TASK_NAMES}"
 
-if [[ ${#selected_agents[@]} -eq 0 ]]; then
-  echo "Error: AGENTS must include at least one agent" >&2
-  exit 1
-fi
+declare -a RUN_AGENTS=()
+declare -a RUN_MODELS=()
+declare -a RUN_SLUGS=()
 
-mkdir -p "${OUTPUT_DIR}"
-log "Output directory: ${OUTPUT_DIR}"
+model_slug_from_id() {
+  local model_id="$1"
+  local model_slug="${model_id##*/}"
 
-for agent in "${selected_agents[@]}"; do
+  if [[ -z "${model_slug}" ]]; then
+    echo "Error: model '${model_id}' must end with a non-empty slug" >&2
+    exit 1
+  fi
+
+  printf '%s\n' "${model_slug}"
+}
+
+add_run() {
+  local agent="$1"
+  local model="$2"
+  local model_slug
+
   if [[ -z "${AGENT_TARGETS[$agent]+x}" ]]; then
     echo "Error: unknown agent '${agent}'. Valid options: mux, claude-code, codex" >&2
     exit 1
   fi
 
-  agent_dir="${OUTPUT_DIR}/${agent}"
+  if [[ -z "${model}" ]]; then
+    echo "Error: agent '${agent}' must have a non-empty model" >&2
+    exit 1
+  fi
+
+  model_slug="$(model_slug_from_id "${model}")"
+
+  # Normalize RUNS and legacy AGENTS into one run list so the same agent can be
+  # benchmarked against multiple models without output directory collisions.
+  RUN_AGENTS+=("${agent}")
+  RUN_MODELS+=("${model}")
+  RUN_SLUGS+=("${model_slug}")
+}
+
+strip_claude_model_provider() {
+  local model="$1"
+
+  # Claude Code CLI rejects provider prefixes even though timing.json should keep
+  # the full provider-prefixed model ID for downstream reporting.
+  model="${model#anthropic/}"
+  model="${model#openai/}"
+  printf '%s\n' "${model}"
+}
+
+if [[ -n "${RUNS}" ]]; then
+  read -r -a selected_runs <<<"${RUNS}"
+
+  if [[ ${#selected_runs[@]} -eq 0 ]]; then
+    echo "Error: RUNS must include at least one agent:model entry" >&2
+    exit 1
+  fi
+
+  for run_spec in "${selected_runs[@]}"; do
+    if [[ "${run_spec}" != *:* ]]; then
+      echo "Error: RUNS entries must use agent:model format; got '${run_spec}'" >&2
+      exit 1
+    fi
+
+    agent="${run_spec%%:*}"
+    model="${run_spec#*:}"
+
+    if [[ -z "${agent}" || -z "${model}" ]]; then
+      echo "Error: RUNS entries must use agent:model format with non-empty values; got '${run_spec}'" >&2
+      exit 1
+    fi
+
+    add_run "${agent}" "${model}"
+  done
+else
+  read -r -a selected_agents <<<"${AGENTS}"
+
+  if [[ ${#selected_agents[@]} -eq 0 ]]; then
+    echo "Error: AGENTS must include at least one agent" >&2
+    exit 1
+  fi
+
+  for agent in "${selected_agents[@]}"; do
+    add_run "${agent}" "${AGENT_MODELS[$agent]-}"
+  done
+fi
+
+declare -A seen_run_dirs=()
+for i in "${!RUN_AGENTS[@]}"; do
+  run_dir_name="${RUN_AGENTS[$i]}__${RUN_SLUGS[$i]}"
+  run_label="${RUN_AGENTS[$i]}:${RUN_MODELS[$i]}"
+
+  if [[ -n "${seen_run_dirs[$run_dir_name]+x}" ]]; then
+    echo "Error: duplicate run output directory '${run_dir_name}' for '${seen_run_dirs[$run_dir_name]}' and '${run_label}'" >&2
+    exit 1
+  fi
+
+  seen_run_dirs["${run_dir_name}"]="${run_label}"
+done
+
+mkdir -p "${OUTPUT_DIR}"
+log "Output directory: ${OUTPUT_DIR}"
+
+for i in "${!RUN_AGENTS[@]}"; do
+  agent="${RUN_AGENTS[$i]}"
+  original_model="${RUN_MODELS[$i]}"
+  model_slug="${RUN_SLUGS[$i]}"
+
+  agent_dir="${OUTPUT_DIR}/${agent}__${model_slug}"
   harbor_log="${agent_dir}/harbor.log"
   timing_json="${agent_dir}/timing.json"
   mkdir -p "${agent_dir}"
 
-  original_model="${AGENT_MODELS[$agent]}"
   model="${original_model}"
   if [[ "${agent}" == "claude-code" ]]; then
-    # Claude Code CLI rejects provider prefixes like "anthropic/" and "openai/".
-    model="${model#anthropic/}"
-    model="${model#openai/}"
+    model="$(strip_claude_model_provider "${model}")"
   fi
 
   command=(
@@ -121,7 +212,7 @@ for agent in "${selected_agents[@]}"; do
     fi
   done
 
-  log "Running agent: ${agent}"
+  log "Running agent: ${agent} (${original_model})"
   start_epoch="$(date +%s)"
   start_iso="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 
