@@ -77,6 +77,16 @@ function createMockChildProcess(args: string[]): MockChildProcess {
   return childProcess;
 }
 
+function createSpawnErrorChildProcess(error: NodeJS.ErrnoException): MockChildProcess {
+  const childProcess = new MockChildProcess();
+
+  queueMicrotask(() => {
+    childProcess.emit("error", error);
+  });
+
+  return childProcess;
+}
+
 function getSpawnResultForArgs(args: string[]): SpawnResult {
   const sessionFlagIndex = args.indexOf("--session");
   if (sessionFlagIndex === -1) {
@@ -217,14 +227,28 @@ describe("BrowserSessionBackend launcher fallback", () => {
     ]);
   });
 
-  it("reports a missing launcher error without spawning when no launcher is available", async () => {
+  it("falls back to spawning agent-browser directly when launcher discovery returns null", async () => {
     findAvailableCommandMock.mockResolvedValue(null);
+    spawnMock.mockImplementationOnce((command: string) => {
+      expect(command).toBe("agent-browser");
+      const error = new Error("spawn agent-browser ENOENT") as NodeJS.ErrnoException;
+      error.code = "ENOENT";
+      return createSpawnErrorChildProcess(error);
+    });
     const { backend, onError } = createBackend();
     backends.push(backend);
 
     const session = await backend.start();
 
-    expect(spawnMock).not.toHaveBeenCalled();
+    expect(spawnMock).toHaveBeenCalledTimes(1);
+    expect(spawnMock).toHaveBeenCalledWith(
+      "agent-browser",
+      ["--json", "--session", session.id, "open", TEST_URL],
+      expect.objectContaining({
+        stdio: ["ignore", "pipe", "pipe"],
+        windowsHide: true,
+      })
+    );
     expect(onError).toHaveBeenCalledWith(TEST_WORKSPACE_ID, MISSING_BROWSER_BINARY_ERROR);
     expect(session.status).toBe("error");
     expect(session.lastError).toBe(MISSING_BROWSER_BINARY_ERROR);

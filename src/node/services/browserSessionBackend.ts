@@ -360,14 +360,21 @@ export class BrowserSessionBackend {
     const launcherCommand = await findAvailableCommand(
       AGENT_BROWSER_LAUNCHERS.map((launcher) => launcher.command)
     );
+    let launcher: (typeof AGENT_BROWSER_LAUNCHERS)[number] = AGENT_BROWSER_LAUNCHERS[0];
     if (launcherCommand === null) {
-      return { ok: false, error: MISSING_BROWSER_BINARY_ERROR };
+      // Preserve the previous direct spawn behavior when command discovery cannot
+      // probe the PATH (for example, when `which` is unavailable on Windows).
+      launcher = AGENT_BROWSER_LAUNCHERS[0];
+    } else {
+      const discoveredLauncher = AGENT_BROWSER_LAUNCHERS.find(
+        (candidate) => candidate.command === launcherCommand
+      );
+      assert(
+        discoveredLauncher,
+        `Missing agent-browser launcher definition for ${launcherCommand}`
+      );
+      launcher = discoveredLauncher;
     }
-
-    const launcher = AGENT_BROWSER_LAUNCHERS.find(
-      (candidate) => candidate.command === launcherCommand
-    );
-    assert(launcher, `Missing agent-browser launcher definition for ${launcherCommand}`);
 
     const childProcess = spawn(
       launcher.command,
