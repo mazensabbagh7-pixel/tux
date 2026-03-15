@@ -23,6 +23,9 @@ const SAMPLE_DATA: TrialResult[] = [
     n_input_tokens: 1000,
     n_output_tokens: 500,
     total_tokens: 1500,
+    n_cached_tokens: 200,
+    n_cache_create_tokens: 100,
+    n_reasoning_tokens: 50,
     cost_usd: 0.1,
     duration_sec: 30,
   },
@@ -35,6 +38,9 @@ const SAMPLE_DATA: TrialResult[] = [
     n_input_tokens: 800,
     n_output_tokens: 700,
     total_tokens: 1500,
+    n_cached_tokens: 150,
+    n_cache_create_tokens: 80,
+    n_reasoning_tokens: 30,
     cost_usd: 0.2,
     duration_sec: 40,
   },
@@ -47,6 +53,9 @@ const SAMPLE_DATA: TrialResult[] = [
     n_input_tokens: 900,
     n_output_tokens: 400,
     total_tokens: 1300,
+    n_cached_tokens: null,
+    n_cache_create_tokens: null,
+    n_reasoning_tokens: null,
     cost_usd: 0.08,
     duration_sec: 20,
   },
@@ -59,6 +68,9 @@ const SAMPLE_DATA: TrialResult[] = [
     n_input_tokens: 1100,
     n_output_tokens: 600,
     total_tokens: 1700,
+    n_cached_tokens: null,
+    n_cache_create_tokens: null,
+    n_reasoning_tokens: null,
     cost_usd: 0.12,
     duration_sec: 30,
   },
@@ -85,6 +97,9 @@ describe("computeAgentSummary", () => {
     expect(codexSummary?.avgCostUsd).toBeCloseTo(0.1);
     expect(codexSummary?.totalTokens).toBe(3000);
     expect(codexSummary?.avgTokens).toBeCloseTo(1500);
+    expect(codexSummary?.totalCachedTokens).toBe(0);
+    expect(codexSummary?.totalCacheCreateTokens).toBe(0);
+    expect(codexSummary?.totalReasoningTokens).toBe(0);
     expect(codexSummary?.avgDurationSec).toBeCloseTo(25);
     expect(codexSummary?.medianDurationSec).toBeCloseTo(25);
 
@@ -95,6 +110,12 @@ describe("computeAgentSummary", () => {
     expect(muxSummary?.avgCostUsd).toBeCloseTo(0.15);
     expect(muxSummary?.totalTokens).toBe(3000);
     expect(muxSummary?.avgTokens).toBeCloseTo(1500);
+    expect(muxSummary?.totalCachedTokens).toBe(350);
+    expect(muxSummary?.avgCachedTokens).toBeCloseTo(175);
+    expect(muxSummary?.totalCacheCreateTokens).toBe(180);
+    expect(muxSummary?.avgCacheCreateTokens).toBeCloseTo(90);
+    expect(muxSummary?.totalReasoningTokens).toBe(80);
+    expect(muxSummary?.avgReasoningTokens).toBeCloseTo(40);
     expect(muxSummary?.avgDurationSec).toBeCloseTo(35);
     expect(muxSummary?.medianDurationSec).toBeCloseTo(35);
   });
@@ -106,13 +127,13 @@ describe("table generators", () => {
     const table = generateSummaryTable(summaries);
 
     expect(table).toContain(
-      "| Agent | Model | Tasks | Pass Rate | Avg Cost (USD) | Avg Tokens | Avg Duration (s) |"
+      "| Agent | Model | Tasks | Pass Rate | Avg Cost (USD) | Avg Tokens | Avg Cached | Avg Cache Create | Avg Reasoning | Avg Duration (s) |"
     );
     expect(table).toContain(
-      "| codex | openai/gpt-5.2-codex | 2 | 100.0% | $0.1000 | 1,500 | 25.0 |"
+      "| codex | openai/gpt-5.2-codex | 2 | 100.0% | $0.1000 | 1,500 | 0 | 0 | 0 | 25.0 |"
     );
     expect(table).toContain(
-      "| mux | anthropic/claude-sonnet-4-5 | 2 | 50.0% | $0.1500 | 1,500 | 35.0 |"
+      "| mux | anthropic/claude-sonnet-4-5 | 2 | 50.0% | $0.1500 | 1,500 | 175 | 90 | 40 | 35.0 |"
     );
   });
 
@@ -155,14 +176,42 @@ describe("report assembly", () => {
       writeFileSync(join(outputDir, "data.json"), JSON.stringify(SAMPLE_DATA, null, 2), "utf8");
 
       let renderCalls = 0;
+      let tokenUsageValues: unknown[] | undefined;
       const mockSvg = "<svg><text>mock chart</text></svg>";
 
-      await generateReportWithRenderer(outputDir, async () => {
+      await generateReportWithRenderer(outputDir, async (spec) => {
         renderCalls += 1;
+        if (spec.data && "values" in spec.data && Array.isArray(spec.data.values)) {
+          const values = spec.data.values;
+          if (
+            values.some(
+              (value) =>
+                value !== null &&
+                typeof value === "object" &&
+                "token_type" in value &&
+                value.token_type === "reasoning"
+            )
+          ) {
+            tokenUsageValues = values;
+          }
+        }
+
         return mockSvg;
       });
 
       expect(renderCalls).toBe(4);
+      expect(tokenUsageValues).toEqual([
+        { agent: "codex", token_type: "input", tokens: 2000 },
+        { agent: "codex", token_type: "output", tokens: 1000 },
+        { agent: "codex", token_type: "cached", tokens: 0 },
+        { agent: "codex", token_type: "cache_create", tokens: 0 },
+        { agent: "codex", token_type: "reasoning", tokens: 0 },
+        { agent: "mux", token_type: "input", tokens: 1800 },
+        { agent: "mux", token_type: "output", tokens: 1200 },
+        { agent: "mux", token_type: "cached", tokens: 350 },
+        { agent: "mux", token_type: "cache_create", tokens: 180 },
+        { agent: "mux", token_type: "reasoning", tokens: 80 },
+      ]);
 
       expect(readFileSync(join(outputDir, "pass_rate.svg"), "utf8")).toBe(mockSvg);
       expect(readFileSync(join(outputDir, "token_usage.svg"), "utf8")).toBe(mockSvg);
@@ -172,6 +221,7 @@ describe("report assembly", () => {
       const report = readFileSync(join(outputDir, "report.md"), "utf8");
       expect(report).toContain("# Benchmark Comparison Report");
       expect(report).toContain("![Pass Rate by Agent](pass_rate.svg)");
+      expect(report).toContain("## Token Usage");
     } finally {
       rmSync(outputDir, { recursive: true, force: true });
     }

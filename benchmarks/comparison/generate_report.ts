@@ -13,6 +13,9 @@ export interface TrialResult {
   n_input_tokens: number | null;
   n_output_tokens: number | null;
   total_tokens: number | null;
+  n_cached_tokens: number | null;
+  n_cache_create_tokens: number | null;
+  n_reasoning_tokens: number | null;
   cost_usd: number | null;
   duration_sec: number | null;
 }
@@ -31,6 +34,12 @@ export interface AgentSummary {
   avgOutputTokens: number;
   totalTokens: number;
   avgTokens: number;
+  totalCachedTokens: number;
+  avgCachedTokens: number;
+  totalCacheCreateTokens: number;
+  avgCacheCreateTokens: number;
+  totalReasoningTokens: number;
+  avgReasoningTokens: number;
   totalDurationSec: number;
   avgDurationSec: number;
   medianDurationSec: number;
@@ -75,6 +84,21 @@ const CHART_DEFINITIONS: readonly ChartDefinition[] = [
           agent: summary.agent,
           token_type: "output",
           tokens: summary.totalOutputTokens,
+        },
+        {
+          agent: summary.agent,
+          token_type: "cached",
+          tokens: summary.totalCachedTokens,
+        },
+        {
+          agent: summary.agent,
+          token_type: "cache_create",
+          tokens: summary.totalCacheCreateTokens,
+        },
+        {
+          agent: summary.agent,
+          token_type: "reasoning",
+          tokens: summary.totalReasoningTokens,
         },
       ]),
   },
@@ -137,6 +161,9 @@ function isTrialResult(value: unknown): value is TrialResult {
     isNumberOrNull(candidate.n_input_tokens) &&
     isNumberOrNull(candidate.n_output_tokens) &&
     isNumberOrNull(candidate.total_tokens) &&
+    isNumberOrNull(candidate.n_cached_tokens) &&
+    isNumberOrNull(candidate.n_cache_create_tokens) &&
+    isNumberOrNull(candidate.n_reasoning_tokens) &&
     isNumberOrNull(candidate.cost_usd) &&
     isNumberOrNull(candidate.duration_sec)
   );
@@ -200,6 +227,18 @@ export function computeAgentSummary(data: TrialResult[]): AgentSummary[] {
         0
       );
       const totalTokens = trials.reduce((sum, trial) => sum + (trial.total_tokens ?? 0), 0);
+      const totalCachedTokens = trials.reduce(
+        (sum, trial) => sum + (trial.n_cached_tokens ?? 0),
+        0
+      );
+      const totalCacheCreateTokens = trials.reduce(
+        (sum, trial) => sum + (trial.n_cache_create_tokens ?? 0),
+        0
+      );
+      const totalReasoningTokens = trials.reduce(
+        (sum, trial) => sum + (trial.n_reasoning_tokens ?? 0),
+        0
+      );
       const totalCostUsd = trials.reduce((sum, trial) => sum + (trial.cost_usd ?? 0), 0);
       const totalDurationSec = trials.reduce((sum, trial) => sum + (trial.duration_sec ?? 0), 0);
 
@@ -208,6 +247,9 @@ export function computeAgentSummary(data: TrialResult[]): AgentSummary[] {
       const avgInputTokens = tasks === 0 ? 0 : totalInputTokens / tasks;
       const avgOutputTokens = tasks === 0 ? 0 : totalOutputTokens / tasks;
       const avgTokens = tasks === 0 ? 0 : totalTokens / tasks;
+      const avgCachedTokens = tasks === 0 ? 0 : totalCachedTokens / tasks;
+      const avgCacheCreateTokens = tasks === 0 ? 0 : totalCacheCreateTokens / tasks;
+      const avgReasoningTokens = tasks === 0 ? 0 : totalReasoningTokens / tasks;
       const avgDurationSec = tasks === 0 ? 0 : totalDurationSec / tasks;
       const medianDurationSec = median(
         trials.map((trial) => trial.duration_sec).filter((v): v is number => v != null)
@@ -230,6 +272,12 @@ export function computeAgentSummary(data: TrialResult[]): AgentSummary[] {
         avgOutputTokens,
         totalTokens,
         avgTokens,
+        totalCachedTokens,
+        avgCachedTokens,
+        totalCacheCreateTokens,
+        avgCacheCreateTokens,
+        totalReasoningTokens,
+        avgReasoningTokens,
         totalDurationSec,
         avgDurationSec,
         medianDurationSec,
@@ -242,11 +290,11 @@ export function computeAgentSummary(data: TrialResult[]): AgentSummary[] {
 
 export function generateSummaryTable(summaries: AgentSummary[]): string {
   const header =
-    "| Agent | Model | Tasks | Pass Rate | Avg Cost (USD) | Avg Tokens | Avg Duration (s) |";
-  const separator = "| --- | --- | ---: | ---: | ---: | ---: | ---: |";
+    "| Agent | Model | Tasks | Pass Rate | Avg Cost (USD) | Avg Tokens | Avg Cached | Avg Cache Create | Avg Reasoning | Avg Duration (s) |";
+  const separator = "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |";
   const rows = summaries.map(
     (summary) =>
-      `| ${summary.agent} | ${summary.model ?? "N/A"} | ${summary.tasks} | ${summary.passRatePct.toFixed(1)}% | $${summary.avgCostUsd.toFixed(4)} | ${formatInteger(summary.avgTokens)} | ${summary.avgDurationSec.toFixed(1)} |`
+      `| ${summary.agent} | ${summary.model ?? "N/A"} | ${summary.tasks} | ${summary.passRatePct.toFixed(1)}% | $${summary.avgCostUsd.toFixed(4)} | ${formatInteger(summary.avgTokens)} | ${formatInteger(summary.avgCachedTokens)} | ${formatInteger(summary.avgCacheCreateTokens)} | ${formatInteger(summary.avgReasoningTokens)} | ${summary.avgDurationSec.toFixed(1)} |`
   );
 
   return [header, separator, ...rows].join("\n");
