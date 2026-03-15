@@ -7,11 +7,46 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
-from harbor.agents.installed.base import BaseInstalledAgent, ExecInput
-from harbor.environments.base import BaseEnvironment
-from harbor.models.agent.context import AgentContext
+try:
+    from harbor.agents.installed.base import BaseInstalledAgent, ExecInput
+    from harbor.environments.base import BaseEnvironment
+    from harbor.models.agent.context import AgentContext
+except ModuleNotFoundError:  # pragma: no cover - test fallback when Harbor isn't installed
+    class BaseInstalledAgent:
+        def __init__(self, logs_dir: Path, **_: Any) -> None:
+            self.logs_dir = logs_dir
+
+    class ExecInput:
+        command: str
+        cwd: str | None
+        env: dict[str, str] | None
+        timeout_sec: int | None
+
+    class BaseEnvironment:
+        pass
+
+    class AgentContext:
+        n_input_tokens: int | None
+        n_output_tokens: int | None
+        cost_usd: float | None
+        metadata: dict[str, Any] | None
 
 from .mux_payload import build_app_archive
+
+
+def _merge_token_metadata(
+    context: AgentContext,
+    *,
+    cached: int | None,
+    cache_create: int | None,
+    reasoning: int | None,
+) -> None:
+    context.metadata = {
+        **(context.metadata if isinstance(context.metadata, dict) else {}),
+        "n_cached_tokens": cached or 0,
+        "n_cache_create_tokens": cache_create or 0,
+        "n_reasoning_tokens": reasoning or 0,
+    }
 
 
 class MuxAgent(BaseInstalledAgent):
@@ -298,6 +333,13 @@ class MuxAgent(BaseInstalledAgent):
                 # cost_usd is computed by mux CLI from model pricing
                 if data.get("cost_usd") is not None:
                     context.cost_usd = data["cost_usd"]
+                # Mirror extended token metrics into context.metadata for the collector.
+                _merge_token_metadata(
+                    context,
+                    cached=data.get("cached", 0),
+                    cache_create=data.get("cache_create", 0),
+                    reasoning=data.get("reasoning", 0),
+                )
             except Exception:
                 pass  # Token/cost extraction is best-effort
 
@@ -330,6 +372,12 @@ class MuxAgent(BaseInstalledAgent):
                         context.n_input_tokens = usage["inputTokens"]
                     if usage.get("outputTokens") is not None:
                         context.n_output_tokens = usage["outputTokens"]
+                    _merge_token_metadata(
+                        context,
+                        cached=usage.get("cachedTokens", 0),
+                        cache_create=usage.get("cacheCreateTokens", 0),
+                        reasoning=usage.get("reasoningTokens", 0),
+                    )
 
                 if payload.get("cost_usd") is not None:
                     context.cost_usd = payload["cost_usd"]
