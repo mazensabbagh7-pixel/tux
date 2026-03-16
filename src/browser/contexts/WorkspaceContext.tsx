@@ -253,7 +253,7 @@ function seedWorkspaceLocalStorageFromBackend(metadata: FrontendWorkspaceMetadat
   // so this won't overwrite the flat key after a local thinking-level change.
   const thinkingKey = getThinkingLevelKey(workspaceId);
   const existingThinking = readPersistedState<ThinkingLevel | undefined>(thinkingKey, undefined);
-  if (existingThinking !== active.thinkingLevel) {
+  if (existingThinking == null) {
     updatePersistedState(thinkingKey, active.thinkingLevel);
   }
 }
