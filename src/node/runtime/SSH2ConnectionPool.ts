@@ -10,6 +10,7 @@
 import * as fs from "fs/promises";
 import * as os from "os";
 import * as path from "path";
+import { createHmac } from "crypto";
 import { spawn, type ChildProcess } from "child_process";
 import { Duplex } from "stream";
 import type { Client } from "ssh2";
@@ -138,6 +139,80 @@ const DEFAULT_IDENTITY_FILES = [
   "~/.ssh/id_ed25519_sk",
   "~/.ssh/id_dsa",
 ];
+
+const KNOWN_HOSTS_PATH = path.join(os.homedir(), ".ssh", "known_hosts");
+
+function matchesHashedKnownHost(pattern: string, host: string): boolean {
+  if (!pattern.startsWith("|1|")) {
+    return false;
+  }
+
+  const parts = pattern.split("|");
+  if (parts.length !== 5) {
+    return false;
+  }
+
+  const salt = Buffer.from(parts[3], "base64");
+  const expected = parts[4];
+  const actual = createHmac("sha1", salt).update(host).digest("base64");
+  return actual === expected;
+}
+
+function matchesKnownHostPattern(pattern: string, host: string): boolean {
+  if (pattern === host) {
+    return true;
+  }
+
+  if (pattern.startsWith("!")) {
+    return false;
+  }
+
+  return matchesHashedKnownHost(pattern, host);
+}
+
+async function getKnownHostPublicKeys(host: string, port: number): Promise<Buffer[]> {
+  const knownHostsEntries = [host, `[${host}]:${port}`];
+
+  let content: string;
+  try {
+    content = await fs.readFile(KNOWN_HOSTS_PATH, "utf8");
+  } catch {
+    return [];
+  }
+
+  const keys: Buffer[] = [];
+  for (const line of content.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) {
+      continue;
+    }
+
+    const fields = trimmed.split(/\s+/);
+    const hostFieldIndex = fields[0]?.startsWith("@") ? 1 : 0;
+    const keyFieldIndex = hostFieldIndex + 2;
+    const hostPatterns = fields[hostFieldIndex]?.split(",");
+    const keyBlob = fields[keyFieldIndex];
+    if (!hostPatterns?.length || !keyBlob) {
+      continue;
+    }
+
+    const matchesHost = hostPatterns.some((pattern) =>
+      knownHostsEntries.some((knownHost) => matchesKnownHostPattern(pattern, knownHost))
+    );
+    if (!matchesHost) {
+      continue;
+    }
+
+    try {
+      keys.push(Buffer.from(keyBlob, "base64"));
+    } catch {
+      // Ignore malformed known_hosts entries.
+    }
+  }
+
+  return keys;
+}
+
 function expandLocalPath(value: string): string {
   if (value === "~") {
     return os.homedir();
@@ -569,6 +644,11 @@ export class SSH2ConnectionPool {
             cleanupProxy();
           });
 
+          const allowedHostKeys = await getKnownHostPublicKeys(
+            resolvedConfig.hostName,
+            resolvedConfig.port
+          );
+
           await new Promise<void>((resolve, reject) => {
             const onReady = () => {
               cleanup();
@@ -607,10 +687,11 @@ export class SSH2ConnectionPool {
               keepaliveInterval: 5000,
               keepaliveCountMax: 2,
               ...(privateKey ? { privateKey } : {}),
-              // TODO(ethanndickson): Implement known_hosts support for SSH2
-              // and restore interactive host key verification once approvals
-              // can be persisted between connections.
-              hostVerifier: () => true,
+              // Enforce known_hosts host key pinning so SSH2 cannot silently
+              // accept attacker-controlled keys during transport negotiation.
+              hostVerifier: (presentedKey: Buffer) =>
+                allowedHostKeys.length > 0 &&
+                allowedHostKeys.some((knownHostKey) => knownHostKey.equals(presentedKey)),
             };
 
             client.connect(connectOptions);
