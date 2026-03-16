@@ -25,6 +25,7 @@ import {
   getInputKey,
   getModelKey,
   getPendingScopeId,
+  getThinkingLevelKey,
   getRightSidebarLayoutKey,
   getTerminalTitlesKey,
   getWorkspaceAISettingsByAgentKey,
@@ -235,9 +236,7 @@ function seedWorkspaceLocalStorageFromBackend(metadata: FrontendWorkspaceMetadat
     updatePersistedState(byAgentKey, nextByAgent);
   }
 
-  // Seed the active agent's model into the legacy model key to avoid UI flash.
-  // Thinking is now derived from the per-agent cache above, so the flat thinking key
-  // is left untouched for existing workspaces.
+  // Seed the active agent's model and thinking into the legacy flat keys to avoid UI flash.
   const active = nextByAgent[activeAgentId] ?? nextByAgent.exec ?? nextByAgent.plan;
   if (!active) {
     return;
@@ -247,6 +246,15 @@ function seedWorkspaceLocalStorageFromBackend(metadata: FrontendWorkspaceMetadat
   const existingModel = readPersistedState<string | undefined>(modelKey, undefined);
   if (existingModel !== active.model) {
     setWorkspaceModelWithOrigin(workspaceId, active.model, "sync");
+  }
+
+  // Seed the active agent's thinking level into the flat thinking key for UI display.
+  // The per-agent cache guard ensures `active.thinkingLevel` reflects recent user writes,
+  // so this won't overwrite the flat key after a local thinking-level change.
+  const thinkingKey = getThinkingLevelKey(workspaceId);
+  const existingThinking = readPersistedState<ThinkingLevel | undefined>(thinkingKey, undefined);
+  if (existingThinking !== active.thinkingLevel) {
+    updatePersistedState(thinkingKey, active.thinkingLevel);
   }
 }
 

@@ -49,10 +49,13 @@ export const ThinkingProvider: React.FC<ThinkingProviderProps> = (props) => {
   const scopeId = getScopeId(props.workspaceId, props.projectPath);
   const thinkingKey = getThinkingLevelKey(scopeId);
 
-  // Project/new-workspace flows still use the flat thinking key directly.
+  // Project/new-workspace flows still use the flat thinking key directly, and
+  // workspace flows also keep this flat key as the immediate UI source of truth.
   const [persistedThinkingLevel, setPersistedThinkingLevelInternal] =
     usePersistedState<ThinkingLevel>(thinkingKey, THINKING_LEVEL_OFF, { listener: true });
-  const workspaceAiSettings = useWorkspaceAiSettings(props.workspaceId);
+  // Keep the workspace AI settings subscription active so backend-synced agent
+  // settings stay warm for other consumers that resolve from the per-agent cache.
+  useWorkspaceAiSettings(props.workspaceId);
 
   const thinkingLevel = useMemo(() => {
     if (!props.workspaceId) {
@@ -64,14 +67,11 @@ export const ThinkingProvider: React.FC<ThinkingProviderProps> = (props) => {
         : resolvedThinkingLevel;
     }
 
-    return workspaceAiSettings.thinkingLevel;
-  }, [
-    persistedThinkingLevel,
-    props.workspaceId,
-    scopeId,
-    defaultModel,
-    workspaceAiSettings.thinkingLevel,
-  ]);
+    // For workspaces, prefer the flat persisted key for UI display.
+    // The per-agent cache may race with backend metadata seeding, but the flat
+    // key is safe because this refactor removed the backend write to that key.
+    return persistedThinkingLevel;
+  }, [persistedThinkingLevel, props.workspaceId, scopeId, defaultModel]);
 
   const setThinkingLevel = useCallback(
     (level: ThinkingLevel) => {
@@ -79,6 +79,11 @@ export const ThinkingProvider: React.FC<ThinkingProviderProps> = (props) => {
         setPersistedThinkingLevelInternal(level);
         return;
       }
+
+      // Write to the flat key for immediate UI responsiveness.
+      // seedWorkspaceLocalStorageFromBackend no longer touches this key,
+      // so it is safe from backend metadata races.
+      setPersistedThinkingLevelInternal(level);
 
       // Read agent ID directly from localStorage to avoid stale closure values.
       // React state updates from cross-component usePersistedState listeners may
@@ -89,6 +94,8 @@ export const ThinkingProvider: React.FC<ThinkingProviderProps> = (props) => {
         WORKSPACE_DEFAULTS.agentId
       );
 
+      // Also persist to the per-agent cache for backend sync and cross-agent
+      // resolution (sendOptions, model inheritance, etc.).
       setWorkspaceAiSettings(
         props.workspaceId,
         currentAgentId,

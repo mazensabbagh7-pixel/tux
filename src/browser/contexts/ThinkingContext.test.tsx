@@ -89,6 +89,7 @@ describe("ThinkingContext", () => {
 
     updatePersistedState(getAgentIdKey(workspaceId), "exec");
     updatePersistedState(getModelKey(workspaceId), "openai:gpt-5.2");
+    updatePersistedState(getThinkingLevelKey(workspaceId), "high");
     updatePersistedState(getWorkspaceAISettingsByAgentKey(workspaceId), {
       exec: { model: "openai:gpt-5.2", thinkingLevel: "high" },
     });
@@ -195,7 +196,7 @@ describe("ThinkingContext", () => {
     });
   });
 
-  test("manual workspace thinking updates the per-agent cache without bounce-back", async () => {
+  test("manual workspace thinking dual-writes the flat key and ignores stale cache bounce-back", async () => {
     const workspaceId = "ws-manual";
 
     updatePersistedState(getAgentIdKey(workspaceId), "exec");
@@ -220,16 +221,29 @@ describe("ThinkingContext", () => {
       expect(view.getByTestId("thinking-controls").textContent).toBe("medium");
     });
 
+    expect(readPersistedState(getThinkingLevelKey(workspaceId), "off")).toBe("medium");
     expect(readPersistedState(getWorkspaceAISettingsByAgentKey(workspaceId), {})).toEqual({
       exec: { model: "openai:gpt-5.2", thinkingLevel: "medium" },
     });
+
+    act(() => {
+      updatePersistedState(getWorkspaceAISettingsByAgentKey(workspaceId), {
+        exec: { model: "openai:gpt-5.2", thinkingLevel: "off" },
+      });
+    });
+
+    await waitFor(() => {
+      expect(view.getByTestId("thinking-controls").textContent).toBe("medium");
+    });
+    expect(readPersistedState(getThinkingLevelKey(workspaceId), "off")).toBe("medium");
   });
 
-  test("reacts to agent default updates for existing workspaces", async () => {
+  test("existing workspaces prefer the flat thinking key over agent default updates", async () => {
     const workspaceId = "ws-defaults";
 
     updatePersistedState(getAgentIdKey(workspaceId), "exec");
     updatePersistedState(getModelKey(workspaceId), "openai:gpt-5.2");
+    updatePersistedState(getThinkingLevelKey(workspaceId), "low");
     updatePersistedState(AGENT_AI_DEFAULTS_KEY, {
       exec: { thinkingLevel: "low" },
     });
@@ -251,14 +265,16 @@ describe("ThinkingContext", () => {
     });
 
     await waitFor(() => {
-      expect(view.getByTestId("thinking").textContent).toBe("xhigh:ws-defaults");
+      expect(view.getByTestId("thinking").textContent).toBe("low:ws-defaults");
     });
+    expect(readPersistedState(getThinkingLevelKey(workspaceId), "off")).toBe("low");
   });
 
-  test("restores the active agent's cached workspace thinking on agent switch", async () => {
+  test("workspace display keeps the flat thinking key across agent switches", async () => {
     const workspaceId = "ws-switch";
 
     updatePersistedState(getModelKey(workspaceId), "openai:gpt-5.2");
+    updatePersistedState(getThinkingLevelKey(workspaceId), "medium");
     updatePersistedState(getWorkspaceAISettingsByAgentKey(workspaceId), {
       exec: { model: "openai:gpt-5.2", thinkingLevel: "medium" },
       plan: { model: "anthropic:claude-sonnet-4-5", thinkingLevel: "high" },
@@ -280,7 +296,7 @@ describe("ThinkingContext", () => {
     });
 
     await waitFor(() => {
-      expect(view.getByTestId("thinking").textContent).toBe("high:ws-switch");
+      expect(view.getByTestId("thinking").textContent).toBe("medium:ws-switch");
     });
 
     act(() => {
