@@ -158,16 +158,65 @@ function matchesHashedKnownHost(pattern: string, host: string): boolean {
   return actual === expected;
 }
 
+function wildcardPatternToRegex(pattern: string): RegExp {
+  let regex = "^";
+  for (const char of pattern) {
+    if (char === "*") {
+      regex += ".*";
+      continue;
+    }
+
+    if (char === "?") {
+      regex += ".";
+      continue;
+    }
+
+    if (/[\\^$+?.()|{}\[\]]/.test(char)) {
+      regex += `\\${char}`;
+      continue;
+    }
+
+    regex += char;
+  }
+
+  regex += "$";
+  return new RegExp(regex);
+}
+
 function matchesKnownHostPattern(pattern: string, host: string): boolean {
-  if (pattern === host) {
+  if (pattern === "*" || pattern === host) {
     return true;
   }
 
-  if (pattern.startsWith("!")) {
-    return false;
+  if (pattern.includes("*") || pattern.includes("?")) {
+    return wildcardPatternToRegex(pattern).test(host);
   }
 
   return matchesHashedKnownHost(pattern, host);
+}
+
+function hostPatternListMatches(patterns: string[], host: string): boolean {
+  let hasPositiveMatch = false;
+
+  for (const rawPattern of patterns) {
+    const isNegated = rawPattern.startsWith("!");
+    const pattern = isNegated ? rawPattern.slice(1) : rawPattern;
+    if (!pattern) {
+      continue;
+    }
+
+    if (!matchesKnownHostPattern(pattern, host)) {
+      continue;
+    }
+
+    if (isNegated) {
+      return false;
+    }
+
+    hasPositiveMatch = true;
+  }
+
+  return hasPositiveMatch;
 }
 
 async function getKnownHostPublicKeys(host: string, port: number): Promise<Buffer[]> {
@@ -196,8 +245,8 @@ async function getKnownHostPublicKeys(host: string, port: number): Promise<Buffe
       continue;
     }
 
-    const matchesHost = hostPatterns.some((pattern) =>
-      knownHostsEntries.some((knownHost) => matchesKnownHostPattern(pattern, knownHost))
+    const matchesHost = knownHostsEntries.some((knownHost) =>
+      hostPatternListMatches(hostPatterns, knownHost)
     );
     if (!matchesHost) {
       continue;
