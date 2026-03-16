@@ -187,16 +187,25 @@ export function getWorkspaceAiSettings(
     inheritFromAgentId !== normalizedAgentId &&
     !hasOwnCacheEntry(workspaceByAgent, normalizedAgentId)
   ) {
-    const sourceSettings = getWorkspaceAiSettings(workspaceId, inheritFromAgentId);
-    // Merge: explicit agent defaults take priority for fields they specify,
-    // inherit remaining fields from the source agent.
-    const merged: WorkspaceAiSettings = {
-      model: normalizeModelString(agentDefaults?.modelString) ?? sourceSettings.model,
-      thinkingLevel:
-        coerceThinkingLevel(agentDefaults?.thinkingLevel) ?? sourceSettings.thinkingLevel,
-    };
-    setWorkspaceAiSettings(workspaceId, normalizedAgentId, merged);
-    return merged;
+    // Only inherit when at least one field would benefit from inheritance.
+    // When agent defaults fully specify both model and thinkingLevel, normal
+    // resolution already produces the correct result without needing to
+    // read (and potentially migrate) the source agent's settings.
+    const hasDefaultModel = normalizeModelString(agentDefaults?.modelString) !== undefined;
+    const hasDefaultThinking = coerceThinkingLevel(agentDefaults?.thinkingLevel) !== undefined;
+
+    if (!hasDefaultModel || !hasDefaultThinking) {
+      const sourceSettings = getWorkspaceAiSettings(workspaceId, inheritFromAgentId);
+      // Merge: explicit agent defaults take priority for fields they specify,
+      // inherit remaining fields from the source agent.
+      const merged: WorkspaceAiSettings = {
+        model: normalizeModelString(agentDefaults?.modelString) ?? sourceSettings.model,
+        thinkingLevel:
+          coerceThinkingLevel(agentDefaults?.thinkingLevel) ?? sourceSettings.thinkingLevel,
+      };
+      setWorkspaceAiSettings(workspaceId, normalizedAgentId, merged);
+      return merged;
+    }
   }
 
   const model = resolveModel({
