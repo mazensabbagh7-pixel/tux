@@ -56,15 +56,22 @@ function isExistingWorkspaceScopeId(scopeId: string): boolean {
 export function getSendOptionsFromStorage(workspaceId: string): SendMessageOptions {
   const defaultModel = getDefaultModel();
   const rawModel = readPersistedState<string>(getModelKey(workspaceId), defaultModel);
-  const baseModel = normalizeModelPreference(rawModel, defaultModel);
   const agentId = readPersistedState<string>(
     getAgentIdKey(workspaceId),
     WORKSPACE_DEFAULTS.agentId
   );
 
-  const thinkingLevel = isExistingWorkspaceScopeId(workspaceId)
-    ? getWorkspaceAiSettings(workspaceId, agentId).thinkingLevel
-    : resolveScopedThinkingLevel(workspaceId, baseModel);
+  let baseModel: string;
+  let thinkingLevel: SendMessageOptions["thinkingLevel"];
+
+  if (isExistingWorkspaceScopeId(workspaceId)) {
+    const settings = getWorkspaceAiSettings(workspaceId, agentId);
+    baseModel = normalizeModelPreference(settings.model, defaultModel);
+    thinkingLevel = settings.thinkingLevel;
+  } else {
+    baseModel = normalizeModelPreference(rawModel, defaultModel);
+    thinkingLevel = resolveScopedThinkingLevel(workspaceId, baseModel);
+  }
 
   const providerOptions = getProviderOptions();
 
