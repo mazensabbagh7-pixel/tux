@@ -62,15 +62,18 @@ export function shouldApplyWorkspaceAiSettingsFromBackend(
     return true;
   }
 
-  void incoming;
+  const matches =
+    pending.model === incoming.model && pending.thinkingLevel === incoming.thinkingLevel;
+  if (matches) {
+    // Backend confirmed the local write. Clear the guard so future metadata
+    // events can apply, but skip applying THIS event — the local cache
+    // already has the correct values and re-applying could race with
+    // subsequent local writes.
+    pendingAiSettingsByWorkspace.delete(key);
+    return false;
+  }
 
-  // Guard is active — block ALL backend metadata for this agent.
-  // When the incoming metadata matches the pending settings, the local
-  // cache is already correct and applying would be harmless but clearing
-  // the guard here would leave a window where a stale backend event
-  // could overwrite the local value.
-  // The guard is cleared only by:
-  // - API failure (catch/then handlers in setWorkspaceAiSettings)
-  // - A new local write (markPendingWorkspaceAiSettings replaces the value)
+  // Guard active with non-matching metadata — block to prevent stale
+  // backend events from overwriting local choices.
   return false;
 }
