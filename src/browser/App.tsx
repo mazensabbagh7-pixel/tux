@@ -363,7 +363,13 @@ function AppInner() {
       return "off";
     }
 
-    return getWorkspaceAiSettings(workspaceId).thinkingLevel;
+    // Read from the flat workspace key first so the palette matches the active
+    // UI preference. Fall back to the per-agent cache for unmigrated workspaces.
+    const flat = readPersistedState<ThinkingLevel | undefined>(
+      getThinkingLevelKey(workspaceId),
+      undefined
+    );
+    return flat ?? getWorkspaceAiSettings(workspaceId).thinkingLevel;
   }, []);
 
   const setThinkingLevelFromPalette = useCallback(

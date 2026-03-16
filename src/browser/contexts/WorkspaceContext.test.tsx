@@ -470,7 +470,8 @@ describe("WorkspaceContext", () => {
       },
       localStorage: {
         [getAgentIdKey("ws-ai")]: JSON.stringify("auto"),
-        // Seed with different values; backend should win for model + per-agent cache.
+        // Seed with different values; backend should win for model, per-agent cache,
+        // and the active flat thinking key once the guard-filtered cache is built.
         [getModelKey("ws-ai")]: JSON.stringify("anthropic:claude-3.5"),
         [getThinkingLevelKey("ws-ai")]: JSON.stringify("low"),
       },
@@ -483,7 +484,7 @@ describe("WorkspaceContext", () => {
     expect(JSON.parse(globalThis.localStorage.getItem(getModelKey("ws-ai"))!)).toBe(
       "openai:gpt-5.2"
     );
-    expect(JSON.parse(globalThis.localStorage.getItem(getThinkingLevelKey("ws-ai"))!)).toBe("low");
+    expect(JSON.parse(globalThis.localStorage.getItem(getThinkingLevelKey("ws-ai"))!)).toBe("high");
     expect(readPersistedState(getWorkspaceAISettingsByAgentKey("ws-ai"), {})).toEqual({
       auto: { model: "openai:gpt-5.2", thinkingLevel: "high" },
       exec: { model: "openai:gpt-5.2", thinkingLevel: "high" },

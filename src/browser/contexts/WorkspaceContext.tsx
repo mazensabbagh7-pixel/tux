@@ -249,11 +249,11 @@ function seedWorkspaceLocalStorageFromBackend(metadata: FrontendWorkspaceMetadat
   }
 
   // Seed the active agent's thinking level into the flat thinking key for UI display.
-  // The per-agent cache guard ensures `active.thinkingLevel` reflects recent user writes,
-  // so this won't overwrite the flat key after a local thinking-level change.
+  // `active` comes from the guard-filtered per-agent cache above, so if a local
+  // write is pending this retains the local value instead of stale backend data.
   const thinkingKey = getThinkingLevelKey(workspaceId);
   const existingThinking = readPersistedState<ThinkingLevel | undefined>(thinkingKey, undefined);
-  if (existingThinking == null) {
+  if (existingThinking == null || existingThinking !== active.thinkingLevel) {
     updatePersistedState(thinkingKey, active.thinkingLevel);
   }
 }
