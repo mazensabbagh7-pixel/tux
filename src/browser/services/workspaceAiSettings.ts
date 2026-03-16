@@ -61,10 +61,14 @@ function readAgentAiDefaults(): AgentAiDefaults {
 }
 
 function readWorkspaceAiSettingsCache(workspaceId: string): WorkspaceAISettingsCache {
-  return readPersistedState<WorkspaceAISettingsCache>(
+  const raw = readPersistedState<WorkspaceAISettingsCache>(
     getWorkspaceAISettingsByAgentKey(workspaceId),
     EMPTY_WORKSPACE_AI_SETTINGS_CACHE
   );
+  // Defensive: if persisted data is malformed (e.g. JSON null), coerce to empty cache
+  return raw && typeof raw === "object" && !Array.isArray(raw)
+    ? raw
+    : EMPTY_WORKSPACE_AI_SETTINGS_CACHE;
 }
 
 function readCurrentWorkspaceModel(workspaceId: string): string {

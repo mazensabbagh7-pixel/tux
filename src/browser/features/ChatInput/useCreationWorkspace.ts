@@ -21,6 +21,7 @@ import {
   getModelKey,
   getNotifyOnResponseAutoEnableKey,
   getNotifyOnResponseKey,
+  getThinkingLevelKey,
   getWorkspaceAISettingsByAgentKey,
   getPendingScopeId,
   getDraftScopeId,
@@ -107,6 +108,8 @@ function syncCreationPreferences(
     },
     {}
   );
+  // Keep the flat workspace thinking key aligned for callers that still read the legacy scope.
+  updatePersistedState(getThinkingLevelKey(workspaceId), creationSettings.thinkingLevel);
 
   // Auto-enable notifications if the project-level preference is set
   const autoEnableNotifications = readPersistedState<boolean>(
