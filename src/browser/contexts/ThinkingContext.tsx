@@ -14,6 +14,7 @@ import { normalizeToCanonical } from "@/common/utils/ai/models";
 import { enforceThinkingPolicy, getThinkingPolicyForModel } from "@/common/utils/thinking/policy";
 import { useAPI } from "@/browser/contexts/API";
 import {
+  getWorkspaceAiSettings,
   resolveScopedThinkingLevel,
   setWorkspaceAiSettings,
   useWorkspaceAiSettings,
@@ -49,10 +50,13 @@ export const ThinkingProvider: React.FC<ThinkingProviderProps> = (props) => {
   const scopeId = getScopeId(props.workspaceId, props.projectPath);
   const thinkingKey = getThinkingLevelKey(scopeId);
 
-  // Project/new-workspace flows still use the flat thinking key directly, and
-  // workspace flows also keep this flat key as the immediate UI source of truth.
-  const [persistedThinkingLevel, setPersistedThinkingLevelInternal] =
-    usePersistedState<ThinkingLevel>(thinkingKey, THINKING_LEVEL_OFF, { listener: true });
+  // Project/new-workspace flows still use the flat thinking key directly.
+  // Workspace flows keep that flat key as the immediate UI source of truth, but
+  // use an undefined default so we can distinguish an absent key from an
+  // explicit "off" and fall back to legacy resolution for unmigrated workspaces.
+  const [persistedThinkingLevel, setPersistedThinkingLevelInternal] = usePersistedState<
+    ThinkingLevel | undefined
+  >(thinkingKey, props.workspaceId ? undefined : THINKING_LEVEL_OFF, { listener: true });
   // Keep the workspace AI settings subscription active so backend-synced agent
   // settings stay warm for other consumers that resolve from the per-agent cache.
   useWorkspaceAiSettings(props.workspaceId);
@@ -67,10 +71,10 @@ export const ThinkingProvider: React.FC<ThinkingProviderProps> = (props) => {
         : resolvedThinkingLevel;
     }
 
-    // For workspaces, prefer the flat persisted key for UI display.
-    // The per-agent cache may race with backend metadata seeding, but the flat
-    // key is safe because this refactor removed the backend write to that key.
-    return persistedThinkingLevel;
+    // Flat key is the primary source (user's active preference). When absent
+    // (e.g. unmigrated workspace), fall back to the full resolution chain which
+    // handles legacy per-model keys, agent defaults, and cache entries.
+    return persistedThinkingLevel ?? getWorkspaceAiSettings(props.workspaceId).thinkingLevel;
   }, [persistedThinkingLevel, props.workspaceId, scopeId, defaultModel]);
 
   const setThinkingLevel = useCallback(

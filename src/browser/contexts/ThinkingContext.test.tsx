@@ -177,6 +177,30 @@ describe("ThinkingContext", () => {
     });
   });
 
+  test("existing workspace without a flat thinking key falls back to legacy per-model thinking", async () => {
+    const workspaceId = "ws-legacy-per-model";
+    const model = "openai:gpt-5.4";
+
+    updatePersistedState(getModelKey(workspaceId), model);
+    updatePersistedState(getThinkingLevelByModelKey(model), "high");
+
+    const view = renderWithAPI(
+      <ThinkingProvider workspaceId={workspaceId}>
+        <TestComponent workspaceId={workspaceId} />
+      </ThinkingProvider>
+    );
+
+    await waitFor(() => {
+      expect(view.getByTestId("thinking").textContent).toBe("high:ws-legacy-per-model");
+    });
+    expect(
+      readPersistedState<string | undefined>(getThinkingLevelKey(workspaceId), undefined)
+    ).toBeUndefined();
+    expect(readPersistedState(getWorkspaceAISettingsByAgentKey(workspaceId), {})).toEqual({
+      auto: { model, thinkingLevel: "high" },
+    });
+  });
+
   test("existing workspace with legacy thinkingLevel key but empty workspaceByAgent shows legacy level", async () => {
     const workspaceId = "ws-legacy-thinking";
 
