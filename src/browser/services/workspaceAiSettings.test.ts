@@ -263,7 +263,7 @@ describe("workspaceAiSettings", () => {
       });
     });
 
-    test("uses pending guards while the backend write is in flight and clears them afterward", async () => {
+    test("keeps pending guards after successful writes and clears them after failures", async () => {
       const successfulWorkspaceId = nextWorkspaceId();
       let resolveRequest!: () => void;
       const requestComplete = new Promise<void>((resolve) => {
@@ -302,13 +302,13 @@ describe("workspaceAiSettings", () => {
           model: "openai:gpt-5.4",
           thinkingLevel: "xhigh",
         })
-      ).toBe(true);
+      ).toBe(false);
       expect(
         shouldApplyWorkspaceAiSettingsFromBackend(successfulWorkspaceId, "exec", {
           model: "openai:gpt-5.4",
           thinkingLevel: "off",
         })
-      ).toBe(true);
+      ).toBe(false);
 
       const failedWorkspaceId = nextWorkspaceId();
       let rejectRequest!: (reason?: unknown) => void;
