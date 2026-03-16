@@ -158,6 +158,8 @@ function matchesHashedKnownHost(pattern: string, host: string): boolean {
   return actual === expected;
 }
 
+const REGEX_SPECIAL_CHARS = new Set(["\\", "^", "$", "+", "?", ".", "(", ")", "|", "{", "}", "[", "]"]);
+
 function wildcardPatternToRegex(pattern: string): RegExp {
   let regex = "^";
   for (const char of pattern) {
@@ -171,7 +173,7 @@ function wildcardPatternToRegex(pattern: string): RegExp {
       continue;
     }
 
-    if (/[\\^$+?.()|{}\[\]]/.test(char)) {
+    if (REGEX_SPECIAL_CHARS.has(char)) {
       regex += `\\${char}`;
       continue;
     }
