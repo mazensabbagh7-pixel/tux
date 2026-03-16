@@ -52,7 +52,6 @@ export function WorkspaceModeAISync(props: { workspaceId: string }): null {
     prevWorkspaceIdRef.current = workspaceId;
 
     if (isExplicitAgentSwitch && previousAgentId !== null) {
-      const sourceSettings = getWorkspaceAiSettings(workspaceId, previousAgentId);
       const resolvedSettings = getWorkspaceAiSettings(workspaceId, normalizedCurrentAgentId, {
         inheritFromAgentId: previousAgentId,
       });
@@ -61,8 +60,10 @@ export function WorkspaceModeAISync(props: { workspaceId: string }): null {
       // when the target agent has no cache entry and incomplete defaults.
       // Don't write resolved settings here — that would turn agent defaults
       // into sticky workspace overrides that outlive default changes.
-
-      if (sourceSettings.model !== resolvedSettings.model) {
+      // Reconcile against the persisted model key so interleaved UI updates
+      // cannot leave an older model selection behind when source/target resolve
+      // to the same model string.
+      if (existingModel !== resolvedSettings.model) {
         setWorkspaceModelWithOrigin(workspaceId, resolvedSettings.model, "agent");
       }
       return;

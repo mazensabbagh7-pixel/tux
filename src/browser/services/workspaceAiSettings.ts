@@ -273,11 +273,14 @@ export function setWorkspaceAiSettings(
     EMPTY_WORKSPACE_AI_SETTINGS_CACHE
   );
 
+  // Guard every local write so stale backend metadata cannot overwrite freshly
+  // cached settings while initialization or inheritance seeding runs without an API.
+  markPendingWorkspaceAiSettings(workspaceId, normalizedAgentId, merged);
+
   if (!api) {
     return;
   }
 
-  markPendingWorkspaceAiSettings(workspaceId, normalizedAgentId, merged);
   void api.workspace
     .updateAgentAISettings({
       workspaceId,
