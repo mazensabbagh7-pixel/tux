@@ -239,7 +239,13 @@ async function getKnownHostPublicKeys(host: string, port: number): Promise<Buffe
     }
 
     const fields = trimmed.split(/\s+/);
-    const hostFieldIndex = fields[0]?.startsWith("@") ? 1 : 0;
+    const marker = fields[0]?.startsWith("@") ? fields[0] : undefined;
+    if (marker === "@revoked" || marker === "@cert-authority") {
+      // The SSH2 verifier expects concrete host keys, not revoked keys or CA keys.
+      continue;
+    }
+
+    const hostFieldIndex = marker ? 1 : 0;
     const keyFieldIndex = hostFieldIndex + 2;
     const hostPatterns = fields[hostFieldIndex]?.split(",");
     const keyBlob = fields[keyFieldIndex];
