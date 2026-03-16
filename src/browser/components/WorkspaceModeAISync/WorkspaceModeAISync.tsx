@@ -11,7 +11,6 @@ import { setWorkspaceModelWithOrigin } from "@/browser/utils/modelChange";
 import {
   getWorkspaceAiSettings,
   normalizeAgentId,
-  setWorkspaceAiSettings,
   type WorkspaceAISettingsCache,
 } from "@/browser/services/workspaceAiSettings";
 import type { AgentAiDefaults } from "@/common/types/agentAiDefaults";
@@ -58,9 +57,10 @@ export function WorkspaceModeAISync(props: { workspaceId: string }): null {
         inheritFromAgentId: previousAgentId,
       });
 
-      // Preserve first-switch inheritance in the per-agent cache without backfilling the
-      // legacy flat thinking key from this sync path.
-      setWorkspaceAiSettings(workspaceId, normalizedCurrentAgentId, resolvedSettings);
+      // getWorkspaceAiSettings already caches inherited settings internally
+      // when the target agent has no cache entry and incomplete defaults.
+      // Don't write resolved settings here — that would turn agent defaults
+      // into sticky workspace overrides that outlive default changes.
 
       if (sourceSettings.model !== resolvedSettings.model) {
         setWorkspaceModelWithOrigin(workspaceId, resolvedSettings.model, "agent");
