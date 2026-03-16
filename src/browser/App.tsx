@@ -39,6 +39,7 @@ import {
   getAgentIdKey,
   getAgentsInitNudgeKey,
   getNotifyOnResponseKey,
+  getThinkingLevelKey,
   getWorkspaceLastReadKey,
   EXPANDED_PROJECTS_KEY,
   LEFT_SIDEBAR_COLLAPSED_KEY,
@@ -375,6 +376,10 @@ function AppInner() {
         getAgentIdKey(workspaceId),
         WORKSPACE_DEFAULTS.agentId
       );
+
+      // Write to the flat key so ThinkingProvider picks up the change immediately.
+      // ThinkingProvider reads from this key for workspace UI display.
+      updatePersistedState(getThinkingLevelKey(workspaceId), normalized);
 
       setWorkspaceAiSettings(workspaceId, agentId, { thinkingLevel: normalized }, api ?? undefined);
 
