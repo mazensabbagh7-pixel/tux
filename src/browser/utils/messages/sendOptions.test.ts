@@ -64,7 +64,7 @@ describe("getSendOptionsFromStorage", () => {
     );
   });
 
-  test("derives workspace thinking from per-agent settings and defaults instead of the flat key", () => {
+  test("prefers the flat workspace thinking key over per-agent settings and defaults", () => {
     const workspaceId = "ws-derived";
 
     window.localStorage.setItem(getModelKey(workspaceId), JSON.stringify("openai:gpt-5.2"));
@@ -84,11 +84,11 @@ describe("getSendOptionsFromStorage", () => {
     );
 
     const withDefaults = getSendOptionsFromStorage(workspaceId);
-    expect(withDefaults.thinkingLevel).toBe("high");
+    expect(withDefaults.thinkingLevel).toBe("medium");
 
     window.localStorage.setItem(AGENT_AI_DEFAULTS_KEY, JSON.stringify({}));
     const withWorkspaceCache = getSendOptionsFromStorage(workspaceId);
-    expect(withWorkspaceCache.thinkingLevel).toBe("low");
+    expect(withWorkspaceCache.thinkingLevel).toBe("medium");
   });
 
   test("uses legacy thinking level for existing workspace with empty agent cache", () => {

@@ -3,6 +3,7 @@ import {
   getAgentIdKey,
   getModelKey,
   getDisableWorkspaceAgentsKey,
+  getThinkingLevelKey,
   PREFERRED_SYSTEM_1_MODEL_KEY,
   PREFERRED_SYSTEM_1_THINKING_LEVEL_KEY,
 } from "@/common/constants/storage";
@@ -16,6 +17,7 @@ import {
 } from "@/browser/utils/messages/buildSendMessageOptions";
 import type { SendMessageOptions } from "@/common/orpc/types";
 import type { MuxProviderOptions } from "@/common/types/providerOptions";
+import type { ThinkingLevel } from "@/common/types/thinking";
 import {
   getWorkspaceAiSettings,
   resolveScopedThinkingLevel,
@@ -67,7 +69,14 @@ export function getSendOptionsFromStorage(workspaceId: string): SendMessageOptio
   if (isExistingWorkspaceScopeId(workspaceId)) {
     const settings = getWorkspaceAiSettings(workspaceId, agentId);
     baseModel = normalizeModelPreference(settings.model, defaultModel);
-    thinkingLevel = settings.thinkingLevel;
+    // Read thinking from the flat workspace key (user's active UI preference) to stay
+    // aligned with what ThinkingProvider displays. Fall back to the service value for
+    // workspaces that haven't been opened yet (flat key absent).
+    const flatThinking = readPersistedState<ThinkingLevel | undefined>(
+      getThinkingLevelKey(workspaceId),
+      undefined
+    );
+    thinkingLevel = flatThinking ?? settings.thinkingLevel;
   } else {
     baseModel = normalizeModelPreference(rawModel, defaultModel);
     thinkingLevel = resolveScopedThinkingLevel(workspaceId, baseModel);
