@@ -185,12 +185,18 @@ export function getWorkspaceAiSettings(
   if (
     inheritFromAgentId &&
     inheritFromAgentId !== normalizedAgentId &&
-    !hasOwnCacheEntry(workspaceByAgent, normalizedAgentId) &&
-    agentDefaults === undefined
+    !hasOwnCacheEntry(workspaceByAgent, normalizedAgentId)
   ) {
-    const inheritedSettings = getWorkspaceAiSettings(workspaceId, inheritFromAgentId);
-    setWorkspaceAiSettings(workspaceId, normalizedAgentId, inheritedSettings);
-    return inheritedSettings;
+    const sourceSettings = getWorkspaceAiSettings(workspaceId, inheritFromAgentId);
+    // Merge: explicit agent defaults take priority for fields they specify,
+    // inherit remaining fields from the source agent.
+    const merged: WorkspaceAiSettings = {
+      model: normalizeModelString(agentDefaults?.modelString) ?? sourceSettings.model,
+      thinkingLevel:
+        coerceThinkingLevel(agentDefaults?.thinkingLevel) ?? sourceSettings.thinkingLevel,
+    };
+    setWorkspaceAiSettings(workspaceId, normalizedAgentId, merged);
+    return merged;
   }
 
   const model = resolveModel({

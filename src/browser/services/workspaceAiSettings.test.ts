@@ -179,6 +179,30 @@ describe("workspaceAiSettings", () => {
       });
     });
 
+    test("merges partial agent defaults with inherited source settings", () => {
+      const workspaceId = nextWorkspaceId();
+
+      updatePersistedState(getWorkspaceAISettingsByAgentKey(workspaceId), {
+        exec: { model: "anthropic:claude-sonnet-4-5", thinkingLevel: "high" },
+      });
+      updatePersistedState(AGENT_AI_DEFAULTS_KEY, {
+        plan: { modelString: "anthropic:claude-opus-4-6" },
+      });
+
+      expect(
+        getWorkspaceAiSettings(workspaceId, "plan", {
+          inheritFromAgentId: "exec",
+        })
+      ).toEqual({
+        model: "anthropic:claude-opus-4-6",
+        thinkingLevel: "high",
+      });
+      expect(readWorkspaceCache(workspaceId)).toEqual({
+        exec: { model: "anthropic:claude-sonnet-4-5", thinkingLevel: "high" },
+        plan: { model: "anthropic:claude-opus-4-6", thinkingLevel: "high" },
+      });
+    });
+
     test("inherits from the source agent and seeds the target cache when requested", () => {
       const workspaceId = nextWorkspaceId();
 
