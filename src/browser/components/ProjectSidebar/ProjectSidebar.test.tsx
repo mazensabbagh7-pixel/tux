@@ -39,7 +39,9 @@ import * as SectionDragLayerModule from "../SectionDragLayer/SectionDragLayer";
 import * as DraggableSectionModule from "../DraggableSection/DraggableSection";
 import * as AgentListItemModule from "../AgentListItem/AgentListItem";
 
-import ProjectSidebar from "./ProjectSidebar";
+// Lazy-load after test doubles install to avoid Bun test-runner TDZ issues when this
+// file shares a process with other component tests.
+let ProjectSidebar!: typeof import("./ProjectSidebar").default;
 
 const agentItemTestId = (workspaceId: string) => `agent-item-${workspaceId}`;
 const toggleButtonLabel = (workspaceId: string) => `toggle-completed-${workspaceId}`;
@@ -308,10 +310,13 @@ function createWorkspace(
   };
 }
 
+// Bump the specifier each test so Bun does not reuse a partially initialized
+// ProjectSidebar module from earlier component test files.
+let projectSidebarImportNonce = 0;
 let cleanupDom: (() => void) | null = null;
 
 describe("ProjectSidebar multi-project completed-subagent toggles", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     cleanupDom = installDom();
     window.localStorage.clear();
     window.localStorage.setItem(
@@ -319,6 +324,11 @@ describe("ProjectSidebar multi-project completed-subagent toggles", () => {
       JSON.stringify([MULTI_PROJECT_SIDEBAR_SECTION_ID])
     );
     installProjectSidebarTestDoubles();
+    ({ default: ProjectSidebar } = (await import(
+      `./ProjectSidebar?project-sidebar-test=${projectSidebarImportNonce++}`
+    )) as {
+      default: typeof import("./ProjectSidebar").default;
+    });
   });
 
   afterEach(() => {
