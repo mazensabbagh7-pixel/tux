@@ -17,6 +17,7 @@ export interface ExtensionAgentStatus {
 export interface ExtensionMetadata {
   recency: number;
   streaming: boolean;
+  streamingGeneration?: number;
   lastModel: string | null;
   lastThinkingLevel: ThinkingLevel | null;
   agentStatus: ExtensionAgentStatus | null;
@@ -32,14 +33,6 @@ export interface ExtensionMetadata {
 export interface ExtensionMetadataFile {
   version: 1;
   workspaces: Record<string, ExtensionMetadata>;
-}
-
-/**
- * Get the path to the extension metadata file.
- * @param rootDir - Optional root directory (defaults to getMuxHome())
- */
-export function getExtensionMetadataPath(rootDir?: string): string {
-  return getMuxExtensionMetadataPath(rootDir);
 }
 
 /**
@@ -80,7 +73,7 @@ export function coerceStatusUrl(url: unknown): string | null {
  * Used by both the main app and VS Code extension (vscode/src/muxConfig.ts).
  */
 export function readExtensionMetadata(): Map<string, ExtensionMetadata> {
-  const metadataPath = getExtensionMetadataPath();
+  const metadataPath = getMuxExtensionMetadataPath();
 
   if (!existsSync(metadataPath)) {
     return new Map();
@@ -101,9 +94,14 @@ export function readExtensionMetadata(): Map<string, ExtensionMetadata> {
       const rawThinkingLevel = (metadata as { lastThinkingLevel?: unknown }).lastThinkingLevel;
       const rawAgentStatus = (metadata as { agentStatus?: unknown }).agentStatus;
       const rawLastStatusUrl = (metadata as { lastStatusUrl?: unknown }).lastStatusUrl;
+      const rawStreamingGeneration = (metadata as { streamingGeneration?: unknown })
+        .streamingGeneration;
       map.set(workspaceId, {
         recency: metadata.recency,
         streaming: metadata.streaming,
+        ...(typeof rawStreamingGeneration === "number"
+          ? { streamingGeneration: rawStreamingGeneration }
+          : {}),
         lastModel: metadata.lastModel ?? null,
         lastThinkingLevel: isThinkingLevel(rawThinkingLevel) ? rawThinkingLevel : null,
         agentStatus: coerceAgentStatus(rawAgentStatus),
