@@ -259,6 +259,7 @@ interface DraftAgentListItemWrapperProps {
   draftId: string;
   draftNumber: number;
   isSelected: boolean;
+  sectionId?: string;
   onOpen: () => void;
   onDelete: () => void;
 }
@@ -295,6 +296,7 @@ function DraftAgentListItemWrapper(props: DraftAgentListItemWrapperProps) {
       variant="draft"
       projectPath={props.projectPath}
       isSelected={props.isSelected}
+      sectionId={props.sectionId}
       draft={{
         draftId: props.draftId,
         draftNumber: props.draftNumber,
@@ -356,7 +358,7 @@ const ProjectDragLayer: React.FC = () => {
       <div style={{ transform: `translate(${currentOffset.x + 10}px, ${currentOffset.y + 10}px)` }}>
         <div className={cn(PROJECT_ITEM_BASE_CLASS, "w-fit max-w-64 rounded-sm shadow-lg")}>
           <span className="text-secondary mr-2 flex h-5 w-5 shrink-0 items-center justify-center">
-            <ChevronRight className="h-4 w-4 shrink-0" strokeWidth={1.8} />
+            <ChevronRight className="h-4 w-4" />
           </span>
           <div className="flex min-w-0 flex-1 items-center pr-2">
             <span className="text-foreground truncate text-sm font-medium">{basename}</span>
@@ -1337,7 +1339,7 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
                 className="flex-1 overflow-x-hidden overflow-y-auto"
               >
                 {multiProjectWorkspaces.length > 0 && (
-                  <div className="border-hover border-b">
+                  <div>
                     <div className={PROJECT_ITEM_BASE_CLASS}>
                       <button
                         onClick={() => toggleProject(MULTI_PROJECT_SIDEBAR_SECTION_ID)}
@@ -1345,8 +1347,7 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
                         className="text-secondary hover:bg-hover hover:border-border-light mr-1.5 flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded border border-transparent bg-transparent p-0 transition-all duration-200"
                       >
                         <ChevronRight
-                          className="h-4 w-4 shrink-0 transition-transform duration-200"
-                          strokeWidth={1.8}
+                          className="h-4 w-4 transition-transform duration-200"
                           style={{
                             transform: isMultiProjectSectionExpanded
                               ? "rotate(90deg)"
@@ -1426,7 +1427,7 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
                     const isEditingProjectDisplayName = editingProjectPath === projectPath;
 
                     return (
-                      <div key={projectPath} className="border-hover border-b">
+                      <div key={projectPath}>
                         <DraggableProjectItem
                           projectPath={projectPath}
                           onReorder={handleReorder}
@@ -1473,8 +1474,7 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
                             className="text-secondary hover:bg-hover hover:border-border-light mr-1.5 flex h-5 w-5 shrink-0 cursor-pointer items-center justify-center rounded border border-transparent bg-transparent p-0 transition-all duration-200"
                           >
                             <ChevronRight
-                              className="h-4 w-4 shrink-0 transition-transform duration-200"
-                              strokeWidth={1.8}
+                              className="h-4 w-4 transition-transform duration-200"
                               style={{ transform: isExpanded ? "rotate(90deg)" : "rotate(0deg)" }}
                             />
                           </button>
@@ -1574,8 +1574,12 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
                             id={workspaceListId}
                             role="region"
                             aria-label={`Workspaces for ${projectName}`}
-                            className="pt-1"
+                            className="relative pt-1"
                           >
+                            <div
+                              aria-hidden="true"
+                              className="bg-border pointer-events-none absolute top-1 bottom-0 left-4.5 w-px"
+                            />
                             {(() => {
                               // Archived workspaces are excluded from workspaceMetadata so won't appear here
 
@@ -1937,6 +1941,7 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
                                     draftId={draft.draftId}
                                     draftNumber={draftNumber}
                                     isSelected={isSelected}
+                                    sectionId={sectionId ?? undefined}
                                     onOpen={() =>
                                       handleOpenWorkspaceDraft(
                                         projectPath,
@@ -2177,10 +2182,7 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
                                               : "rotate(0deg)",
                                           }}
                                         >
-                                          <ChevronRight
-                                            className="h-4 w-4 shrink-0"
-                                            strokeWidth={1.8}
-                                          />
+                                          <ChevronRight className="h-4 w-4" />
                                         </span>
                                       </button>
                                       {isTierExpanded && (
@@ -2372,7 +2374,7 @@ const ProjectSidebarInner: React.FC<ProjectSidebarProps> = ({
                                         )
                                       ) : unsectionedDrafts.length === 0 ? (
                                         <div className="text-muted px-3 py-2 text-center text-xs italic">
-                                          No unsectioned workspaces
+                                          No unsectioned chats
                                         </div>
                                       ) : null}
                                     </WorkspaceSectionDropZone>

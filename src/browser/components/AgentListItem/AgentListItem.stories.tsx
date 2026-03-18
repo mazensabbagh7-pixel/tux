@@ -541,7 +541,7 @@ async function assertNestedConnectorContinuity(
   );
   for (const trunk of ancestorTrunks) {
     await expect(trunk).toHaveAttribute("data-trunk-active", expectedTrunkActive);
-    await expect(trunk.style.left).toBe("20px");
+    await expect(trunk.style.left).toBe("16px");
   }
 }
 
