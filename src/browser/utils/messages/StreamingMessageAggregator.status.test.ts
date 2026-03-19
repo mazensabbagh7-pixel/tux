@@ -94,7 +94,7 @@ describe("ask_user_question waiting state", () => {
     expect(aggregator.hasAwaitingUserQuestion()).toBe(true);
   });
 
-  it("keeps awaiting state when ask_user_question is followed by other parts in the same turn", () => {
+  it("keeps awaiting state when ask_user_question is followed by completed tool parts", () => {
     const aggregator = new StreamingMessageAggregator("2024-01-01T00:00:00.000Z");
 
     aggregator.loadHistoricalMessages([
@@ -129,7 +129,6 @@ describe("ask_user_question waiting state", () => {
             input: { todos: [{ content: "Waiting for answers", status: "in_progress" }] },
             output: { success: true },
           },
-          { type: "text" as const, text: "Please answer the question above." },
         ],
         metadata: {
           timestamp: 1000,
@@ -142,6 +141,45 @@ describe("ask_user_question waiting state", () => {
     expect(aggregator.hasAwaitingUserQuestion()).toBe(true);
   });
 
+  it("does not report awaiting input when a later partial text segment follows the question", () => {
+    const aggregator = new StreamingMessageAggregator("2024-01-01T00:00:00.000Z");
+
+    aggregator.loadHistoricalMessages([
+      {
+        id: "assistant-1",
+        role: "assistant" as const,
+        parts: [
+          {
+            type: "dynamic-tool" as const,
+            toolCallId: "call-ask-1",
+            toolName: "ask_user_question",
+            state: "input-available" as const,
+            input: {
+              questions: [
+                {
+                  header: "Approach",
+                  question: "Which approach should we take?",
+                  options: [
+                    { label: "A", description: "Approach A" },
+                    { label: "B", description: "Approach B" },
+                  ],
+                  multiSelect: false,
+                },
+              ],
+            },
+          },
+          { type: "text" as const, text: "Continuing with unrelated output..." },
+        ],
+        metadata: {
+          timestamp: 1000,
+          historySequence: 1,
+          partial: true,
+        },
+      },
+    ]);
+
+    expect(aggregator.hasAwaitingUserQuestion()).toBe(false);
+  });
   it("does not treat older question turns as awaiting after chat moves on", () => {
     const aggregator = new StreamingMessageAggregator("2024-01-01T00:00:00.000Z");
 

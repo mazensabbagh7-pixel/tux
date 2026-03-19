@@ -748,12 +748,55 @@ export class StreamingMessageAggregator {
         return false;
       }
 
-      return message.parts.some(
-        (part) =>
+      let latestPendingQuestionIndex = -1;
+      for (let partIndex = 0; partIndex < message.parts.length; partIndex++) {
+        const part = message.parts[partIndex];
+        if (
           isDynamicToolPart(part) &&
           part.toolName === "ask_user_question" &&
           part.state === "input-available"
+        ) {
+          latestPendingQuestionIndex = partIndex;
+        }
+      }
+
+      if (latestPendingQuestionIndex === -1) {
+        return false;
+      }
+
+      // If a later tool call is still unfinished, that later interruption should
+      // win over the earlier ask_user_question waiting state.
+      const hasLaterPendingTool = message.parts.some(
+        (part, partIndex) =>
+          partIndex > latestPendingQuestionIndex &&
+          isDynamicToolPart(part) &&
+          part.state === "input-available"
       );
+      if (hasLaterPendingTool) {
+        return false;
+      }
+
+      // Persisted partial turns can include additional trailing text/reasoning
+      // emitted after the question. Treat that as an interrupted tail rather than
+      // a pure waiting state.
+      if (message.metadata?.partial === true) {
+        const hasLaterTextOrReasoning = message.parts.some((part, partIndex) => {
+          if (partIndex <= latestPendingQuestionIndex) {
+            return false;
+          }
+
+          return (
+            (part.type === "text" && part.text.length > 0) ||
+            (part.type === "reasoning" && part.text.length > 0)
+          );
+        });
+
+        if (hasLaterTextOrReasoning) {
+          return false;
+        }
+      }
+
+      return true;
     }
 
     return false;
