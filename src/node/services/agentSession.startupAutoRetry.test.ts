@@ -1019,7 +1019,7 @@ describe("AgentSession startup auto-retry recovery", () => {
     session.dispose();
   });
 
-  test("schedules startup auto-retry when a failed tool follows ask_user_question", async () => {
+  test("does not schedule startup auto-retry when a failed tool follows ask_user_question", async () => {
     const workspaceId = "startup-retry-ask-user-failed-tail";
     const { session, historyService, events, cleanup } = await createSessionBundle(workspaceId);
     cleanups.push(cleanup);
@@ -1059,6 +1059,63 @@ describe("AgentSession startup auto-retry recovery", () => {
             toolName: "todo_write",
             input: { todos: [] },
             output: { success: false, error: "write failed" },
+          },
+        ]
+      )
+    );
+    expect(writePartialResult.success).toBe(true);
+
+    const startupRetryModelHint = await session.getStartupAutoRetryModelHint();
+    expect(startupRetryModelHint).toBeNull();
+
+    session.ensureStartupAutoRetryCheck();
+
+    const startupCheckPromise = (
+      session as unknown as { startupAutoRetryCheckPromise: Promise<void> | null }
+    ).startupAutoRetryCheckPromise;
+    await startupCheckPromise;
+
+    expect(events.some((event) => event.type === "auto-retry-scheduled")).toBe(false);
+
+    session.dispose();
+  });
+
+  test("schedules startup auto-retry when text follows ask_user_question", async () => {
+    const workspaceId = "startup-retry-ask-user-text-tail";
+    const { session, historyService, events, cleanup } = await createSessionBundle(workspaceId);
+    cleanups.push(cleanup);
+
+    const appendUserResult = await historyService.appendToHistory(
+      workspaceId,
+      createMuxMessage("user-1", "user", "Hello", {
+        timestamp: Date.now(),
+      })
+    );
+    expect(appendUserResult.success).toBe(true);
+
+    const writePartialResult = await historyService.writePartial(
+      workspaceId,
+      createMuxMessage(
+        "assistant-1",
+        "assistant",
+        "",
+        {
+          timestamp: Date.now(),
+          model: "anthropic:claude-sonnet-4-5",
+          partial: true,
+          agentId: "exec",
+        },
+        [
+          {
+            type: "dynamic-tool",
+            state: "input-available",
+            toolCallId: "tool-ask",
+            toolName: "ask_user_question",
+            input: { question: "Name?" },
+          },
+          {
+            type: "text",
+            text: "Continuing with interrupted output",
           },
         ]
       )

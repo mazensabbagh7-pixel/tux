@@ -975,29 +975,9 @@ export class AgentSession {
       return false;
     }
 
-    const hasLaterFailedTool = message.parts.some((part, partIndex) => {
-      if (
-        partIndex <= latestPendingQuestionIndex ||
-        part.type !== "dynamic-tool" ||
-        part.state !== "output-available"
-      ) {
-        return false;
-      }
-
-      const output = part.output;
-      if (typeof output !== "object" || output === null) {
-        return false;
-      }
-
-      if ("success" in output && output.success === false) {
-        return true;
-      }
-
-      return "error" in output && Boolean(output.error);
-    });
-    if (hasLaterFailedTool) {
-      return false;
-    }
+    // Keep logical tool failures after ask_user_question in the waiting state.
+    // The persisted partial can still be answered/resumed via answerAskUserQuestion
+    // after restart, so startup auto-retry should not immediately re-run the turn.
 
     // If the stream produced text/reasoning after asking the question, this
     // should recover as an interrupted tail after restart.
