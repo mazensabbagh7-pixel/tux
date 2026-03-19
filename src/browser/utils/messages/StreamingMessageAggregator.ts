@@ -842,27 +842,7 @@ export class StreamingMessageAggregator {
         return false;
       }
 
-      const awaitingToolCallId = getAwaitingAskUserQuestionToolCallId(message);
-      if (awaitingToolCallId !== null) {
-        return true;
-      }
-
-      const answerableToolCallId = getAnswerableAskUserQuestionToolCallId(message);
-      if (answerableToolCallId === null) {
-        return false;
-      }
-
-      // Keep workspace-level awaiting state for recoverable questions that are
-      // currently hidden by transcript truncation; otherwise users can only hit
-      // retry paths that drop unfinished tool calls.
-      const isAnswerableQuestionVisible = this.getDisplayedMessages().some(
-        (displayedMessage) =>
-          displayedMessage.type === "tool" &&
-          displayedMessage.toolName === "ask_user_question" &&
-          displayedMessage.toolCallId === answerableToolCallId &&
-          displayedMessage.status === "executing"
-      );
-      return !isAnswerableQuestionVisible;
+      return getAwaitingAskUserQuestionToolCallId(message) !== null;
     }
 
     return false;
