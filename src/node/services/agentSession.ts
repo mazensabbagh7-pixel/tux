@@ -943,6 +943,10 @@ export class AgentSession {
       return false;
     }
 
+    if (message.metadata?.error != null) {
+      return false;
+    }
+
     let latestPendingQuestionIndex = -1;
     for (let partIndex = 0; partIndex < message.parts.length; partIndex += 1) {
       const part = message.parts[partIndex];
@@ -957,6 +961,33 @@ export class AgentSession {
 
     if (latestPendingQuestionIndex === -1) {
       return false;
+    }
+
+    const hasLaterResolvedToolPart = message.parts.some(
+      (part, partIndex) =>
+        partIndex > latestPendingQuestionIndex &&
+        part.type === "dynamic-tool" &&
+        (part.state === "output-available" || part.state === "output-redacted")
+    );
+    if (hasLaterResolvedToolPart) {
+      return false;
+    }
+
+    if (message.metadata?.partial === true) {
+      const hasLaterTextOrReasoning = message.parts.some((part, partIndex) => {
+        if (partIndex <= latestPendingQuestionIndex) {
+          return false;
+        }
+
+        return (
+          (part.type === "text" && part.text.length > 0) ||
+          (part.type === "reasoning" && part.text.length > 0)
+        );
+      });
+
+      if (hasLaterTextOrReasoning) {
+        return false;
+      }
     }
 
     return true;
