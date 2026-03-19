@@ -5,7 +5,7 @@ import { useAPI } from "@/browser/contexts/API";
 import { Popover, PopoverContent, PopoverTrigger } from "../Popover/Popover";
 import { Tooltip, TooltipTrigger, TooltipContent } from "../Tooltip/Tooltip";
 import { useCopyToClipboard } from "@/browser/hooks/useCopyToClipboard";
-import { invalidateGitStatus, useGitStatus } from "@/browser/stores/GitStatusStore";
+import { clearGitStatus, invalidateGitStatus, useGitStatus } from "@/browser/stores/GitStatusStore";
 import { createLRUCache } from "@/browser/utils/lruCache";
 import { buildCheckoutCommand, buildRemoteBranchListCommand } from "./branchCommands";
 import { repoRootBashOptions } from "@/browser/utils/executeBash";
@@ -15,7 +15,7 @@ const branchCache = createLRUCache<string>({
   entryPrefix: "branch:",
   indexKey: "branchIndex",
   maxEntries: 100,
-  // No TTL - branch info is fetched on mount anyway
+  // No TTL - cached branch info seeds the selector until passive git status refreshes arrive.
 });
 
 interface BranchSelectorProps {
@@ -43,8 +43,9 @@ interface RemoteState {
  */
 export function BranchSelector({ workspaceId, workspaceName, className }: BranchSelectorProps) {
   const { api } = useAPI();
-  // null = not yet determined, false = not a git repo, string = current branch
-  // Initialize from localStorage cache for instant display on app restart
+  // null = branch is not known yet (for example a stopped runtime with no passive git data),
+  // false = explicitly confirmed not a git repo, string = current branch.
+  // Initialize from localStorage cache for instant display on app restart.
   const [currentBranch, setCurrentBranch] = useState<string | null | false>(() =>
     branchCache.get(workspaceId)
   );
@@ -77,51 +78,58 @@ export function BranchSelector({ workspaceId, workspaceName, className }: Branch
   // Track if we're refreshing with a cached value (for optimistic UI pulse effect)
   const isRefreshing = currentBranch !== null && currentBranch !== false && isSwitching;
 
-  // Fetch current branch on mount to detect if we're in a git repo
-  useEffect(() => {
-    if (!api) return;
-
-    let cancelled = false;
-
-    void (async () => {
-      try {
-        const result = await api.workspace.executeBash({
-          workspaceId,
-          script: `git rev-parse --abbrev-ref HEAD 2>/dev/null`,
-          options: repoRootBashOptions(5),
-        });
-
-        if (cancelled) return;
-
-        if (result.success && result.data.success && result.data.output?.trim()) {
-          const branch = result.data.output.trim();
-          setCurrentBranch(branch);
-          // Persist to localStorage for instant display on app restart
-          branchCache.set(workspaceId, branch);
-        } else {
-          // Not a git repo or git command failed
-          setCurrentBranch(false);
-        }
-      } catch {
-        if (!cancelled) {
-          setCurrentBranch(false);
-        }
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [api, workspaceId]);
-
   const fetchLocalBranches = useCallback(async () => {
     if (!api || currentBranch === false) return;
 
     setIsLoading(true);
 
     try {
-      // Fetch one extra to detect truncation
-      const [branchResult, remoteResult] = await Promise.all([
+      // Explicit opens are allowed to wake the runtime, so determine whether the
+      // workspace is a git repo first and only then load branch/remotes data.
+      const repoProbeResult = await api.workspace.executeBash({
+        workspaceId,
+        // Keep stderr intact here so explicit opens can distinguish a definitive
+        // "not a git repository" result from transient runtime/IPC failures.
+        script: `git rev-parse --is-inside-work-tree`,
+        options: repoRootBashOptions(5),
+      });
+      const repoProbeOutput =
+        repoProbeResult.success && repoProbeResult.data.success
+          ? (repoProbeResult.data.output?.trim() ?? "")
+          : "";
+      let repoProbeError = "";
+      if (!repoProbeResult.success) {
+        repoProbeError = repoProbeResult.error ?? "";
+      } else if (!repoProbeResult.data.success) {
+        repoProbeError = `${repoProbeResult.data.error ?? ""}\n${repoProbeResult.data.output ?? ""}`;
+      }
+      const repoState =
+        repoProbeOutput === "true"
+          ? "git"
+          : /not a git repository/i.test(repoProbeError)
+            ? "non-git"
+            : "unknown";
+      if (repoState === "non-git") {
+        branchCache.remove(workspaceId);
+        clearGitStatus(workspaceId);
+        setCurrentBranch(false);
+        setLocalBranches([]);
+        setLocalBranchesTruncated(false);
+        setRemotes([]);
+        return;
+      }
+      if (repoState !== "git") {
+        return;
+      }
+
+      // Once we know the repo exists, resolve the active branch with an untruncated
+      // command and keep the branch list separately capped for the popover.
+      const [currentBranchResult, branchResult, remoteResult] = await Promise.all([
+        api.workspace.executeBash({
+          workspaceId,
+          script: `git branch --show-current 2>/dev/null`,
+          options: repoRootBashOptions(5),
+        }),
         api.workspace.executeBash({
           workspaceId,
           script: `git branch --sort=-committerdate --format='%(refname:short)' 2>/dev/null | head -${MAX_LOCAL_BRANCHES + 1}`,
@@ -134,24 +142,58 @@ export function BranchSelector({ workspaceId, workspaceName, className }: Branch
         }),
       ]);
 
-      if (branchResult.success && branchResult.data.success && branchResult.data.output) {
-        const branchList = branchResult.data.output
-          .split("\n")
-          .map((b) => b.trim())
-          .filter((b) => b.length > 0);
-        if (branchList.length > 0) {
-          const truncated = branchList.length > MAX_LOCAL_BRANCHES;
-          setLocalBranches(truncated ? branchList.slice(0, MAX_LOCAL_BRANCHES) : branchList);
-          setLocalBranchesTruncated(truncated);
-        }
+      const currentBranchCommandSucceeded =
+        currentBranchResult.success && currentBranchResult.data.success;
+      const branchCommandSucceeded = branchResult.success && branchResult.data.success;
+      const remoteCommandSucceeded = remoteResult.success && remoteResult.data.success;
+      const fetchedCurrentBranch =
+        currentBranchCommandSucceeded && currentBranchResult.data.output
+          ? currentBranchResult.data.output.trim() || null
+          : null;
+      const branchList =
+        branchCommandSucceeded && branchResult.data.output
+          ? branchResult.data.output
+              .split("\n")
+              .map((branchLine) => branchLine.trim())
+              .filter((branchLine) => branchLine.length > 0)
+          : [];
+      const displayBranchList =
+        fetchedCurrentBranch && !branchList.includes(fetchedCurrentBranch)
+          ? [fetchedCurrentBranch, ...branchList]
+          : branchList;
+      if (displayBranchList.length > 0) {
+        const truncated = displayBranchList.length > MAX_LOCAL_BRANCHES;
+        setLocalBranches(
+          truncated ? displayBranchList.slice(0, MAX_LOCAL_BRANCHES) : displayBranchList
+        );
+        setLocalBranchesTruncated(truncated);
+      }
+      if (fetchedCurrentBranch) {
+        setCurrentBranch((prev) => {
+          if (prev === fetchedCurrentBranch) return prev;
+          branchCache.set(workspaceId, fetchedCurrentBranch);
+          return fetchedCurrentBranch;
+        });
       }
 
-      if (remoteResult.success && remoteResult.data.success && remoteResult.data.output) {
-        const remoteList = remoteResult.data.output
-          .split("\n")
-          .map((r) => r.trim())
-          .filter((r) => r.length > 0);
-        setRemotes(remoteList);
+      const remoteList =
+        remoteCommandSucceeded && remoteResult.data.output
+          ? remoteResult.data.output
+              .split("\n")
+              .map((remote) => remote.trim())
+              .filter((remote) => remote.length > 0)
+          : [];
+      setRemotes(remoteList);
+
+      if (
+        currentBranchCommandSucceeded &&
+        branchCommandSucceeded &&
+        remoteCommandSucceeded &&
+        !fetchedCurrentBranch &&
+        branchList.length === 0 &&
+        remoteList.length === 0
+      ) {
+        setCurrentBranch(false);
       }
     } catch {
       // Silently fail
@@ -351,18 +393,6 @@ export function BranchSelector({ workspaceId, workspaceName, className }: Branch
     );
   }
 
-  // Still loading git status - use same layout as loaded state to prevent shift
-  if (currentBranch === null) {
-    return (
-      <div className={cn("group flex items-center gap-0.5", className)}>
-        <div className="text-muted-light flex max-w-[180px] min-w-0 items-center gap-1 px-1 py-0.5 font-mono text-[11px]">
-          <Loader2 className="h-3 w-3 shrink-0 animate-spin opacity-70" />
-          <span className="truncate">{workspaceName}</span>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className={cn("group flex items-center gap-0.5", className)}>
       <Popover open={isOpen} onOpenChange={setIsOpen}>
@@ -502,19 +532,21 @@ export function BranchSelector({ workspaceId, workspaceName, className }: Branch
         </PopoverContent>
       </Popover>
 
-      {/* Copy button - only show on hover */}
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <button
-            onClick={handleCopy}
-            className="text-muted hover:text-foreground flex h-3.5 w-3.5 shrink-0 items-center justify-center opacity-0 transition-opacity group-hover:opacity-100"
-            aria-label="Copy branch name"
-          >
-            {copied ? <Check className="h-2.5 w-2.5" /> : <Copy className="h-2.5 w-2.5" />}
-          </button>
-        </TooltipTrigger>
-        <TooltipContent side="bottom">{copied ? "Copied!" : "Copy branch name"}</TooltipContent>
-      </Tooltip>
+      {/* Copy button - only show on hover once the real branch name is known. */}
+      {typeof currentBranch === "string" && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              onClick={handleCopy}
+              className="text-muted hover:text-foreground flex h-3.5 w-3.5 shrink-0 items-center justify-center opacity-0 transition-opacity group-hover:opacity-100"
+              aria-label="Copy branch name"
+            >
+              {copied ? <Check className="h-2.5 w-2.5" /> : <Copy className="h-2.5 w-2.5" />}
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">{copied ? "Copied!" : "Copy branch name"}</TooltipContent>
+        </Tooltip>
+      )}
 
       {error && <span className="text-danger-soft truncate text-[10px]">{error}</span>}
     </div>

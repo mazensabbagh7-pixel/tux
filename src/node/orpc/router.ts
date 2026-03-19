@@ -3453,7 +3453,6 @@ export const router = (authToken?: string) => {
             input.script,
             {
               ...(input.options ?? {}),
-              executionTarget: input.executionTarget ?? undefined,
             },
             input.command ?? undefined,
             input.args ?? undefined
