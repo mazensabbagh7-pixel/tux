@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { EventEmitter } from "events";
 import type {
   BrowserAction,
+  BrowserFramePayload,
   BrowserInputEvent,
   BrowserMouseInput,
   BrowserSession,
@@ -73,6 +74,22 @@ export class BrowserSessionService extends EventEmitter {
     return this.activeSessions.get(workspaceId) ?? null;
   }
 
+  onFrameEvent(workspaceId: string, handler: (frame: BrowserFramePayload) => void): void {
+    assert(
+      workspaceId.trim().length > 0,
+      "BrowserSessionService.onFrameEvent requires a workspaceId"
+    );
+    this.on(`frame:${workspaceId}`, handler);
+  }
+
+  offFrameEvent(workspaceId: string, handler: (frame: BrowserFramePayload) => void): void {
+    assert(
+      workspaceId.trim().length > 0,
+      "BrowserSessionService.offFrameEvent requires a workspaceId"
+    );
+    this.off(`frame:${workspaceId}`, handler);
+  }
+
   async startSession(
     workspaceId: string,
     options?: { initialUrl?: string | null }
@@ -141,6 +158,15 @@ export class BrowserSessionService extends EventEmitter {
 
         const appendedAction = this.appendAction(workspaceId, action);
         this.emitEvent(workspaceId, { type: "action", action: appendedAction });
+      },
+      // Keep low-latency frame delivery on a dedicated channel so the existing ORPC
+      // update subscription contract (`update:${workspaceId}` + BrowserSessionEvent) stays unchanged.
+      onFrame: (frame) => {
+        if (!isCurrentBackend(workspaceId)) {
+          return;
+        }
+
+        this.emit(`frame:${workspaceId}`, frame);
       },
       onEnded: (wsId) => {
         if (!isCurrentBackend(wsId)) {

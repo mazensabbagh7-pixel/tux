@@ -3,6 +3,7 @@ import * as browserSessionBackendModule from "@/node/services/browserSessionBack
 import { getMuxBrowserSessionId } from "@/common/utils/browserSession";
 import type {
   BrowserAction,
+  BrowserFramePayload,
   BrowserInputEvent,
   BrowserSession,
   BrowserSessionEvent,
@@ -183,6 +184,82 @@ describe("BrowserSessionService.startSession", () => {
     expect(stopMocks[0]).toHaveBeenCalledTimes(1);
     expect(session.streamState).toBe("live");
     expect(session.currentUrl).toBe("https://attached.example.com");
+  });
+});
+
+describe("BrowserSessionService frame events", () => {
+  const workspaceId = "workspace-frame-events";
+  const framePayload: BrowserFramePayload = {
+    base64Data: "ZmFrZS1qcGVn",
+    metadata: {
+      deviceWidth: 1280,
+      deviceHeight: 720,
+      pageScaleFactor: 1,
+      offsetTop: 0,
+      scrollOffsetX: 5,
+      scrollOffsetY: 10,
+    },
+  };
+
+  test("subscribes and unsubscribes frame listeners with workspace scoping", () => {
+    const service = new BrowserSessionService();
+    const handler = mock((_frame: BrowserFramePayload) => undefined);
+
+    service.onFrameEvent(workspaceId, handler);
+    service.emit(`frame:${workspaceId}`, framePayload);
+    expect(handler).toHaveBeenCalledTimes(1);
+    expect(handler).toHaveBeenCalledWith(framePayload);
+
+    service.offFrameEvent(workspaceId, handler);
+    service.emit(`frame:${workspaceId}`, framePayload);
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
+
+  test("emits frame events from active sessions without changing update subscriptions", async () => {
+    const frameEvents: BrowserFramePayload[] = [];
+    const updateEvents: BrowserSessionEvent[] = [];
+    let backendOptions: browserSessionBackendModule.BrowserSessionBackendOptions | null = null;
+
+    const service = new BrowserSessionService({
+      createBackend: (options) => {
+        backendOptions = options;
+        return {
+          start: mock(() => {
+            const session = createLiveSession(workspaceId);
+            options.onSessionUpdate(session);
+            return Promise.resolve(session);
+          }),
+          stop: mock(() => Promise.resolve()),
+        } as unknown as browserSessionBackendModule.BrowserSessionBackend;
+      },
+    });
+
+    service.onFrameEvent(workspaceId, (frame) => {
+      frameEvents.push(frame);
+    });
+    service.on(`update:${workspaceId}`, (event: BrowserSessionEvent) => {
+      updateEvents.push(event);
+    });
+
+    await service.startSession(workspaceId);
+    expect(backendOptions).not.toBeNull();
+    expect(updateEvents).toHaveLength(1);
+    expect(updateEvents[0]?.type).toBe("session-updated");
+
+    backendOptions!.onFrame?.(framePayload);
+    expect(frameEvents).toEqual([framePayload]);
+    expect(updateEvents).toHaveLength(1);
+
+    backendOptions!.onSessionUpdate({
+      ...createLiveSession(workspaceId),
+      title: "Updated title",
+    });
+    expect(updateEvents).toHaveLength(2);
+    expect(updateEvents[1]?.type).toBe("session-updated");
+    if (updateEvents[1]?.type !== "session-updated") {
+      expect.unreachable("expected update listener to keep receiving BrowserSessionEvent updates");
+    }
+    expect(updateEvents[1].session.title).toBe("Updated title");
   });
 });
 

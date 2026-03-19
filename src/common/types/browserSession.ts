@@ -31,6 +31,12 @@ export interface BrowserFrameMetadata {
   scrollOffsetY: number;
 }
 
+// A single streamed frame payload used by the backend/service bridge plumbing.
+export interface BrowserFramePayload {
+  base64Data: string | null;
+  metadata: BrowserFrameMetadata | null;
+}
+
 // Input event union for human interaction injection
 export type BrowserInputEvent = BrowserMouseInput | BrowserKeyboardInput | BrowserTouchInput;
 

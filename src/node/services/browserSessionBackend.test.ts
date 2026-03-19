@@ -3,6 +3,7 @@ import { describe, expect, mock, test } from "bun:test";
 import WebSocket from "ws";
 import type {
   BrowserFrameMetadata,
+  BrowserFramePayload,
   BrowserInputEvent,
   BrowserSession,
 } from "@/common/types/browserSession";
@@ -202,6 +203,48 @@ describe("BrowserSessionBackend", () => {
     expect(session.streamErrorMessage).toBeNull();
     expect(session.lastScreenshotBase64).toBe("ZmFrZS1qcGVn");
     expect(session.lastFrameMetadata).toEqual(expectedMetadata);
+  });
+
+  test("fires the optional frame callback before emitting the session update", () => {
+    const callbackOrder: string[] = [];
+    const expectedFrame: BrowserFramePayload = {
+      base64Data: "ZmFrZS1qcGVn",
+      metadata: {
+        deviceWidth: 1280,
+        deviceHeight: 720,
+        pageScaleFactor: 1,
+        offsetTop: 0,
+        scrollOffsetX: 5,
+        scrollOffsetY: 10,
+      },
+    };
+    const onFrame = mock((frame: BrowserFramePayload) => {
+      callbackOrder.push("frame");
+      expect(frame).toEqual(expectedFrame);
+    });
+    const onSessionUpdate = mock((session: BrowserSession) => {
+      callbackOrder.push("session");
+      expect(session.lastScreenshotBase64).toBe(expectedFrame.base64Data);
+      expect(session.lastFrameMetadata).toEqual(expectedFrame.metadata);
+    });
+    const backend = createBackend({ streamPort: 9223, onFrame, onSessionUpdate });
+
+    setSession(backend, {
+      status: "live",
+      streamState: "connecting",
+      lastScreenshotBase64: null,
+      lastFrameMetadata: null,
+    });
+
+    handleStreamMessage(backend, {
+      type: "frame",
+      data: expectedFrame.base64Data,
+      metadata: expectedFrame.metadata,
+    });
+
+    expect(onFrame).toHaveBeenCalledTimes(1);
+    expect(onSessionUpdate).toHaveBeenCalledTimes(1);
+    expect(callbackOrder).toEqual(["frame", "session"]);
   });
 
   test("ignores malformed and invalid stream payloads without crashing", () => {

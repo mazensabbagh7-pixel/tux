@@ -6,6 +6,7 @@ import WebSocket, { type RawData } from "ws";
 import type {
   BrowserAction,
   BrowserFrameMetadata,
+  BrowserFramePayload,
   BrowserInputEvent,
   BrowserSession,
   BrowserSessionEndReason,
@@ -65,6 +66,7 @@ export interface BrowserSessionBackendOptions {
   streamPort?: number | null;
   onSessionUpdate: (session: BrowserSession) => void;
   onAction: (action: BrowserAction) => void;
+  onFrame?: (frame: BrowserFramePayload) => void;
   onEnded: (workspaceId: string) => void;
   onError: (workspaceId: string, error: string) => void;
 }
@@ -1145,10 +1147,12 @@ export class BrowserSessionBackend {
       return;
     }
 
+    const frame: BrowserFramePayload = { base64Data, metadata };
     this.streamRetryCount = 0;
+    this.options.onFrame?.(frame);
     this.patchSession({
-      lastScreenshotBase64: base64Data,
-      lastFrameMetadata: metadata,
+      lastScreenshotBase64: frame.base64Data,
+      lastFrameMetadata: frame.metadata,
       lastError: null,
       streamState: "live",
       streamErrorMessage: null,
