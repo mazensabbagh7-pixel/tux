@@ -78,7 +78,8 @@ export interface BashOutputGroupInfo {
  */
 export function shouldShowInterruptedBarrier(
   msg: DisplayedMessage,
-  allMessages: DisplayedMessage[] = [msg]
+  allMessages: DisplayedMessage[] = [msg],
+  awaitingUserQuestion = false
 ): boolean {
   if (
     msg.type === "user" ||
@@ -90,17 +91,25 @@ export function shouldShowInterruptedBarrier(
   )
     return false;
 
+  const lastMessage = getLastNonDecorativeMessage(allMessages);
+  const isLatestTurnRow =
+    lastMessage != null &&
+    "historyId" in msg &&
+    "historyId" in lastMessage &&
+    msg.historyId === lastMessage.historyId;
+
   // ask_user_question is intentionally a "waiting for input" state. Even if the
-  // underlying message is a persisted partial (e.g. after app restart), we keep
-  // the full latest turn answerable instead of showing "Interrupted" on any
-  // trailing parts from that same assistant message.
-  if (hasExecutingAskUserQuestionInLatestTurn(allMessages)) {
-    const lastMessage = getLastNonDecorativeMessage(allMessages);
-    if (lastMessage && "historyId" in msg && "historyId" in lastMessage) {
-      if (msg.historyId === lastMessage.historyId) {
-        return false;
-      }
-    }
+  // question row is truncated in the displayed transcript, the authoritative
+  // awaitingUserQuestion workspace state should still suppress interrupted UI for
+  // the latest turn.
+  if (isLatestTurnRow && awaitingUserQuestion) {
+    return false;
+  }
+
+  // Fallback for callers that don't provide the authoritative awaiting flag:
+  // infer from displayed rows only.
+  if (isLatestTurnRow && hasExecutingAskUserQuestionInLatestTurn(allMessages)) {
+    return false;
   }
 
   // Only show on the last part of multi-part messages

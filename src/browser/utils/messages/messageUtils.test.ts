@@ -61,6 +61,26 @@ describe("shouldShowInterruptedBarrier", () => {
 
     expect(shouldShowInterruptedBarrier(trailingPartialText, messages)).toBe(false);
   });
+
+  it("returns false when authoritative awaitingUserQuestion flag is true", () => {
+    const trailingPartialText: DisplayedMessage = {
+      type: "assistant",
+      id: "assistant-tail",
+      historyId: "assistant-1",
+      content: "Please answer above.",
+      historySequence: 2,
+      streamSequence: 1,
+      isStreaming: false,
+      isPartial: true,
+      isLastPartOfMessage: true,
+      isCompacted: false,
+      isIdleCompacted: false,
+    };
+
+    expect(shouldShowInterruptedBarrier(trailingPartialText, [trailingPartialText], true)).toBe(
+      false
+    );
+  });
   it("returns false for decorative compaction boundary rows", () => {
     const msg: DisplayedMessage = {
       type: "compaction-boundary",

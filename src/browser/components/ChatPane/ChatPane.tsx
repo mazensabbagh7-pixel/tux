@@ -861,9 +861,11 @@ export const ChatPane: React.FC<ChatPaneProps> = (props) => {
                               />
                             )}
                             {isAtCutoff && <EditCutoffBarrier />}
-                            {shouldShowInterruptedBarrier(msg, deferredMessages) && (
-                              <InterruptedBarrier />
-                            )}
+                            {shouldShowInterruptedBarrier(
+                              msg,
+                              deferredMessages,
+                              workspaceState.awaitingUserQuestion
+                            ) && <InterruptedBarrier />}
                           </React.Fragment>
                         );
                       })}
