@@ -316,6 +316,32 @@ function getInputAvailableToolCallIdsBlockedByAwaitingQuestion(message: MuxMessa
   return blockedToolCallIds;
 }
 
+function getLatestAnswerableAskUserQuestionMessageId(
+  allMessages: MuxMessage[],
+  showSyntheticMessages: boolean
+): string | null {
+  for (let i = allMessages.length - 1; i >= 0; i--) {
+    const message = allMessages[i];
+    const isSynthetic = message.metadata?.synthetic === true;
+    const isUiVisibleSynthetic = message.metadata?.uiVisible === true;
+    if (isSynthetic && !showSyntheticMessages && !isUiVisibleSynthetic) {
+      continue;
+    }
+
+    if (message.metadata?.muxMetadata?.type === "plan-display") {
+      continue;
+    }
+
+    if (message.role !== "assistant") {
+      return null;
+    }
+
+    return getAnswerableAskUserQuestionToolCallIds(message).size > 0 ? message.id : null;
+  }
+
+  return null;
+}
+
 function resolveRouteProvider(
   routeProvider: string | undefined,
   routedThroughGateway: boolean | undefined
@@ -3020,6 +3046,11 @@ export class StreamingMessageAggregator {
       const showSyntheticMessages =
         typeof window !== "undefined" && window.api?.debugLlmRequest === true;
 
+      const latestAnswerableAskUserQuestionMessageId = getLatestAnswerableAskUserQuestionMessageId(
+        allMessages,
+        showSyntheticMessages
+      );
+
       // Synthetic agent-skill snapshot messages are hidden from the transcript unless
       // debugLlmRequest is enabled. We still want to surface their content in the UI by
       // attaching the resolved snapshot (frontmatterYaml + body) to the *subsequent*
@@ -3091,7 +3122,8 @@ export class StreamingMessageAggregator {
               (message) =>
                 message.type === "tool" &&
                 message.toolName === "ask_user_question" &&
-                message.status === "executing"
+                message.status === "executing" &&
+                message.historyId === latestAnswerableAskUserQuestionMessageId
             )
             .map((message) => message.id)
         );

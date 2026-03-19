@@ -486,6 +486,79 @@ describe("ask_user_question waiting state", () => {
     expect(aggregator.hasAwaitingUserQuestion()).toBe(false);
   });
 
+  it("does not pin ask_user_question rows from older turns during truncation", () => {
+    const aggregator = new StreamingMessageAggregator("2024-01-01T00:00:00.000Z");
+
+    const trailingToolParts = Array.from({ length: 80 }, (_, index) => ({
+      type: "dynamic-tool" as const,
+      toolCallId: `call-todo-${index}`,
+      toolName: "todo_write",
+      state: "output-available" as const,
+      input: { todos: [{ content: `Task ${index}`, status: "in_progress" }] },
+      output: { success: true },
+    }));
+
+    aggregator.loadHistoricalMessages([
+      {
+        id: "assistant-1",
+        role: "assistant" as const,
+        parts: [
+          {
+            type: "dynamic-tool" as const,
+            toolCallId: "call-ask-1",
+            toolName: "ask_user_question",
+            state: "input-available" as const,
+            input: {
+              questions: [
+                {
+                  header: "Approach",
+                  question: "Which approach should we take?",
+                  options: [
+                    { label: "A", description: "Approach A" },
+                    { label: "B", description: "Approach B" },
+                  ],
+                  multiSelect: false,
+                },
+              ],
+            },
+          },
+        ],
+        metadata: {
+          timestamp: 1000,
+          historySequence: 1,
+          partial: true,
+        },
+      },
+      {
+        id: "user-2",
+        role: "user" as const,
+        parts: [{ type: "text" as const, text: "Move on" }],
+        metadata: {
+          timestamp: 2000,
+          historySequence: 2,
+        },
+      },
+      {
+        id: "assistant-3",
+        role: "assistant" as const,
+        parts: trailingToolParts,
+        metadata: {
+          timestamp: 3000,
+          historySequence: 3,
+          partial: true,
+        },
+      },
+    ]);
+
+    const displayed = aggregator.getDisplayedMessages();
+    expect(
+      displayed.some(
+        (message) => message.type === "tool" && message.toolName === "ask_user_question"
+      )
+    ).toBe(false);
+    expect(aggregator.hasAwaitingUserQuestion()).toBe(false);
+  });
+
   it("keeps awaiting input and keeps ask_user_question visible with pending sibling tools", () => {
     const aggregator = new StreamingMessageAggregator("2024-01-01T00:00:00.000Z");
 
