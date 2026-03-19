@@ -257,16 +257,28 @@ function getAwaitingAskUserQuestionToolCallId(message: MuxMessage): string | nul
 }
 
 /**
- * Keep persisted ask_user_question rows answerable after restart, even when
- * later partial output exists. answerAskUserQuestion can still resolve the
- * pending prompt from disk without replaying the full turn.
+ * Keep every pending ask_user_question row answerable after restart, even when
+ * later partial output exists. answerAskUserQuestion resolves by toolCallId,
+ * so each still-pending tool call must remain executable in replayed UI.
  */
-function getAnswerableAskUserQuestionToolCallId(message: MuxMessage): string | null {
-  return resolveAskUserQuestionToolCallId(message, {
-    suppressForMessageError: false,
-    suppressForLaterToolPart: false,
-    suppressForLaterTextOrReasoning: false,
-  });
+function getAnswerableAskUserQuestionToolCallIds(message: MuxMessage): Set<string> {
+  const answerableToolCallIds = new Set<string>();
+
+  if (message.role !== "assistant") {
+    return answerableToolCallIds;
+  }
+
+  for (const part of message.parts) {
+    if (
+      isDynamicToolPart(part) &&
+      part.toolName === "ask_user_question" &&
+      part.state === "input-available"
+    ) {
+      answerableToolCallIds.add(part.toolCallId);
+    }
+  }
+
+  return answerableToolCallIds;
 }
 
 function resolveRouteProvider(
@@ -2753,7 +2765,7 @@ export class StreamingMessageAggregator {
       // Merge adjacent text/reasoning parts for display
       const mergedParts = mergeAdjacentParts(message.parts);
 
-      const answerableAskUserQuestionToolCallId = getAnswerableAskUserQuestionToolCallId(message);
+      const answerableAskUserQuestionToolCallIds = getAnswerableAskUserQuestionToolCallIds(message);
 
       // Find the last part that will produce a DisplayedMessage
       // (reasoning, text parts with content, OR tool parts)
@@ -2839,12 +2851,11 @@ export class StreamingMessageAggregator {
             // so after restart we should keep it answerable ("executing") instead of
             // showing retry/auto-resume UX.
             if (part.toolName === "ask_user_question") {
-              status =
-                part.toolCallId === answerableAskUserQuestionToolCallId
-                  ? "executing"
-                  : isPartial
-                    ? "interrupted"
-                    : "executing";
+              status = answerableAskUserQuestionToolCallIds.has(part.toolCallId)
+                ? "executing"
+                : isPartial
+                  ? "interrupted"
+                  : "executing";
             } else if (isPartial) {
               status = "interrupted";
             } else {

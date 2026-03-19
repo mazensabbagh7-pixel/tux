@@ -148,6 +148,76 @@ describe("ask_user_question waiting state", () => {
     expect(askRow.status).toBe("executing");
   });
 
+  it("keeps every pending ask_user_question row answerable in the same turn", () => {
+    const aggregator = new StreamingMessageAggregator("2024-01-01T00:00:00.000Z");
+
+    aggregator.loadHistoricalMessages([
+      {
+        id: "assistant-1",
+        role: "assistant" as const,
+        parts: [
+          {
+            type: "dynamic-tool" as const,
+            toolCallId: "call-ask-1",
+            toolName: "ask_user_question",
+            state: "input-available" as const,
+            input: {
+              questions: [
+                {
+                  header: "Approach",
+                  question: "Which approach should we take first?",
+                  options: [
+                    { label: "A", description: "Approach A" },
+                    { label: "B", description: "Approach B" },
+                  ],
+                  multiSelect: false,
+                },
+              ],
+            },
+          },
+          {
+            type: "dynamic-tool" as const,
+            toolCallId: "call-ask-2",
+            toolName: "ask_user_question",
+            state: "input-available" as const,
+            input: {
+              questions: [
+                {
+                  header: "Verification",
+                  question: "Need anything else before we continue?",
+                  options: [
+                    { label: "No", description: "Continue" },
+                    { label: "Yes", description: "Add more checks" },
+                  ],
+                  multiSelect: false,
+                },
+              ],
+            },
+          },
+        ],
+        metadata: {
+          timestamp: 1000,
+          historySequence: 1,
+          partial: true,
+        },
+      },
+    ]);
+
+    expect(aggregator.hasAwaitingUserQuestion()).toBe(true);
+
+    const askRows = aggregator
+      .getDisplayedMessages()
+      .filter((message) => message.type === "tool" && message.toolName === "ask_user_question");
+
+    expect(askRows).toHaveLength(2);
+    for (const askRow of askRows) {
+      if (askRow.type !== "tool") {
+        throw new Error("Expected ask_user_question tool row");
+      }
+      expect(askRow.status).toBe("executing");
+    }
+  });
+
   it("clears awaiting input when completed tool output follows ask_user_question", () => {
     const aggregator = new StreamingMessageAggregator("2024-01-01T00:00:00.000Z");
 
