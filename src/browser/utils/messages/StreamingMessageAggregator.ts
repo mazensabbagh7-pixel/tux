@@ -251,8 +251,8 @@ function resolveAskUserQuestionToolCallId(
 function getAwaitingAskUserQuestionToolCallId(message: MuxMessage): string | null {
   return resolveAskUserQuestionToolCallId(message, {
     suppressForMessageError: true,
-    suppressForLaterToolPart: false,
-    suppressForLaterTextOrReasoning: false,
+    suppressForLaterToolPart: true,
+    suppressForLaterTextOrReasoning: true,
   });
 }
 
@@ -842,7 +842,27 @@ export class StreamingMessageAggregator {
         return false;
       }
 
-      return getAwaitingAskUserQuestionToolCallId(message) !== null;
+      const awaitingToolCallId = getAwaitingAskUserQuestionToolCallId(message);
+      if (awaitingToolCallId !== null) {
+        return true;
+      }
+
+      const answerableToolCallId = getAnswerableAskUserQuestionToolCallId(message);
+      if (answerableToolCallId === null) {
+        return false;
+      }
+
+      // Keep workspace-level awaiting state for recoverable questions that are
+      // currently hidden by transcript truncation; otherwise users can only hit
+      // retry paths that drop unfinished tool calls.
+      const isAnswerableQuestionVisible = this.getDisplayedMessages().some(
+        (displayedMessage) =>
+          displayedMessage.type === "tool" &&
+          displayedMessage.toolName === "ask_user_question" &&
+          displayedMessage.toolCallId === answerableToolCallId &&
+          displayedMessage.status === "executing"
+      );
+      return !isAnswerableQuestionVisible;
     }
 
     return false;
