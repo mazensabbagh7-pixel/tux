@@ -28,6 +28,33 @@ describe("shouldShowInterruptedBarrier", () => {
     expect(shouldShowInterruptedBarrier(msg)).toBe(false);
   });
 
+  it("returns false for executing ask_user_question when the turn also has trailing stream-error", () => {
+    const askRow: DisplayedMessage = {
+      type: "tool",
+      id: "tool-ask",
+      historyId: "assistant-1",
+      toolName: "ask_user_question",
+      toolCallId: "call-ask",
+      args: { questions: [] },
+      status: "executing",
+      isPartial: true,
+      historySequence: 2,
+      streamSequence: 0,
+      isLastPartOfMessage: true,
+    };
+
+    const streamError: DisplayedMessage = {
+      type: "stream-error",
+      id: "stream-error-1",
+      historyId: "assistant-1",
+      error: "Connection dropped",
+      errorType: "network",
+      historySequence: 2,
+    };
+
+    expect(shouldShowInterruptedBarrier(askRow, [askRow, streamError])).toBe(false);
+  });
+
   it("returns true for trailing partial rows when fallback inference sees later unfinished output", () => {
     const questionTool: DisplayedMessage = {
       type: "tool",

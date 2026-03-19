@@ -135,6 +135,13 @@ export function shouldShowInterruptedBarrier(
     return false;
   }
 
+  // Keep executing ask_user_question rows free of interruption markers even when
+  // the same turn has a trailing stream-error row; those questions remain
+  // answerable and should not show contradictory "interrupted" affordances.
+  if (msg.type === "tool" && msg.toolName === "ask_user_question" && msg.status === "executing") {
+    return false;
+  }
+
   // Only show on the last part of multi-part messages
   if (!msg.isLastPartOfMessage) return false;
 
