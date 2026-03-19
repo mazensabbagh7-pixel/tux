@@ -943,12 +943,82 @@ export class AgentSession {
       return false;
     }
 
-    return message.parts.some(
-      (part) =>
+    // Error metadata means the turn has failed; startup auto-retry should treat
+    // this as interrupted/retryable, not an intentional waiting state.
+    if (message.metadata?.error != null) {
+      return false;
+    }
+
+    let latestPendingQuestionIndex = -1;
+    for (let partIndex = 0; partIndex < message.parts.length; partIndex += 1) {
+      const part = message.parts[partIndex];
+      if (
         part.type === "dynamic-tool" &&
         part.toolName === "ask_user_question" &&
         part.state === "input-available"
+      ) {
+        latestPendingQuestionIndex = partIndex;
+      }
+    }
+
+    if (latestPendingQuestionIndex === -1) {
+      return false;
+    }
+
+    const hasLaterPendingTool = message.parts.some(
+      (part, partIndex) =>
+        partIndex > latestPendingQuestionIndex &&
+        part.type === "dynamic-tool" &&
+        part.state === "input-available"
     );
+    if (hasLaterPendingTool) {
+      return false;
+    }
+
+    const hasLaterFailedTool = message.parts.some((part, partIndex) => {
+      if (
+        partIndex <= latestPendingQuestionIndex ||
+        part.type !== "dynamic-tool" ||
+        part.state !== "output-available"
+      ) {
+        return false;
+      }
+
+      const output = part.output;
+      if (typeof output !== "object" || output === null) {
+        return false;
+      }
+
+      if ("success" in output && output.success === false) {
+        return true;
+      }
+
+      return "error" in output && Boolean(output.error);
+    });
+    if (hasLaterFailedTool) {
+      return false;
+    }
+
+    // If the stream produced text/reasoning after asking the question, this
+    // should recover as an interrupted tail after restart.
+    if (message.metadata?.partial === true) {
+      const hasLaterTextOrReasoning = message.parts.some((part, partIndex) => {
+        if (partIndex <= latestPendingQuestionIndex) {
+          return false;
+        }
+
+        return (
+          (part.type === "text" && part.text.length > 0) ||
+          (part.type === "reasoning" && part.text.length > 0)
+        );
+      });
+
+      if (hasLaterTextOrReasoning) {
+        return false;
+      }
+    }
+
+    return true;
   }
 
   private isSyntheticSnapshotUserMessage(message: MuxMessage): boolean {

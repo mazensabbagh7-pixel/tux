@@ -223,6 +223,40 @@ describe("hasInterruptedStream", () => {
     expect(hasInterruptedStream(messages)).toBe(true);
   });
 
+  it("returns true when a failed tool follows executing ask_user_question", () => {
+    const messages: DisplayedMessage[] = [
+      {
+        type: "tool",
+        id: "tool-ask",
+        historyId: "assistant-1",
+        toolName: "ask_user_question",
+        toolCallId: "call-ask",
+        args: { questions: [] },
+        status: "executing",
+        isPartial: true,
+        historySequence: 2,
+        streamSequence: 0,
+        isLastPartOfMessage: false,
+      },
+      {
+        type: "tool",
+        id: "tool-todo",
+        historyId: "assistant-1",
+        toolName: "todo_write",
+        toolCallId: "call-todo",
+        args: { todos: [] },
+        result: { success: false, error: "write failed" },
+        status: "failed",
+        isPartial: true,
+        historySequence: 2,
+        streamSequence: 1,
+        isLastPartOfMessage: true,
+      },
+    ];
+
+    expect(hasInterruptedStream(messages)).toBe(true);
+  });
+
   it("returns false when pending ask_user_question turn is followed by plan-display row", () => {
     const messages: DisplayedMessage[] = [
       {

@@ -156,13 +156,14 @@ export function hasExecutingAskUserQuestionInLatestTurn(messages: DisplayedMessa
   }
 
   const latestHistoryId = lastMessage.historyId;
-  const isUnfinishedMessage = (message: DisplayedMessage): boolean => {
+  const isLatestTurnProgressRow = (message: DisplayedMessage): boolean => {
     switch (message.type) {
       case "tool":
         return (
           message.status === "executing" ||
           message.status === "pending" ||
-          message.status === "interrupted"
+          message.status === "interrupted" ||
+          message.status === "failed"
         );
       case "assistant":
       case "reasoning":
@@ -187,7 +188,7 @@ export function hasExecutingAskUserQuestionInLatestTurn(messages: DisplayedMessa
       return false;
     }
 
-    if (!isUnfinishedMessage(message)) {
+    if (!isLatestTurnProgressRow(message)) {
       continue;
     }
 
