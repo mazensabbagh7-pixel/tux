@@ -146,6 +146,14 @@ describe("ask_user_question waiting state", () => {
       throw new Error("Expected ask_user_question tool row");
     }
     expect(askRow.status).toBe("executing");
+
+    const todoRow = aggregator
+      .getDisplayedMessages()
+      .find((message) => message.type === "tool" && message.toolName === "todo_write");
+    if (todoRow?.type !== "tool") {
+      throw new Error("Expected todo_write tool row");
+    }
+    expect(todoRow.status).toBe("pending");
   });
 
   it("keeps every pending ask_user_question row answerable in the same turn", () => {
@@ -478,7 +486,7 @@ describe("ask_user_question waiting state", () => {
     expect(aggregator.hasAwaitingUserQuestion()).toBe(false);
   });
 
-  it("keeps awaiting input when truncation hides ask_user_question behind pending sibling tools", () => {
+  it("keeps awaiting input and keeps ask_user_question visible with pending sibling tools", () => {
     const aggregator = new StreamingMessageAggregator("2024-01-01T00:00:00.000Z");
 
     const trailingToolParts = Array.from({ length: 80 }, (_, index) => ({
@@ -524,15 +532,19 @@ describe("ask_user_question waiting state", () => {
     ]);
 
     const displayed = aggregator.getDisplayedMessages();
-    expect(
-      displayed.some(
-        (message) => message.type === "tool" && message.toolName === "ask_user_question"
-      )
-    ).toBe(false);
+    const askRow = displayed.find(
+      (message) => message.type === "tool" && message.toolName === "ask_user_question"
+    );
+
+    expect(askRow).toBeDefined();
+    if (askRow?.type !== "tool") {
+      throw new Error("Expected ask_user_question tool row");
+    }
+    expect(askRow.status).toBe("executing");
     expect(aggregator.hasAwaitingUserQuestion()).toBe(true);
   });
 
-  it("clears awaiting input when truncation hides ask_user_question behind resolved tool tails", () => {
+  it("clears awaiting input when truncation keeps ask_user_question visible behind resolved tool tails", () => {
     const aggregator = new StreamingMessageAggregator("2024-01-01T00:00:00.000Z");
 
     const trailingToolParts = Array.from({ length: 80 }, (_, index) => ({
@@ -579,11 +591,15 @@ describe("ask_user_question waiting state", () => {
     ]);
 
     const displayed = aggregator.getDisplayedMessages();
-    expect(
-      displayed.some(
-        (message) => message.type === "tool" && message.toolName === "ask_user_question"
-      )
-    ).toBe(false);
+    const askRow = displayed.find(
+      (message) => message.type === "tool" && message.toolName === "ask_user_question"
+    );
+
+    expect(askRow).toBeDefined();
+    if (askRow?.type !== "tool") {
+      throw new Error("Expected ask_user_question tool row");
+    }
+    expect(askRow.status).toBe("executing");
     expect(aggregator.hasAwaitingUserQuestion()).toBe(false);
   });
 

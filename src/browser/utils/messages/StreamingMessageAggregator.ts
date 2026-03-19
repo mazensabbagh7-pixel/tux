@@ -281,6 +281,41 @@ function getAnswerableAskUserQuestionToolCallIds(message: MuxMessage): Set<strin
   return answerableToolCallIds;
 }
 
+function getInputAvailableToolCallIdsBlockedByAwaitingQuestion(message: MuxMessage): Set<string> {
+  const blockedToolCallIds = new Set<string>();
+
+  if (message.role !== "assistant") {
+    return blockedToolCallIds;
+  }
+
+  const awaitingToolCallId = getAwaitingAskUserQuestionToolCallId(message);
+  if (awaitingToolCallId === null) {
+    return blockedToolCallIds;
+  }
+
+  let hasReachedAwaitingQuestion = false;
+  for (const part of message.parts) {
+    if (!hasReachedAwaitingQuestion) {
+      hasReachedAwaitingQuestion =
+        isDynamicToolPart(part) &&
+        part.toolName === "ask_user_question" &&
+        part.state === "input-available" &&
+        part.toolCallId === awaitingToolCallId;
+      continue;
+    }
+
+    if (
+      isDynamicToolPart(part) &&
+      part.state === "input-available" &&
+      part.toolName !== "ask_user_question"
+    ) {
+      blockedToolCallIds.add(part.toolCallId);
+    }
+  }
+
+  return blockedToolCallIds;
+}
+
 function resolveRouteProvider(
   routeProvider: string | undefined,
   routedThroughGateway: boolean | undefined
@@ -2766,6 +2801,8 @@ export class StreamingMessageAggregator {
       const mergedParts = mergeAdjacentParts(message.parts);
 
       const answerableAskUserQuestionToolCallIds = getAnswerableAskUserQuestionToolCallIds(message);
+      const inputAvailableToolCallIdsBlockedByAwaitingQuestion =
+        getInputAvailableToolCallIdsBlockedByAwaitingQuestion(message);
 
       // Find the last part that will produce a DisplayedMessage
       // (reasoning, text parts with content, OR tool parts)
@@ -2856,6 +2893,11 @@ export class StreamingMessageAggregator {
                 : isPartial
                   ? "interrupted"
                   : "executing";
+            } else if (
+              isPartial &&
+              inputAvailableToolCallIdsBlockedByAwaitingQuestion.has(part.toolCallId)
+            ) {
+              status = "pending";
             } else if (isPartial) {
               status = "interrupted";
             } else {
@@ -3043,10 +3085,22 @@ export class StreamingMessageAggregator {
       // and materialize omission runs as explicit history-hidden marker rows.
       // Full history is still maintained internally for token counting.
       if (!this.showAllMessages && displayedMessages.length > MAX_DISPLAYED_MESSAGES) {
+        const alwaysKeepMessageIds = new Set(
+          displayedMessages
+            .filter(
+              (message) =>
+                message.type === "tool" &&
+                message.toolName === "ask_user_question" &&
+                message.status === "executing"
+            )
+            .map((message) => message.id)
+        );
+
         const truncationPlan = buildTranscriptTruncationPlan({
           displayedMessages,
           maxDisplayedMessages: MAX_DISPLAYED_MESSAGES,
           alwaysKeepMessageTypes: ALWAYS_KEEP_MESSAGE_TYPES,
+          alwaysKeepMessageIds,
         });
 
         resultMessages =
