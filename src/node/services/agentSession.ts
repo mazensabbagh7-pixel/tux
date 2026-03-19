@@ -959,19 +959,15 @@ export class AgentSession {
       return false;
     }
 
-    const hasLaterPendingTool = message.parts.some(
-      (part, partIndex) =>
-        partIndex > latestPendingQuestionIndex &&
-        part.type === "dynamic-tool" &&
-        part.state === "input-available"
+    // ask_user_question execution blocks on user input. Any later dynamic-tool
+    // part means the question already resolved and startup recovery should treat
+    // the turn as interrupted tail output rather than pending input.
+    const hasLaterToolPart = message.parts.some(
+      (part, partIndex) => partIndex > latestPendingQuestionIndex && part.type === "dynamic-tool"
     );
-    if (hasLaterPendingTool) {
+    if (hasLaterToolPart) {
       return false;
     }
-
-    // Keep logical tool failures after ask_user_question in the waiting state.
-    // The persisted partial can still be answered/resumed via answerAskUserQuestion
-    // after restart, so startup auto-retry should not immediately re-run the turn.
 
     // If the stream produced text/reasoning after asking the question, this
     // should recover as an interrupted tail after restart.

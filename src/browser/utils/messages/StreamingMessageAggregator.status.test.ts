@@ -94,7 +94,7 @@ describe("ask_user_question waiting state", () => {
     expect(aggregator.hasAwaitingUserQuestion()).toBe(true);
   });
 
-  it("keeps awaiting state when ask_user_question is followed by completed tool parts", () => {
+  it("does not report awaiting input when completed tool output follows ask_user_question", () => {
     const aggregator = new StreamingMessageAggregator("2024-01-01T00:00:00.000Z");
 
     aggregator.loadHistoricalMessages([
@@ -138,7 +138,15 @@ describe("ask_user_question waiting state", () => {
       },
     ]);
 
-    expect(aggregator.hasAwaitingUserQuestion()).toBe(true);
+    expect(aggregator.hasAwaitingUserQuestion()).toBe(false);
+
+    const askRow = aggregator
+      .getDisplayedMessages()
+      .find((message) => message.type === "tool" && message.toolName === "ask_user_question");
+    if (askRow?.type !== "tool") {
+      throw new Error("Expected ask_user_question tool row");
+    }
+    expect(askRow.status).toBe("interrupted");
   });
 
   it("does not report awaiting input when a later tool result fails after the question", () => {
@@ -193,7 +201,7 @@ describe("ask_user_question waiting state", () => {
     if (askRow?.type !== "tool") {
       throw new Error("Expected ask_user_question tool row");
     }
-    expect(askRow.status).toBe("executing");
+    expect(askRow.status).toBe("interrupted");
   });
 
   it("does not report awaiting input when a later failed redacted tool follows the question", () => {
@@ -248,7 +256,7 @@ describe("ask_user_question waiting state", () => {
     if (askRow?.type !== "tool") {
       throw new Error("Expected ask_user_question tool row");
     }
-    expect(askRow.status).toBe("executing");
+    expect(askRow.status).toBe("interrupted");
   });
 
   it("does not report awaiting input when a later partial text segment follows the question", () => {

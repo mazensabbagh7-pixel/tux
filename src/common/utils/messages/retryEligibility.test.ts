@@ -257,7 +257,7 @@ describe("hasInterruptedStream", () => {
     expect(hasInterruptedStream(messages)).toBe(true);
   });
 
-  it("returns false when pending ask_user_question turn is followed by plan-display row", () => {
+  it("returns true when completed tool output follows ask_user_question", () => {
     const messages: DisplayedMessage[] = [
       {
         type: "tool",
@@ -286,17 +286,9 @@ describe("hasInterruptedStream", () => {
         streamSequence: 1,
         isLastPartOfMessage: true,
       },
-      {
-        type: "plan-display",
-        id: "plan-display-1",
-        historyId: "plan-display-1",
-        content: "# Plan",
-        path: "/tmp/plan.md",
-        historySequence: Number.MAX_SAFE_INTEGER,
-      },
     ];
 
-    expect(hasInterruptedStream(messages)).toBe(false);
+    expect(hasInterruptedStream(messages)).toBe(true);
   });
   it("returns true when latest row is stream-error even if turn includes executing ask_user_question", () => {
     const messages: DisplayedMessage[] = [

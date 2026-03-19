@@ -170,7 +170,6 @@ function hasFailureResult(result: unknown): boolean {
 
 interface AskUserQuestionResolutionOptions {
   suppressForMessageError: boolean;
-  suppressForLaterFailedTool: boolean;
 }
 
 /**
@@ -210,31 +209,14 @@ function resolveAskUserQuestionToolCallId(
     return null;
   }
 
-  // If a later tool call is still unfinished, that later interruption should
-  // win over the earlier ask_user_question waiting state.
-  const hasLaterPendingTool = message.parts.some(
-    (part, partIndex) =>
-      partIndex > latestPendingQuestionIndex &&
-      isDynamicToolPart(part) &&
-      part.state === "input-available"
+  // ask_user_question execution blocks until the user has answered. If any
+  // later tool part exists, the question has already been consumed and the turn
+  // should recover as interrupted/output tail instead of awaiting input.
+  const hasLaterToolPart = message.parts.some(
+    (part, partIndex) => partIndex > latestPendingQuestionIndex && isDynamicToolPart(part)
   );
-  if (hasLaterPendingTool) {
+  if (hasLaterToolPart) {
     return null;
-  }
-
-  if (options.suppressForLaterFailedTool) {
-    // If a later tool has already failed, the latest visible state is an
-    // interruption/error and retry affordances should remain visible.
-    const hasLaterFailedTool = message.parts.some(
-      (part, partIndex) =>
-        partIndex > latestPendingQuestionIndex &&
-        isDynamicToolPart(part) &&
-        ((part.state === "output-available" && hasFailureResult(part.output)) ||
-          (part.state === "output-redacted" && part.failed === true))
-    );
-    if (hasLaterFailedTool) {
-      return null;
-    }
   }
 
   // Persisted partial turns can include additional trailing text/reasoning
@@ -267,19 +249,16 @@ function resolveAskUserQuestionToolCallId(
 function getAwaitingAskUserQuestionToolCallId(message: MuxMessage): string | null {
   return resolveAskUserQuestionToolCallId(message, {
     suppressForMessageError: true,
-    suppressForLaterFailedTool: true,
   });
 }
 
 /**
- * Answer UI should remain available for pending ask_user_question turns even if
- * a later tool reported logical failure (e.g. success:false) and startup
- * auto-retry intentionally defers.
+ * Answer UI can stay available for message-level error tails, but once any later
+ * tool part exists the question has already been consumed and is no longer answerable.
  */
 function getAnswerableAskUserQuestionToolCallId(message: MuxMessage): string | null {
   return resolveAskUserQuestionToolCallId(message, {
     suppressForMessageError: false,
-    suppressForLaterFailedTool: false,
   });
 }
 

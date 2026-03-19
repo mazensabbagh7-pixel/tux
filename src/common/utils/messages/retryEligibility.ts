@@ -163,7 +163,8 @@ export function hasExecutingAskUserQuestionInLatestTurn(messages: DisplayedMessa
           message.status === "executing" ||
           message.status === "pending" ||
           message.status === "interrupted" ||
-          message.status === "failed"
+          message.status === "failed" ||
+          message.status === "completed"
         );
       case "assistant":
       case "reasoning":
@@ -175,6 +176,15 @@ export function hasExecutingAskUserQuestionInLatestTurn(messages: DisplayedMessa
 
   for (let i = messages.length - 1; i >= 0; i--) {
     const message = messages[i];
+    if (
+      message.type === "plan-display" ||
+      message.type === "history-hidden" ||
+      message.type === "workspace-init" ||
+      message.type === "compaction-boundary"
+    ) {
+      continue;
+    }
+
     if (!("historyId" in message)) {
       continue;
     }
