@@ -168,12 +168,19 @@ function hasFailureResult(result: unknown): boolean {
   return false;
 }
 
+interface AskUserQuestionResolutionOptions {
+  suppressForLaterFailedTool: boolean;
+}
+
 /**
- * Returns the toolCallId of the latest ask_user_question that is still truly
- * awaiting user input in this assistant turn, or null when waiting should be
- * suppressed in favor of interruption/retry UX.
+ * Returns the toolCallId of the latest ask_user_question in this assistant turn
+ * that should remain answerable in the UI, or null when it should be treated as
+ * an interruption/retry tail.
  */
-function getAwaitingAskUserQuestionToolCallId(message: MuxMessage): string | null {
+function resolveAskUserQuestionToolCallId(
+  message: MuxMessage,
+  options: AskUserQuestionResolutionOptions
+): string | null {
   if (message.role !== "assistant") {
     return null;
   }
@@ -214,17 +221,19 @@ function getAwaitingAskUserQuestionToolCallId(message: MuxMessage): string | nul
     return null;
   }
 
-  // If a later tool has already failed, the latest visible state is an
-  // interruption/error and retry affordances should remain visible.
-  const hasLaterFailedTool = message.parts.some(
-    (part, partIndex) =>
-      partIndex > latestPendingQuestionIndex &&
-      isDynamicToolPart(part) &&
-      ((part.state === "output-available" && hasFailureResult(part.output)) ||
-        (part.state === "output-redacted" && part.failed === true))
-  );
-  if (hasLaterFailedTool) {
-    return null;
+  if (options.suppressForLaterFailedTool) {
+    // If a later tool has already failed, the latest visible state is an
+    // interruption/error and retry affordances should remain visible.
+    const hasLaterFailedTool = message.parts.some(
+      (part, partIndex) =>
+        partIndex > latestPendingQuestionIndex &&
+        isDynamicToolPart(part) &&
+        ((part.state === "output-available" && hasFailureResult(part.output)) ||
+          (part.state === "output-redacted" && part.failed === true))
+    );
+    if (hasLaterFailedTool) {
+      return null;
+    }
   }
 
   // Persisted partial turns can include additional trailing text/reasoning
@@ -248,6 +257,23 @@ function getAwaitingAskUserQuestionToolCallId(message: MuxMessage): string | nul
   }
 
   return latestPendingQuestionToolCallId;
+}
+
+/**
+ * Awaiting-input workspace state should clear when later failed tools appear so
+ * retry/interruption affordances can be shown.
+ */
+function getAwaitingAskUserQuestionToolCallId(message: MuxMessage): string | null {
+  return resolveAskUserQuestionToolCallId(message, { suppressForLaterFailedTool: true });
+}
+
+/**
+ * Answer UI should remain available for pending ask_user_question turns even if
+ * a later tool reported logical failure (e.g. success:false) and startup
+ * auto-retry intentionally defers.
+ */
+function getAnswerableAskUserQuestionToolCallId(message: MuxMessage): string | null {
+  return resolveAskUserQuestionToolCallId(message, { suppressForLaterFailedTool: false });
 }
 
 function resolveRouteProvider(
@@ -2735,7 +2761,7 @@ export class StreamingMessageAggregator {
       // Merge adjacent text/reasoning parts for display
       const mergedParts = mergeAdjacentParts(message.parts);
 
-      const awaitingAskUserQuestionToolCallId = getAwaitingAskUserQuestionToolCallId(message);
+      const answerableAskUserQuestionToolCallId = getAnswerableAskUserQuestionToolCallId(message);
 
       // Find the last part that will produce a DisplayedMessage
       // (reasoning, text parts with content, OR tool parts)
@@ -2822,7 +2848,7 @@ export class StreamingMessageAggregator {
             // showing retry/auto-resume UX.
             if (part.toolName === "ask_user_question") {
               status =
-                part.toolCallId === awaitingAskUserQuestionToolCallId
+                part.toolCallId === answerableAskUserQuestionToolCallId
                   ? "executing"
                   : isPartial
                     ? "interrupted"

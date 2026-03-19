@@ -186,6 +186,14 @@ describe("ask_user_question waiting state", () => {
     ]);
 
     expect(aggregator.hasAwaitingUserQuestion()).toBe(false);
+
+    const askRow = aggregator
+      .getDisplayedMessages()
+      .find((message) => message.type === "tool" && message.toolName === "ask_user_question");
+    if (askRow?.type !== "tool") {
+      throw new Error("Expected ask_user_question tool row");
+    }
+    expect(askRow.status).toBe("executing");
   });
 
   it("does not report awaiting input when a later failed redacted tool follows the question", () => {
@@ -240,7 +248,7 @@ describe("ask_user_question waiting state", () => {
     if (askRow?.type !== "tool") {
       throw new Error("Expected ask_user_question tool row");
     }
-    expect(askRow.status).toBe("interrupted");
+    expect(askRow.status).toBe("executing");
   });
 
   it("does not report awaiting input when a later partial text segment follows the question", () => {
