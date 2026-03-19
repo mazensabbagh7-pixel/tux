@@ -285,6 +285,58 @@ describe("ask_user_question waiting state", () => {
 
     expect(aggregator.hasAwaitingUserQuestion()).toBe(false);
   });
+
+  it("ignores plan-display rows when inferring awaiting input", () => {
+    const aggregator = new StreamingMessageAggregator("2024-01-01T00:00:00.000Z");
+
+    aggregator.loadHistoricalMessages([
+      {
+        id: "assistant-1",
+        role: "assistant" as const,
+        parts: [
+          {
+            type: "dynamic-tool" as const,
+            toolCallId: "call-ask-1",
+            toolName: "ask_user_question",
+            state: "input-available" as const,
+            input: {
+              questions: [
+                {
+                  header: "Approach",
+                  question: "Which approach should we take?",
+                  options: [
+                    { label: "A", description: "Approach A" },
+                    { label: "B", description: "Approach B" },
+                  ],
+                  multiSelect: false,
+                },
+              ],
+            },
+          },
+        ],
+        metadata: {
+          timestamp: 1000,
+          historySequence: 1,
+          partial: true,
+        },
+      },
+      {
+        id: "plan-display-1",
+        role: "assistant" as const,
+        parts: [{ type: "text" as const, text: "# Plan\n\n- Draft" }],
+        metadata: {
+          timestamp: 2000,
+          historySequence: Number.MAX_SAFE_INTEGER,
+          muxMetadata: {
+            type: "plan-display",
+            path: "/tmp/plan.md",
+          },
+        },
+      },
+    ]);
+
+    expect(aggregator.hasAwaitingUserQuestion()).toBe(true);
+  });
 });
 
 describe("StreamingMessageAggregator - Agent Status", () => {

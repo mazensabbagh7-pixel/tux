@@ -732,6 +732,12 @@ export class StreamingMessageAggregator {
         continue;
       }
 
+      // Ignore ephemeral /plan transcript rows when determining whether the
+      // underlying assistant turn is still waiting for ask_user_question input.
+      if (message.metadata?.muxMetadata?.type === "plan-display") {
+        continue;
+      }
+
       if (message.role !== "assistant") {
         return false;
       }
