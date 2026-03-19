@@ -189,6 +189,61 @@ describe("ask_user_question waiting state", () => {
 
     expect(aggregator.hasAwaitingUserQuestion()).toBe(false);
   });
+
+  it("keeps awaiting state even when display truncation hides the ask_user_question row", () => {
+    const aggregator = new StreamingMessageAggregator("2024-01-01T00:00:00.000Z");
+
+    const trailingToolParts = Array.from({ length: 80 }, (_, index) => ({
+      type: "dynamic-tool" as const,
+      toolCallId: `call-todo-${index}`,
+      toolName: "todo_write",
+      state: "output-available" as const,
+      input: { todos: [{ content: `Task ${index}`, status: "in_progress" }] },
+      output: { success: true },
+    }));
+
+    aggregator.loadHistoricalMessages([
+      {
+        id: "assistant-1",
+        role: "assistant" as const,
+        parts: [
+          {
+            type: "dynamic-tool" as const,
+            toolCallId: "call-ask-1",
+            toolName: "ask_user_question",
+            state: "input-available" as const,
+            input: {
+              questions: [
+                {
+                  header: "Approach",
+                  question: "Which approach should we take?",
+                  options: [
+                    { label: "A", description: "Approach A" },
+                    { label: "B", description: "Approach B" },
+                  ],
+                  multiSelect: false,
+                },
+              ],
+            },
+          },
+          ...trailingToolParts,
+        ],
+        metadata: {
+          timestamp: 1000,
+          historySequence: 1,
+          partial: true,
+        },
+      },
+    ]);
+
+    const displayed = aggregator.getDisplayedMessages();
+    expect(
+      displayed.some(
+        (message) => message.type === "tool" && message.toolName === "ask_user_question"
+      )
+    ).toBe(false);
+    expect(aggregator.hasAwaitingUserQuestion()).toBe(true);
+  });
 });
 
 describe("StreamingMessageAggregator - Agent Status", () => {

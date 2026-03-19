@@ -115,6 +115,42 @@ export function getLastNonDecorativeMessage(
 }
 
 /**
+ * Check whether the latest non-decorative turn is intentionally waiting on
+ * ask_user_question input.
+ *
+ * We scope this to the latest historyId turn so stale historical questions do
+ * not suppress interruption/retry UI once conversation has moved on.
+ */
+export function hasExecutingAskUserQuestionInLatestTurn(messages: DisplayedMessage[]): boolean {
+  const lastMessage = getLastNonDecorativeMessage(messages);
+  if (!lastMessage || !("historyId" in lastMessage)) {
+    return false;
+  }
+
+  const latestHistoryId = lastMessage.historyId;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i];
+    if (!("historyId" in message)) {
+      continue;
+    }
+
+    if (message.historyId !== latestHistoryId) {
+      break;
+    }
+
+    if (
+      message.type === "tool" &&
+      message.toolName === "ask_user_question" &&
+      message.status === "executing"
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
  * Check if messages contain an interrupted stream
  *
  * Used by AIView to determine if RetryBarrier should be shown.
@@ -169,13 +205,10 @@ function computeHasInterruptedStream(
   // ask_user_question is a special case: an unfinished tool call represents an
   // intentional "waiting for user input" state, not a stream interruption.
   //
-  // Treating it as interrupted causes RetryBarrier + auto-resume to fire on app
-  // restart, which re-runs the LLM call and re-asks the questions.
-  if (
-    lastMessage.type === "tool" &&
-    lastMessage.toolName === "ask_user_question" &&
-    lastMessage.status === "executing"
-  ) {
+  // We suppress interruption/retry for the entire latest turn when it contains
+  // an executing ask_user_question call, including cases where later parts in
+  // the same turn were emitted after the question.
+  if (hasExecutingAskUserQuestionInLatestTurn(messages)) {
     return false;
   }
 

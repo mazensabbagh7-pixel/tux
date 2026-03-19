@@ -1,6 +1,10 @@
 import type { DisplayedMessage } from "@/common/types/message";
 import { formatReviewForModel } from "@/common/types/review";
 import type { BashOutputToolArgs } from "@/common/types/tools";
+import {
+  getLastNonDecorativeMessage,
+  hasExecutingAskUserQuestionInLatestTurn,
+} from "@/common/utils/messages/retryEligibility";
 
 /**
  * Returns the text that should be placed into the ChatInput when editing a user message.
@@ -72,7 +76,10 @@ export interface BashOutputGroupInfo {
  * - Message was interrupted (isPartial) AND not currently streaming
  * - For multi-part messages, only show on the last part
  */
-export function shouldShowInterruptedBarrier(msg: DisplayedMessage): boolean {
+export function shouldShowInterruptedBarrier(
+  msg: DisplayedMessage,
+  allMessages: DisplayedMessage[] = [msg]
+): boolean {
   if (
     msg.type === "user" ||
     msg.type === "stream-error" ||
@@ -85,9 +92,15 @@ export function shouldShowInterruptedBarrier(msg: DisplayedMessage): boolean {
 
   // ask_user_question is intentionally a "waiting for input" state. Even if the
   // underlying message is a persisted partial (e.g. after app restart), we keep
-  // it answerable instead of showing "Interrupted".
-  if (msg.type === "tool" && msg.toolName === "ask_user_question" && msg.status === "executing") {
-    return false;
+  // the full latest turn answerable instead of showing "Interrupted" on any
+  // trailing parts from that same assistant message.
+  if (hasExecutingAskUserQuestionInLatestTurn(allMessages)) {
+    const lastMessage = getLastNonDecorativeMessage(allMessages);
+    if (lastMessage && "historyId" in msg && "historyId" in lastMessage) {
+      if (msg.historyId === lastMessage.historyId) {
+        return false;
+      }
+    }
   }
 
   // Only show on the last part of multi-part messages

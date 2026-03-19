@@ -170,6 +170,59 @@ describe("hasInterruptedStream", () => {
 
     expect(hasInterruptedStream(messages)).toBe(false);
   });
+
+  it("returns false when latest turn contains executing ask_user_question plus trailing parts", () => {
+    const messages: DisplayedMessage[] = [
+      {
+        type: "user",
+        id: "user-1",
+        historyId: "user-1",
+        content: "Hello",
+        historySequence: 1,
+      },
+      {
+        type: "tool",
+        id: "tool-ask",
+        historyId: "assistant-1",
+        toolName: "ask_user_question",
+        toolCallId: "call-ask",
+        args: { questions: [] },
+        status: "executing",
+        isPartial: true,
+        historySequence: 2,
+        streamSequence: 0,
+        isLastPartOfMessage: false,
+      },
+      {
+        type: "tool",
+        id: "tool-todo",
+        historyId: "assistant-1",
+        toolName: "todo_write",
+        toolCallId: "call-todo",
+        args: { todos: [] },
+        status: "completed",
+        isPartial: true,
+        historySequence: 2,
+        streamSequence: 1,
+        isLastPartOfMessage: false,
+      },
+      {
+        type: "assistant",
+        id: "assistant-tail",
+        historyId: "assistant-1",
+        content: "Please answer above.",
+        historySequence: 2,
+        streamSequence: 2,
+        isStreaming: false,
+        isPartial: true,
+        isLastPartOfMessage: true,
+        isCompacted: false,
+        isIdleCompacted: false,
+      },
+    ];
+
+    expect(hasInterruptedStream(messages)).toBe(false);
+  });
   it("returns true for partial tool message", () => {
     const messages: DisplayedMessage[] = [
       {

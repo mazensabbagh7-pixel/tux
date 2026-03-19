@@ -28,6 +28,39 @@ describe("shouldShowInterruptedBarrier", () => {
     expect(shouldShowInterruptedBarrier(msg)).toBe(false);
   });
 
+  it("returns false for trailing partial rows when latest turn contains executing ask_user_question", () => {
+    const questionTool: DisplayedMessage = {
+      type: "tool",
+      id: "tool-ask",
+      historyId: "assistant-1",
+      toolName: "ask_user_question",
+      toolCallId: "call-ask",
+      args: { questions: [] },
+      status: "executing",
+      isPartial: true,
+      historySequence: 2,
+      streamSequence: 0,
+      isLastPartOfMessage: false,
+    };
+
+    const trailingPartialText: DisplayedMessage = {
+      type: "assistant",
+      id: "assistant-tail",
+      historyId: "assistant-1",
+      content: "Please answer above.",
+      historySequence: 2,
+      streamSequence: 1,
+      isStreaming: false,
+      isPartial: true,
+      isLastPartOfMessage: true,
+      isCompacted: false,
+      isIdleCompacted: false,
+    };
+
+    const messages = [questionTool, trailingPartialText];
+
+    expect(shouldShowInterruptedBarrier(trailingPartialText, messages)).toBe(false);
+  });
   it("returns false for decorative compaction boundary rows", () => {
     const msg: DisplayedMessage = {
       type: "compaction-boundary",

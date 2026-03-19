@@ -716,34 +716,32 @@ export class StreamingMessageAggregator {
    * Used to show "Awaiting your input" instead of "streaming..." in the UI.
    */
   hasAwaitingUserQuestion(): boolean {
-    const displayed = this.getDisplayedMessages();
-    const last = displayed[displayed.length - 1];
+    const showSyntheticMessages =
+      typeof window !== "undefined" && window.api?.debugLlmRequest === true;
 
-    if (!last || !("historyId" in last)) {
-      return false;
-    }
+    // Use untruncated history so long turns cannot hide an awaiting question
+    // behind history-hidden markers in getDisplayedMessages().
+    const allMessages = this.getAllMessages();
 
-    // Treat the latest assistant turn as "awaiting input" when it contains an
-    // executing ask_user_question tool, even if later parts in the same turn
-    // (text or other tool calls) were emitted after the question.
-    //
-    // We intentionally scope to the latest historyId only so stale historical
-    // questions do not keep the workspace in an awaiting state once the chat has
-    // moved on to a newer message.
-    const latestHistoryId = last.historyId;
-    for (let i = displayed.length - 1; i >= 0; i--) {
-      const message = displayed[i];
-      if (!("historyId" in message) || message.historyId !== latestHistoryId) {
-        break;
+    // Find the latest history message that is visible in the transcript.
+    for (let i = allMessages.length - 1; i >= 0; i--) {
+      const message = allMessages[i];
+      const isSynthetic = message.metadata?.synthetic === true;
+      const isUiVisibleSynthetic = message.metadata?.uiVisible === true;
+      if (isSynthetic && !showSyntheticMessages && !isUiVisibleSynthetic) {
+        continue;
       }
 
-      if (
-        message.type === "tool" &&
-        message.toolName === "ask_user_question" &&
-        message.status === "executing"
-      ) {
-        return true;
+      if (message.role !== "assistant") {
+        return false;
       }
+
+      return message.parts.some(
+        (part) =>
+          isDynamicToolPart(part) &&
+          part.toolName === "ask_user_question" &&
+          part.state === "input-available"
+      );
     }
 
     return false;
