@@ -716,19 +716,37 @@ export class StreamingMessageAggregator {
    * Used to show "Awaiting your input" instead of "streaming..." in the UI.
    */
   hasAwaitingUserQuestion(): boolean {
-    // Only treat the workspace as "awaiting input" when the *latest* displayed
-    // message is an executing ask_user_question tool.
-    //
-    // This avoids false positives from stale historical partials if the user
-    // continued the chat after skipping/canceling the questions.
     const displayed = this.getDisplayedMessages();
     const last = displayed[displayed.length - 1];
 
-    if (last?.type !== "tool") {
+    if (!last || !("historyId" in last)) {
       return false;
     }
 
-    return last.toolName === "ask_user_question" && last.status === "executing";
+    // Treat the latest assistant turn as "awaiting input" when it contains an
+    // executing ask_user_question tool, even if later parts in the same turn
+    // (text or other tool calls) were emitted after the question.
+    //
+    // We intentionally scope to the latest historyId only so stale historical
+    // questions do not keep the workspace in an awaiting state once the chat has
+    // moved on to a newer message.
+    const latestHistoryId = last.historyId;
+    for (let i = displayed.length - 1; i >= 0; i--) {
+      const message = displayed[i];
+      if (!("historyId" in message) || message.historyId !== latestHistoryId) {
+        break;
+      }
+
+      if (
+        message.type === "tool" &&
+        message.toolName === "ask_user_question" &&
+        message.status === "executing"
+      ) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   /**
