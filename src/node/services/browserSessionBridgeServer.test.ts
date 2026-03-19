@@ -215,6 +215,40 @@ async function waitForWebSocketClose(ws: WebSocket): Promise<{ code: number; rea
   });
 }
 
+async function waitForWebSocketMessage(ws: WebSocket): Promise<string> {
+  return await new Promise<string>((resolve, reject) => {
+    const onMessage = (data: string | Buffer | Buffer[] | ArrayBuffer) => {
+      cleanup();
+      if (typeof data === "string") {
+        resolve(data);
+        return;
+      }
+      if (Buffer.isBuffer(data)) {
+        resolve(data.toString());
+        return;
+      }
+      if (Array.isArray(data)) {
+        resolve(Buffer.concat(data).toString());
+        return;
+      }
+      resolve(Buffer.from(data).toString());
+    };
+
+    const onError = (error: Error) => {
+      cleanup();
+      reject(error);
+    };
+
+    const cleanup = () => {
+      ws.off("message", onMessage);
+      ws.off("error", onError);
+    };
+
+    ws.once("message", onMessage);
+    ws.once("error", onError);
+  });
+}
+
 describe("BrowserFrameBridgeServer", () => {
   test("relays the initial frame snapshot and subsequent frame events", async () => {
     const bridgeServer = createBridgeServer();
@@ -419,6 +453,36 @@ describe("BrowserFrameBridgeServer", () => {
       expect(await bridgeServer.server.stop()).toBeUndefined();
     } finally {
       ws.close();
+    }
+  });
+
+  test("accepts new upgrades after stop completes", async () => {
+    const bridgeServer = createBridgeServer();
+    const upgradeHarness = await listenUpgradeServer(bridgeServer.server);
+    const expectedInitialFrame = JSON.stringify({
+      type: "frame",
+      base64Data: "initial-frame",
+      metadata: createLiveSession().lastFrameMetadata,
+    });
+
+    let firstWs: WebSocket | null = null;
+    let secondWs: WebSocket | null = null;
+    try {
+      firstWs = new WebSocket(`ws://127.0.0.1:${upgradeHarness.port}/?token=${VALID_TOKEN}`);
+      expect(await waitForWebSocketMessage(firstWs)).toBe(expectedInitialFrame);
+
+      const firstClosePromise = waitForWebSocketClose(firstWs);
+      await bridgeServer.server.stop();
+      const firstCloseEvent = await firstClosePromise;
+      expect(firstCloseEvent.reason).toBe("Server stopping");
+      expect([1000, 1001]).toContain(firstCloseEvent.code);
+
+      secondWs = new WebSocket(`ws://127.0.0.1:${upgradeHarness.port}/?token=${VALID_TOKEN}`);
+      expect(await waitForWebSocketMessage(secondWs)).toBe(expectedInitialFrame);
+    } finally {
+      secondWs?.close();
+      await upgradeHarness.close();
+      await bridgeServer.server.stop();
     }
   });
 

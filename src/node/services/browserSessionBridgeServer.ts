@@ -14,6 +14,10 @@ const SERVER_STOPPING_CLOSE_CODE = 1001;
 const HEARTBEAT_INTERVAL_MS = 30_000;
 const REQUEST_BASE_URL = "http://localhost";
 
+function createBridgeWebSocketServer(): WebSocketServer {
+  return new WebSocketServer({ noServer: true });
+}
+
 interface ActiveBrowserConnection {
   ws: WebSocket;
   workspaceId: string;
@@ -91,8 +95,10 @@ export class BrowserFrameBridgeServer {
     "getActiveSession" | "onFrameEvent" | "offFrameEvent"
   >;
   private readonly browserSessionTokenManager: Pick<BrowserSessionTokenManager, "validate">;
-  private readonly wss = new WebSocketServer({ noServer: true });
+  private wss = createBridgeWebSocketServer();
   private readonly activeConnections = new Set<ActiveBrowserConnection>();
+  // API server restarts reuse the same bridge instance, so stop() must leave it ready to
+  // accept fresh upgrades once the previous WebSocketServer has been drained and closed.
   private isStopping = false;
   private stopPromise: Promise<void> | null = null;
 
@@ -129,7 +135,8 @@ export class BrowserFrameBridgeServer {
     }
 
     this.isStopping = true;
-    this.stopPromise = (async () => {
+    const wss = this.wss;
+    const stopPromise = (async () => {
       const activeConnections = Array.from(this.activeConnections);
       const trackedWebSockets = new Set(activeConnections.map((connection) => connection.ws));
       const activeConnectionClosePromises = activeConnections.map((connection) =>
@@ -145,7 +152,7 @@ export class BrowserFrameBridgeServer {
       await Promise.allSettled(activeConnectionClosePromises);
 
       const orphanClientClosePromises: Array<Promise<void>> = [];
-      for (const ws of this.wss.clients) {
+      for (const ws of wss.clients) {
         if (trackedWebSockets.has(ws)) {
           continue;
         }
@@ -155,7 +162,7 @@ export class BrowserFrameBridgeServer {
       }
       await Promise.allSettled(orphanClientClosePromises);
 
-      for (const ws of this.wss.clients) {
+      for (const ws of wss.clients) {
         if (ws.readyState !== WebSocket.CLOSED) {
           ws.terminate();
         }
@@ -164,7 +171,7 @@ export class BrowserFrameBridgeServer {
       this.activeConnections.clear();
 
       await new Promise<void>((resolve) => {
-        this.wss.close((error) => {
+        wss.close((error) => {
           if (error) {
             log.debug("BrowserFrameBridgeServer: WebSocket server close returned an error", {
               error,
@@ -174,8 +181,17 @@ export class BrowserFrameBridgeServer {
         });
       });
     })();
+    this.stopPromise = stopPromise;
 
-    await this.stopPromise;
+    try {
+      await stopPromise;
+    } finally {
+      this.stopPromise = null;
+      this.isStopping = false;
+      if (this.wss === wss) {
+        this.wss = createBridgeWebSocketServer();
+      }
+    }
   }
 
   private handleUpgradedConnection(ws: WebSocket, request: IncomingMessage): void {

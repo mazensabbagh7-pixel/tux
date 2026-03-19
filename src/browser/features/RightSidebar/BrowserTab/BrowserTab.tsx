@@ -173,6 +173,15 @@ export function BrowserTab(props: BrowserTabProps) {
     }
     return null;
   })();
+  // Keep coordinate metadata in lockstep with the direct frame stream so clicks target
+  // the same frame BrowserViewport is currently rendering.
+  const viewportSession =
+    frameStream.connected && frameStream.metadata != null && session != null
+      ? {
+          ...session,
+          lastFrameMetadata: frameStream.metadata,
+        }
+      : session;
   const visibleError =
     startError ?? error ?? session?.lastError ?? session?.streamErrorMessage ?? null;
   const visibleClosedNotice = visibleError == null ? getEndedSessionNotice(session) : null;
@@ -528,7 +537,7 @@ export function BrowserTab(props: BrowserTabProps) {
       <div className="flex min-h-0 flex-1 flex-col">
         <BrowserViewport
           workspaceId={props.workspaceId}
-          session={session}
+          session={viewportSession}
           screenshotSrc={screenshotSrc}
           visibleError={visibleError}
           visibleInfoNotice={visibleClosedNotice}
