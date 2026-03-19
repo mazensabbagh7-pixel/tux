@@ -32,6 +32,32 @@ describe("getLastNonDecorativeMessage", () => {
     expect(lastMessage?.id).toBe("error-1");
   });
 
+  it("ignores trailing plan-display rows when finding latest actionable row", () => {
+    const messages: DisplayedMessage[] = [
+      {
+        type: "assistant",
+        id: "assistant-1",
+        historyId: "assistant-1",
+        content: "Working...",
+        historySequence: 1,
+        isStreaming: false,
+        isPartial: true,
+        isCompacted: false,
+        isIdleCompacted: false,
+      },
+      {
+        type: "plan-display",
+        id: "plan-display-1",
+        historyId: "plan-display-1",
+        content: "# Plan",
+        path: "/tmp/plan.md",
+        historySequence: Number.MAX_SAFE_INTEGER,
+      },
+    ];
+
+    const lastMessage = getLastNonDecorativeMessage(messages);
+    expect(lastMessage?.id).toBe("assistant-1");
+  });
   it("returns undefined when all rows are decorative", () => {
     const messages: DisplayedMessage[] = [
       {

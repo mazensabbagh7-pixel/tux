@@ -81,6 +81,35 @@ describe("shouldShowInterruptedBarrier", () => {
       false
     );
   });
+
+  it("ignores trailing plan-display rows when awaitingUserQuestion is true", () => {
+    const trailingPartialText: DisplayedMessage = {
+      type: "assistant",
+      id: "assistant-tail",
+      historyId: "assistant-1",
+      content: "Please answer above.",
+      historySequence: 2,
+      streamSequence: 1,
+      isStreaming: false,
+      isPartial: true,
+      isLastPartOfMessage: true,
+      isCompacted: false,
+      isIdleCompacted: false,
+    };
+
+    const planDisplay: DisplayedMessage = {
+      type: "plan-display",
+      id: "plan-display-1",
+      historyId: "plan-display-1",
+      content: "# Plan",
+      path: "/tmp/plan.md",
+      historySequence: Number.MAX_SAFE_INTEGER,
+    };
+
+    expect(
+      shouldShowInterruptedBarrier(trailingPartialText, [trailingPartialText, planDisplay], true)
+    ).toBe(false);
+  });
   it("returns false for decorative compaction boundary rows", () => {
     const msg: DisplayedMessage = {
       type: "compaction-boundary",
