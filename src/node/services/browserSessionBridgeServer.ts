@@ -231,6 +231,20 @@ export class BrowserFrameBridgeServer {
       ws,
       workspaceId: tokenInfo.workspaceId,
       frameHandler: (frame) => {
+        const currentSession = this.browserSessionService.getActiveSession(tokenInfo.workspaceId);
+        if (currentSession?.id !== tokenInfo.sessionId) {
+          log.debug("BrowserFrameBridgeServer closing stale session connection", {
+            workspaceId: tokenInfo.workspaceId,
+            tokenSessionId: tokenInfo.sessionId,
+            currentSessionId: currentSession?.id ?? "none",
+          });
+          this.cleanupConnection(connection, {
+            closeCode: SESSION_MISMATCH_CLOSE_CODE,
+            closeReason: "Session mismatch",
+          });
+          return;
+        }
+
         if (ws.readyState !== WebSocket.OPEN) {
           return;
         }

@@ -486,6 +486,37 @@ describe("BrowserFrameBridgeServer", () => {
     }
   });
 
+  test("closes stale session connections before forwarding new session frames", async () => {
+    let currentSession = createLiveSession();
+    const bridgeServer = createBridgeServer();
+    bridgeServer.service.getActiveSession.mockImplementation(() => currentSession);
+    const ws = new FakeBridgeWebSocket();
+    const privateBridgeServer = bridgeServer.server as unknown as PrivateBrowserFrameBridgeServer;
+
+    try {
+      privateBridgeServer.handleUpgradedConnection(
+        ws as unknown as WebSocket,
+        {
+          url: `/?token=${VALID_TOKEN}`,
+        } as http.IncomingMessage
+      );
+      expect(bridgeServer.getHandlerCount(VALID_WORKSPACE_ID)).toBe(1);
+
+      currentSession = createLiveSession({ id: "replacement-session" });
+      bridgeServer.emitFrame(VALID_WORKSPACE_ID, {
+        base64Data: "replacement-frame",
+        metadata: null,
+      });
+
+      expect(ws.send).toHaveBeenCalledTimes(1);
+      expect(ws.close).toHaveBeenCalledWith(4003, "Session mismatch");
+      expect(bridgeServer.getHandlerCount(VALID_WORKSPACE_ID)).toBe(0);
+    } finally {
+      ws.close();
+      await bridgeServer.server.stop();
+    }
+  });
+
   test("stops relaying frame events after the client disconnects", async () => {
     const bridgeServer = createBridgeServer();
     const ws = new FakeBridgeWebSocket();
