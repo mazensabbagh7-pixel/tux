@@ -1,0 +1,102 @@
+import { randomBytes } from "node:crypto";
+import { BROWSER_SESSION_DEFAULTS } from "@/common/constants/browser";
+import { assert } from "@/common/utils/assert";
+import { log } from "@/node/services/log";
+
+interface TokenRecord {
+  workspaceId: string;
+  sessionId: string;
+  expiresAtMs: number;
+}
+
+// Cleanup expired tokens every 60s.
+const CLEANUP_INTERVAL_MS = 60_000;
+
+export class BrowserSessionTokenManager {
+  private readonly tokens = new Map<string, TokenRecord>();
+  private cleanupTimer: ReturnType<typeof setInterval> | null = null;
+
+  constructor() {
+    this.cleanupTimer = setInterval(() => this.cleanupExpired(), CLEANUP_INTERVAL_MS);
+
+    // Don't keep the process alive just to clean up stale tokens.
+    this.cleanupTimer.unref?.();
+  }
+
+  /**
+   * Mint a new single-use token binding a workspace to a session.
+   */
+  mint(workspaceId: string, sessionId: string): string {
+    assert(
+      workspaceId.length > 0,
+      "BrowserSessionTokenManager.mint requires non-empty workspaceId"
+    );
+    assert(sessionId.length > 0, "BrowserSessionTokenManager.mint requires non-empty sessionId");
+
+    let token = "";
+    do {
+      token = randomBytes(32).toString("hex");
+    } while (this.tokens.has(token));
+
+    this.tokens.set(token, {
+      workspaceId,
+      sessionId,
+      expiresAtMs: Date.now() + BROWSER_SESSION_DEFAULTS.TOKEN_TTL_MS,
+    });
+
+    return token;
+  }
+
+  /**
+   * Validate and consume a token. Returns the bound workspace/session info or
+   * null if the token is invalid, expired, or already consumed.
+   */
+  validate(token: string): { workspaceId: string; sessionId: string } | null {
+    const record = this.tokens.get(token);
+    if (!record) {
+      return null;
+    }
+
+    // Single-use tokens are consumed regardless of validation outcome.
+    this.tokens.delete(token);
+
+    if (Date.now() > record.expiresAtMs) {
+      log.debug("BrowserSessionTokenManager: token expired", {
+        tokenPrefix: token.slice(0, 8),
+      });
+      return null;
+    }
+
+    return {
+      workspaceId: record.workspaceId,
+      sessionId: record.sessionId,
+    };
+  }
+
+  /** Remove all expired tokens. Called periodically by the cleanup timer. */
+  private cleanupExpired(): void {
+    const now = Date.now();
+    let cleaned = 0;
+
+    for (const [token, record] of this.tokens) {
+      if (now > record.expiresAtMs) {
+        this.tokens.delete(token);
+        cleaned += 1;
+      }
+    }
+
+    if (cleaned > 0) {
+      log.debug("BrowserSessionTokenManager: cleaned up expired tokens", { count: cleaned });
+    }
+  }
+
+  /** Stop the cleanup timer and clear all minted tokens. */
+  dispose(): void {
+    if (this.cleanupTimer !== null) {
+      clearInterval(this.cleanupTimer);
+      this.cleanupTimer = null;
+    }
+
+    this.tokens.clear();
+  }
+}
