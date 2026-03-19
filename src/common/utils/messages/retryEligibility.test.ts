@@ -170,7 +170,7 @@ describe("hasInterruptedStream", () => {
     expect(hasInterruptedStream(messages)).toBe(false);
   });
 
-  it("returns false when latest turn contains executing ask_user_question plus trailing parts", () => {
+  it("returns true when later unfinished parts follow executing ask_user_question", () => {
     const messages: DisplayedMessage[] = [
       {
         type: "user",
@@ -220,7 +220,7 @@ describe("hasInterruptedStream", () => {
       },
     ];
 
-    expect(hasInterruptedStream(messages)).toBe(false);
+    expect(hasInterruptedStream(messages)).toBe(true);
   });
 
   it("returns false when pending ask_user_question turn is followed by plan-display row", () => {
@@ -239,17 +239,18 @@ describe("hasInterruptedStream", () => {
         isLastPartOfMessage: false,
       },
       {
-        type: "assistant",
-        id: "assistant-tail",
+        type: "tool",
+        id: "tool-todo",
         historyId: "assistant-1",
-        content: "Please answer above.",
+        toolName: "todo_write",
+        toolCallId: "call-todo",
+        args: { todos: [] },
+        result: { success: true },
+        status: "completed",
+        isPartial: true,
         historySequence: 2,
         streamSequence: 1,
-        isStreaming: false,
-        isPartial: true,
         isLastPartOfMessage: true,
-        isCompacted: false,
-        isIdleCompacted: false,
       },
       {
         type: "plan-display",

@@ -156,6 +156,22 @@ export function hasExecutingAskUserQuestionInLatestTurn(messages: DisplayedMessa
   }
 
   const latestHistoryId = lastMessage.historyId;
+  const isUnfinishedMessage = (message: DisplayedMessage): boolean => {
+    switch (message.type) {
+      case "tool":
+        return (
+          message.status === "executing" ||
+          message.status === "pending" ||
+          message.status === "interrupted"
+        );
+      case "assistant":
+      case "reasoning":
+        return message.isPartial === true;
+      default:
+        return false;
+    }
+  };
+
   for (let i = messages.length - 1; i >= 0; i--) {
     const message = messages[i];
     if (!("historyId" in message)) {
@@ -166,13 +182,20 @@ export function hasExecutingAskUserQuestionInLatestTurn(messages: DisplayedMessa
       break;
     }
 
-    if (
+    // Latest error should keep retry/interruption affordances visible.
+    if (message.type === "stream-error") {
+      return false;
+    }
+
+    if (!isUnfinishedMessage(message)) {
+      continue;
+    }
+
+    return (
       message.type === "tool" &&
       message.toolName === "ask_user_question" &&
       message.status === "executing"
-    ) {
-      return true;
-    }
+    );
   }
 
   return false;

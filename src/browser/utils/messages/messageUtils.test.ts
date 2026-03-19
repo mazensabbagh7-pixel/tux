@@ -28,7 +28,7 @@ describe("shouldShowInterruptedBarrier", () => {
     expect(shouldShowInterruptedBarrier(msg)).toBe(false);
   });
 
-  it("returns false for trailing partial rows when latest turn contains executing ask_user_question", () => {
+  it("returns true for trailing partial rows when fallback inference sees later unfinished output", () => {
     const questionTool: DisplayedMessage = {
       type: "tool",
       id: "tool-ask",
@@ -59,7 +59,7 @@ describe("shouldShowInterruptedBarrier", () => {
 
     const messages = [questionTool, trailingPartialText];
 
-    expect(shouldShowInterruptedBarrier(trailingPartialText, messages)).toBe(false);
+    expect(shouldShowInterruptedBarrier(trailingPartialText, messages)).toBe(true);
   });
 
   it("returns false when authoritative awaitingUserQuestion flag is true", () => {
