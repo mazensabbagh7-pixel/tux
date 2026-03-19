@@ -165,7 +165,7 @@ export class BrowserSessionService extends EventEmitter {
         }
 
         this.activeSessions.set(workspaceId, session);
-        this.emitEvent(workspaceId, { type: "session-updated", session });
+        this.emitSessionUpdateEvent(workspaceId, session);
       },
       onAction: (action) => {
         if (!isCurrentBackend(workspaceId)) {
@@ -312,6 +312,13 @@ export class BrowserSessionService extends EventEmitter {
     this.emit(`update:${workspaceId}`, event);
   }
 
+  private emitSessionUpdateEvent(workspaceId: string, session: BrowserSession): void {
+    this.emitEvent(workspaceId, {
+      type: "session-updated",
+      session: stripSessionScreenshot(session),
+    });
+  }
+
   private appendAction(workspaceId: string, action: BrowserAction): BrowserAction {
     let actions = this.recentActions.get(workspaceId);
     if (!actions) {
@@ -378,6 +385,19 @@ export class BrowserSessionService extends EventEmitter {
     this.startPromises.delete(workspaceId);
     this.streamPortRegistry?.releasePort(workspaceId);
   }
+}
+
+function stripSessionScreenshot(session: BrowserSession): BrowserSession {
+  // Keep the cached screenshot in BrowserSessionService for bridge bootstrap, but avoid
+  // re-sending the same JPEG on every ORPC session-updated event once /browser/ws is live.
+  if (session.lastScreenshotBase64 === null) {
+    return session;
+  }
+
+  return {
+    ...session,
+    lastScreenshotBase64: null,
+  };
 }
 
 function createInputAction(input: BrowserInputEvent): BrowserAction | null {
