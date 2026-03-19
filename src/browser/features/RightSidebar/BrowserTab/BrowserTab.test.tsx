@@ -12,7 +12,6 @@ let mockFrameStream = {
   screenshotSrc: null as string | null,
   metadata: null as BrowserSession["lastFrameMetadata"],
   connected: false,
-  frameStale: false,
 };
 
 interface BrowserSessionApiMock {
@@ -108,7 +107,6 @@ beforeEach(() => {
     screenshotSrc: null,
     metadata: null,
     connected: false,
-    frameStale: false,
   };
   mockBrowserSessionApi = {
     start: mock(() => Promise.resolve(createSession())),
@@ -692,7 +690,7 @@ describe("BrowserTab address bar and reload", () => {
     expect(view.getByAltText("Example page")).toBeTruthy();
   });
 
-  test("falls back to the ORPC screenshot when the bridge frame is stale", () => {
+  test("prefers the bridge screenshot when the frame stream is connected", () => {
     mockSession = createSession({
       currentUrl: "https://example.com",
       lastScreenshotBase64: "orpc-frame",
@@ -701,14 +699,13 @@ describe("BrowserTab address bar and reload", () => {
       screenshotSrc: "data:image/jpeg;base64,bridge-frame",
       metadata: createSession().lastFrameMetadata,
       connected: true,
-      frameStale: true,
     };
 
     const view = renderBrowserTab();
     const screenshot = view.getByAltText("Example page") as HTMLImageElement;
 
-    expect(screenshot.src).toContain("orpc-frame");
-    expect(screenshot.src).not.toContain("bridge-frame");
+    expect(screenshot.src).toContain("bridge-frame");
+    expect(screenshot.src).not.toContain("orpc-frame");
   });
 
   test("shows ready state even with non-live stream state at about:blank", () => {

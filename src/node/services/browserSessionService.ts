@@ -90,22 +90,6 @@ export class BrowserSessionService extends EventEmitter {
     this.off(`frame:${workspaceId}`, handler);
   }
 
-  onSessionEvent(workspaceId: string, handler: (event: BrowserSessionEvent) => void): void {
-    assert(
-      workspaceId.trim().length > 0,
-      "BrowserSessionService.onSessionEvent requires a workspaceId"
-    );
-    this.on(`update:${workspaceId}`, handler);
-  }
-
-  offSessionEvent(workspaceId: string, handler: (event: BrowserSessionEvent) => void): void {
-    assert(
-      workspaceId.trim().length > 0,
-      "BrowserSessionService.offSessionEvent requires a workspaceId"
-    );
-    this.off(`update:${workspaceId}`, handler);
-  }
-
   async startSession(
     workspaceId: string,
     options?: { initialUrl?: string | null }

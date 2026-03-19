@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 import {
   Camera,
@@ -158,50 +158,22 @@ export function BrowserTab(props: BrowserTabProps) {
   const sessionActive =
     session != null && (session.status === "live" || session.status === "starting");
   const frameStream = useBrowserFrameStream(props.workspaceId, sessionActive);
-  const lastOrpcScreenshotRef = useRef<string | null>(null);
-  const prevSessionIdRef = useRef<string | null>(null);
-  const currentSessionId = session != null && session.status !== "ended" ? session.id : null;
-
-  // Clear the cached fallback when the session changes or ends so stale screenshots do not leak
-  // into the next browser run.
-  if (currentSessionId !== prevSessionIdRef.current) {
-    prevSessionIdRef.current = currentSessionId;
-    lastOrpcScreenshotRef.current = null;
-  }
-
-  // Remember the last screenshot received via ORPC so stripped incremental updates can still
-  // render the last known frame while the live bridge reconnects.
-  if (session?.lastScreenshotBase64) {
-    lastOrpcScreenshotRef.current = `data:image/jpeg;base64,${session.lastScreenshotBase64}`;
-  }
 
   // Suppress the blank-page screenshot so the ready-state placeholder renders instead
   // of an empty white frame. The viewport shows its placeholder prop when screenshotSrc is null.
   const isBlankPage = session?.currentUrl === "about:blank";
   const screenshotSrc = (() => {
-    if (isBlankPage) {
-      return null;
-    }
-    // Prefer the low-latency bridge while it is still receiving fresh frames, then fall back
-    // to ORPC updates so a stalled bridge cannot freeze the viewport on an old screenshot.
-    if (frameStream.connected && !frameStream.frameStale && frameStream.screenshotSrc) {
-      return frameStream.screenshotSrc;
-    }
-    if (session?.lastScreenshotBase64) {
+    if (isBlankPage) return null;
+    // Bridge is the primary frame source.
+    if (frameStream.connected && frameStream.screenshotSrc) return frameStream.screenshotSrc;
+    // Fall back to ORPC only for the initial snapshot.
+    if (session?.lastScreenshotBase64)
       return `data:image/jpeg;base64,${session.lastScreenshotBase64}`;
-    }
-    if (lastOrpcScreenshotRef.current) {
-      return lastOrpcScreenshotRef.current;
-    }
-    return frameStream.screenshotSrc;
+    return null;
   })();
-  // Keep coordinate metadata in lockstep with the direct frame stream only while that stream is
-  // fresh, otherwise clicks would target stale bridge coordinates after BrowserTab falls back.
+  // Use bridge metadata when connected to keep screenshot and coordinates in sync.
   const viewportSession =
-    frameStream.connected &&
-    !frameStream.frameStale &&
-    frameStream.metadata != null &&
-    session != null
+    frameStream.connected && frameStream.metadata != null && session != null
       ? {
           ...session,
           lastFrameMetadata: frameStream.metadata,

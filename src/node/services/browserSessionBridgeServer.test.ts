@@ -3,11 +3,7 @@ import * as http from "node:http";
 import type * as net from "node:net";
 import { describe, expect, mock, test, type Mock } from "bun:test";
 import { WebSocket } from "ws";
-import type {
-  BrowserFramePayload,
-  BrowserSession,
-  BrowserSessionEvent,
-} from "@/common/types/browserSession";
+import type { BrowserFramePayload, BrowserSession } from "@/common/types/browserSession";
 import {
   BrowserFrameBridgeServer,
   type BrowserFrameBridgeServerOptions,
@@ -26,12 +22,6 @@ interface MockBrowserSessionService {
   getActiveSession: Mock<(workspaceId: string) => BrowserSession | null>;
   onFrameEvent: Mock<(workspaceId: string, handler: (frame: BrowserFramePayload) => void) => void>;
   offFrameEvent: Mock<(workspaceId: string, handler: (frame: BrowserFramePayload) => void) => void>;
-  onSessionEvent: Mock<
-    (workspaceId: string, handler: (event: BrowserSessionEvent) => void) => void
-  >;
-  offSessionEvent: Mock<
-    (workspaceId: string, handler: (event: BrowserSessionEvent) => void) => void
-  >;
 }
 
 class FakeBridgeWebSocket extends EventEmitter {
@@ -103,7 +93,6 @@ function createLiveSession(overrides: Partial<BrowserSession> = {}): BrowserSess
 
 function createBridgeServer(overrides?: Partial<BrowserFrameBridgeServerOptions>) {
   const frameHandlers = new Map<string, Set<(frame: BrowserFramePayload) => void>>();
-  const sessionEventHandlers = new Map<string, Set<(event: BrowserSessionEvent) => void>>();
   const service: MockBrowserSessionService = {
     getActiveSession: mock((workspaceId: string) =>
       workspaceId === VALID_WORKSPACE_ID ? createLiveSession() : null
@@ -120,20 +109,6 @@ function createBridgeServer(overrides?: Partial<BrowserFrameBridgeServerOptions>
       frameHandlers.get(workspaceId)?.delete(handler);
       if (frameHandlers.get(workspaceId)?.size === 0) {
         frameHandlers.delete(workspaceId);
-      }
-    }),
-    onSessionEvent: mock((workspaceId: string, handler: (event: BrowserSessionEvent) => void) => {
-      let handlers = sessionEventHandlers.get(workspaceId);
-      if (!handlers) {
-        handlers = new Set();
-        sessionEventHandlers.set(workspaceId, handlers);
-      }
-      handlers.add(handler);
-    }),
-    offSessionEvent: mock((workspaceId: string, handler: (event: BrowserSessionEvent) => void) => {
-      sessionEventHandlers.get(workspaceId)?.delete(handler);
-      if (sessionEventHandlers.get(workspaceId)?.size === 0) {
-        sessionEventHandlers.delete(workspaceId);
       }
     }),
   };
@@ -156,11 +131,6 @@ function createBridgeServer(overrides?: Partial<BrowserFrameBridgeServerOptions>
     emitFrame(workspaceId: string, frame: BrowserFramePayload) {
       for (const handler of frameHandlers.get(workspaceId) ?? []) {
         handler(frame);
-      }
-    },
-    emitSessionEvent(workspaceId: string, event: BrowserSessionEvent) {
-      for (const handler of sessionEventHandlers.get(workspaceId) ?? []) {
-        handler(event);
       }
     },
     getHandlerCount(workspaceId: string) {
@@ -329,40 +299,6 @@ describe("BrowserFrameBridgeServer", () => {
     }
   });
 
-  test("drops live frames when the websocket send buffer is already backed up", async () => {
-    const bridgeServer = createBridgeServer();
-    const ws = new FakeBridgeWebSocket();
-    const privateBridgeServer = bridgeServer.server as unknown as PrivateBrowserFrameBridgeServer;
-
-    try {
-      privateBridgeServer.handleUpgradedConnection(
-        ws as unknown as WebSocket,
-        {
-          url: `/?token=${VALID_TOKEN}`,
-        } as http.IncomingMessage
-      );
-
-      ws.bufferedAmount = 1_048_577;
-      bridgeServer.emitFrame(VALID_WORKSPACE_ID, {
-        base64Data: "backed-up-frame",
-        metadata: createLiveSession().lastFrameMetadata,
-      });
-
-      expect(ws.send).toHaveBeenCalledTimes(1);
-      expect(ws.send).toHaveBeenNthCalledWith(
-        1,
-        JSON.stringify({
-          type: "frame",
-          base64Data: "initial-frame",
-          metadata: createLiveSession().lastFrameMetadata,
-        })
-      );
-    } finally {
-      ws.close();
-      await bridgeServer.server.stop();
-    }
-  });
-
   test("closes with 4001 when the token is missing", async () => {
     const bridgeServer = createBridgeServer();
     const upgradeHarness = await listenUpgradeServer(bridgeServer.server);
@@ -409,12 +345,6 @@ describe("BrowserFrameBridgeServer", () => {
         offFrameEvent: mock(() => {
           /* noop */
         }),
-        onSessionEvent: mock(() => {
-          /* noop */
-        }),
-        offSessionEvent: mock(() => {
-          /* noop */
-        }),
       },
     });
     const upgradeHarness = await listenUpgradeServer(bridgeServer.server);
@@ -439,12 +369,6 @@ describe("BrowserFrameBridgeServer", () => {
           /* noop */
         }),
         offFrameEvent: mock(() => {
-          /* noop */
-        }),
-        onSessionEvent: mock(() => {
-          /* noop */
-        }),
-        offSessionEvent: mock(() => {
           /* noop */
         }),
       },
@@ -588,34 +512,6 @@ describe("BrowserFrameBridgeServer", () => {
       expect(ws.send).toHaveBeenCalledTimes(1);
       expect(ws.close).toHaveBeenCalledWith(4003, "Session mismatch");
       expect(bridgeServer.getHandlerCount(VALID_WORKSPACE_ID)).toBe(0);
-    } finally {
-      ws.close();
-      await bridgeServer.server.stop();
-    }
-  });
-
-  test("closes connections when the browser session ends without more frames", async () => {
-    const bridgeServer = createBridgeServer();
-    const ws = new FakeBridgeWebSocket();
-    const privateBridgeServer = bridgeServer.server as unknown as PrivateBrowserFrameBridgeServer;
-
-    try {
-      privateBridgeServer.handleUpgradedConnection(
-        ws as unknown as WebSocket,
-        {
-          url: `/?token=${VALID_TOKEN}`,
-        } as http.IncomingMessage
-      );
-      expect(bridgeServer.getHandlerCount(VALID_WORKSPACE_ID)).toBe(1);
-
-      bridgeServer.emitSessionEvent(VALID_WORKSPACE_ID, {
-        type: "session-ended",
-        workspaceId: VALID_WORKSPACE_ID,
-      });
-
-      expect(ws.close).toHaveBeenCalledWith(4002, "No active browser session");
-      expect(bridgeServer.getHandlerCount(VALID_WORKSPACE_ID)).toBe(0);
-      expect(bridgeServer.service.offSessionEvent).toHaveBeenCalledTimes(1);
     } finally {
       ws.close();
       await bridgeServer.server.stop();

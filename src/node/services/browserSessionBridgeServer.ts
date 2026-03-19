@@ -1,7 +1,7 @@
 import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
 import { WebSocket, WebSocketServer } from "ws";
-import type { BrowserFramePayload, BrowserSessionEvent } from "@/common/types/browserSession";
+import type { BrowserFramePayload } from "@/common/types/browserSession";
 import { assert } from "@/common/utils/assert";
 import { log } from "@/node/services/log";
 import type { BrowserSessionService } from "./browserSessionService";
@@ -12,7 +12,6 @@ const MISSING_SESSION_CLOSE_CODE = 4002;
 const SESSION_MISMATCH_CLOSE_CODE = 4003;
 const SERVER_STOPPING_CLOSE_CODE = 1001;
 const HEARTBEAT_INTERVAL_MS = 30_000;
-const MAX_BUFFERED_FRAME_BYTES = 1_048_576;
 const REQUEST_BASE_URL = "http://localhost";
 
 function createBridgeWebSocketServer(): WebSocketServer {
@@ -23,7 +22,6 @@ interface ActiveBrowserConnection {
   ws: WebSocket;
   workspaceId: string;
   frameHandler: (frame: BrowserFramePayload) => void;
-  sessionEventHandler: (event: BrowserSessionEvent) => void;
   heartbeatInterval: ReturnType<typeof setInterval> | null;
   closed: boolean;
 }
@@ -31,7 +29,7 @@ interface ActiveBrowserConnection {
 export interface BrowserFrameBridgeServerOptions {
   browserSessionService: Pick<
     BrowserSessionService,
-    "getActiveSession" | "onFrameEvent" | "offFrameEvent" | "onSessionEvent" | "offSessionEvent"
+    "getActiveSession" | "onFrameEvent" | "offFrameEvent"
   >;
   browserSessionTokenManager: Pick<BrowserSessionTokenManager, "validate">;
 }
@@ -94,7 +92,7 @@ async function waitForWebSocketClose(ws: WebSocket, timeoutMs = 250): Promise<vo
 export class BrowserFrameBridgeServer {
   private readonly browserSessionService: Pick<
     BrowserSessionService,
-    "getActiveSession" | "onFrameEvent" | "offFrameEvent" | "onSessionEvent" | "offSessionEvent"
+    "getActiveSession" | "onFrameEvent" | "offFrameEvent"
   >;
   private readonly browserSessionTokenManager: Pick<BrowserSessionTokenManager, "validate">;
   private wss = createBridgeWebSocketServer();
@@ -251,16 +249,6 @@ export class BrowserFrameBridgeServer {
           return;
         }
 
-        // Slow consumers can build up a large ws send queue; drop stale frames so the latest
-        // screenshot can catch up instead of retaining every intermediate JPEG in memory.
-        if (ws.bufferedAmount > MAX_BUFFERED_FRAME_BYTES) {
-          log.debug("BrowserFrameBridgeServer skipping frame due to backpressure", {
-            workspaceId: tokenInfo.workspaceId,
-            bufferedAmount: ws.bufferedAmount,
-          });
-          return;
-        }
-
         try {
           ws.send(JSON.stringify({ type: "frame", ...frame }));
         } catch (error) {
@@ -272,20 +260,6 @@ export class BrowserFrameBridgeServer {
           this.cleanupConnection(connection, { closeReason: "frame send failed" });
         }
       },
-      sessionEventHandler: (event) => {
-        if (event.type !== "session-ended") {
-          return;
-        }
-
-        log.debug("BrowserFrameBridgeServer closing connection for ended session", {
-          workspaceId: tokenInfo.workspaceId,
-          sessionId: tokenInfo.sessionId,
-        });
-        this.cleanupConnection(connection, {
-          closeCode: MISSING_SESSION_CLOSE_CODE,
-          closeReason: "No active browser session",
-        });
-      },
       heartbeatInterval: null,
       closed: false,
     };
@@ -293,10 +267,6 @@ export class BrowserFrameBridgeServer {
     this.activeConnections.add(connection);
     this.attachConnectionListeners(connection);
     this.browserSessionService.onFrameEvent(tokenInfo.workspaceId, connection.frameHandler);
-    this.browserSessionService.onSessionEvent(
-      tokenInfo.workspaceId,
-      connection.sessionEventHandler
-    );
 
     try {
       ws.send(
@@ -359,10 +329,6 @@ export class BrowserFrameBridgeServer {
 
     connection.closed = true;
     this.browserSessionService.offFrameEvent(connection.workspaceId, connection.frameHandler);
-    this.browserSessionService.offSessionEvent(
-      connection.workspaceId,
-      connection.sessionEventHandler
-    );
     if (connection.heartbeatInterval !== null) {
       clearInterval(connection.heartbeatInterval);
       connection.heartbeatInterval = null;
