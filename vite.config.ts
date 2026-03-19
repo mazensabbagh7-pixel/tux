@@ -5,7 +5,7 @@ import svgr from "vite-plugin-svgr";
 import tailwindcss from "@tailwindcss/vite";
 import path from "path";
 import { fileURLToPath } from "url";
-import { DESKTOP_WS_PATH } from "./src/node/orpc/wsPaths";
+import { BROWSER_FRAME_WS_PATH, DESKTOP_WS_PATH } from "./src/node/orpc/wsPaths";
 import { novncCompatPlugin } from "./src/vite/novncCompatPlugin";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -182,6 +182,11 @@ export default defineConfig(({ mode }) => {
           ws: true,
         },
         [DESKTOP_WS_PATH]: {
+          target: backendProxyTarget,
+          changeOrigin: false,
+          ws: true,
+        },
+        [BROWSER_FRAME_WS_PATH]: {
           target: backendProxyTarget,
           changeOrigin: false,
           ws: true,
