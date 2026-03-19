@@ -201,6 +201,7 @@ export function useBrowserFrameStream(
     isDisposedRef.current = true;
     generationRef.current += 1;
     clearReconnectTimer();
+    attemptRef.current = 0;
     disconnectCurrentWebSocket();
     lastEventAtRef.current = 0;
     setConnected(false);
