@@ -182,7 +182,9 @@ export function BrowserTab(props: BrowserTabProps) {
     if (isBlankPage) {
       return null;
     }
-    if (frameStream.connected && frameStream.screenshotSrc) {
+    // Prefer the low-latency bridge while it is still receiving fresh frames, then fall back
+    // to ORPC updates so a stalled bridge cannot freeze the viewport on an old screenshot.
+    if (frameStream.connected && !frameStream.frameStale && frameStream.screenshotSrc) {
       return frameStream.screenshotSrc;
     }
     if (session?.lastScreenshotBase64) {
@@ -191,12 +193,15 @@ export function BrowserTab(props: BrowserTabProps) {
     if (lastOrpcScreenshotRef.current) {
       return lastOrpcScreenshotRef.current;
     }
-    return null;
+    return frameStream.screenshotSrc;
   })();
-  // Keep coordinate metadata in lockstep with the direct frame stream so clicks target
-  // the same frame BrowserViewport is currently rendering.
+  // Keep coordinate metadata in lockstep with the direct frame stream only while that stream is
+  // fresh, otherwise clicks would target stale bridge coordinates after BrowserTab falls back.
   const viewportSession =
-    frameStream.connected && frameStream.metadata != null && session != null
+    frameStream.connected &&
+    !frameStream.frameStale &&
+    frameStream.metadata != null &&
+    session != null
       ? {
           ...session,
           lastFrameMetadata: frameStream.metadata,

@@ -7,11 +7,13 @@ import { getErrorMessage } from "@/common/utils/errors";
 
 const RECONNECT_BASE_DELAY_MS = 1_000;
 const RECONNECT_MAX_DELAY_MS = 30_000;
+const FRAME_STALE_AFTER_MS = 10_000;
 
 interface UseBrowserFrameStreamResult {
   screenshotSrc: string | null;
   metadata: BrowserFrameMetadata | null;
   connected: boolean;
+  frameStale: boolean;
 }
 
 type BrowserFrameBridgeMessage = ({ type: "frame" } & BrowserFramePayload) | { type: "heartbeat" };
@@ -146,9 +148,11 @@ export function useBrowserFrameStream(
   const [screenshotSrc, setScreenshotSrc] = useState<string | null>(null);
   const [metadata, setMetadata] = useState<BrowserFrameMetadata | null>(null);
   const [connected, setConnected] = useState(false);
+  const [frameStale, setFrameStale] = useState(false);
 
   const websocketRef = useRef<WebSocket | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const staleFrameTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const attemptRef = useRef(0);
   const generationRef = useRef(0);
   const isDisposedRef = useRef(false);
@@ -165,6 +169,26 @@ export function useBrowserFrameStream(
       clearTimeout(reconnectTimerRef.current);
       reconnectTimerRef.current = null;
     }
+  };
+
+  const clearStaleFrameTimer = () => {
+    if (staleFrameTimerRef.current) {
+      clearTimeout(staleFrameTimerRef.current);
+      staleFrameTimerRef.current = null;
+    }
+  };
+
+  const markFrameFresh = () => {
+    const frameReceivedAt = Date.now();
+    lastEventAtRef.current = frameReceivedAt;
+    setFrameStale(false);
+    clearStaleFrameTimer();
+    staleFrameTimerRef.current = setTimeout(() => {
+      if (lastEventAtRef.current !== frameReceivedAt || isDisposedRef.current) {
+        return;
+      }
+      setFrameStale(true);
+    }, FRAME_STALE_AFTER_MS);
   };
 
   const disconnectCurrentWebSocket = () => {
@@ -201,10 +225,12 @@ export function useBrowserFrameStream(
     isDisposedRef.current = true;
     generationRef.current += 1;
     clearReconnectTimer();
+    clearStaleFrameTimer();
     attemptRef.current = 0;
     disconnectCurrentWebSocket();
     lastEventAtRef.current = 0;
     setConnected(false);
+    setFrameStale(false);
     setScreenshotSrc(null);
     setMetadata(null);
   };
@@ -220,9 +246,11 @@ export function useBrowserFrameStream(
       generationRef.current = generation;
       isDisposedRef.current = false;
       clearReconnectTimer();
+      clearStaleFrameTimer();
       disconnectCurrentWebSocket();
       lastEventAtRef.current = 0;
       setConnected(false);
+      setFrameStale(false);
       setScreenshotSrc(null);
       setMetadata(null);
 
@@ -264,7 +292,6 @@ export function useBrowserFrameStream(
           }
           hasEverConnectedRef.current = true;
           attemptRef.current = 0;
-          lastEventAtRef.current = Date.now();
           setConnected(true);
         };
 
@@ -279,11 +306,11 @@ export function useBrowserFrameStream(
             return;
           }
 
-          lastEventAtRef.current = Date.now();
           if (message.type === "heartbeat") {
             return;
           }
 
+          markFrameFresh();
           setScreenshotSrc(buildScreenshotSrc(message.base64Data));
           setMetadata(message.metadata);
         };
@@ -305,8 +332,10 @@ export function useBrowserFrameStream(
           if (websocketRef.current === websocket) {
             websocketRef.current = null;
           }
+          clearStaleFrameTimer();
           lastEventAtRef.current = 0;
           setConnected(false);
+          setFrameStale(false);
           setScreenshotSrc(null);
           setMetadata(null);
           scheduleReconnectRef.current();
@@ -325,7 +354,10 @@ export function useBrowserFrameStream(
           "[useBrowserFrameStream] Failed to connect browser frame bridge:",
           getErrorMessage(error)
         );
+        clearStaleFrameTimer();
+        lastEventAtRef.current = 0;
         setConnected(false);
+        setFrameStale(false);
         setScreenshotSrc(null);
         setMetadata(null);
         // Always retry — transient errors during initial connect should not
@@ -357,5 +389,6 @@ export function useBrowserFrameStream(
     screenshotSrc,
     metadata,
     connected,
+    frameStale,
   };
 }

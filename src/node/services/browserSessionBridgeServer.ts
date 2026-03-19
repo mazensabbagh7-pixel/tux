@@ -1,7 +1,7 @@
 import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
 import { WebSocket, WebSocketServer } from "ws";
-import type { BrowserFramePayload } from "@/common/types/browserSession";
+import type { BrowserFramePayload, BrowserSessionEvent } from "@/common/types/browserSession";
 import { assert } from "@/common/utils/assert";
 import { log } from "@/node/services/log";
 import type { BrowserSessionService } from "./browserSessionService";
@@ -22,6 +22,7 @@ interface ActiveBrowserConnection {
   ws: WebSocket;
   workspaceId: string;
   frameHandler: (frame: BrowserFramePayload) => void;
+  sessionEventHandler: (event: BrowserSessionEvent) => void;
   heartbeatInterval: ReturnType<typeof setInterval> | null;
   closed: boolean;
 }
@@ -29,7 +30,7 @@ interface ActiveBrowserConnection {
 export interface BrowserFrameBridgeServerOptions {
   browserSessionService: Pick<
     BrowserSessionService,
-    "getActiveSession" | "onFrameEvent" | "offFrameEvent"
+    "getActiveSession" | "onFrameEvent" | "offFrameEvent" | "onSessionEvent" | "offSessionEvent"
   >;
   browserSessionTokenManager: Pick<BrowserSessionTokenManager, "validate">;
 }
@@ -92,7 +93,7 @@ async function waitForWebSocketClose(ws: WebSocket, timeoutMs = 250): Promise<vo
 export class BrowserFrameBridgeServer {
   private readonly browserSessionService: Pick<
     BrowserSessionService,
-    "getActiveSession" | "onFrameEvent" | "offFrameEvent"
+    "getActiveSession" | "onFrameEvent" | "offFrameEvent" | "onSessionEvent" | "offSessionEvent"
   >;
   private readonly browserSessionTokenManager: Pick<BrowserSessionTokenManager, "validate">;
   private wss = createBridgeWebSocketServer();
@@ -260,6 +261,20 @@ export class BrowserFrameBridgeServer {
           this.cleanupConnection(connection, { closeReason: "frame send failed" });
         }
       },
+      sessionEventHandler: (event) => {
+        if (event.type !== "session-ended") {
+          return;
+        }
+
+        log.debug("BrowserFrameBridgeServer closing connection for ended session", {
+          workspaceId: tokenInfo.workspaceId,
+          sessionId: tokenInfo.sessionId,
+        });
+        this.cleanupConnection(connection, {
+          closeCode: MISSING_SESSION_CLOSE_CODE,
+          closeReason: "No active browser session",
+        });
+      },
       heartbeatInterval: null,
       closed: false,
     };
@@ -267,6 +282,10 @@ export class BrowserFrameBridgeServer {
     this.activeConnections.add(connection);
     this.attachConnectionListeners(connection);
     this.browserSessionService.onFrameEvent(tokenInfo.workspaceId, connection.frameHandler);
+    this.browserSessionService.onSessionEvent(
+      tokenInfo.workspaceId,
+      connection.sessionEventHandler
+    );
 
     try {
       ws.send(
@@ -329,6 +348,10 @@ export class BrowserFrameBridgeServer {
 
     connection.closed = true;
     this.browserSessionService.offFrameEvent(connection.workspaceId, connection.frameHandler);
+    this.browserSessionService.offSessionEvent(
+      connection.workspaceId,
+      connection.sessionEventHandler
+    );
     if (connection.heartbeatInterval !== null) {
       clearInterval(connection.heartbeatInterval);
       connection.heartbeatInterval = null;

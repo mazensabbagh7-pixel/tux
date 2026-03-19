@@ -8,6 +8,12 @@ import type { BrowserAction, BrowserSession } from "@/common/types/browserSessio
 let mockSession: BrowserSession | null = null;
 let mockRecentActions: BrowserAction[] = [];
 let mockError: string | null = null;
+let mockFrameStream = {
+  screenshotSrc: null as string | null,
+  metadata: null as BrowserSession["lastFrameMetadata"],
+  connected: false,
+  frameStale: false,
+};
 
 interface BrowserSessionApiMock {
   start: ReturnType<typeof mock>;
@@ -45,6 +51,10 @@ void mock.module("./useBrowserSessionSubscription", () => ({
     recentActions: mockRecentActions,
     error: mockError,
   }),
+}));
+
+void mock.module("./useBrowserFrameStream", () => ({
+  useBrowserFrameStream: () => mockFrameStream,
 }));
 
 import { BrowserTab } from "./BrowserTab";
@@ -94,6 +104,12 @@ beforeEach(() => {
   mockSession = null;
   mockRecentActions = [];
   mockError = null;
+  mockFrameStream = {
+    screenshotSrc: null,
+    metadata: null,
+    connected: false,
+    frameStale: false,
+  };
   mockBrowserSessionApi = {
     start: mock(() => Promise.resolve(createSession())),
     stop: mock(() => Promise.resolve({ success: true })),
@@ -674,6 +690,25 @@ describe("BrowserTab address bar and reload", () => {
 
     expect(view.queryByText("Browser ready")).toBeNull();
     expect(view.getByAltText("Example page")).toBeTruthy();
+  });
+
+  test("falls back to the ORPC screenshot when the bridge frame is stale", () => {
+    mockSession = createSession({
+      currentUrl: "https://example.com",
+      lastScreenshotBase64: "orpc-frame",
+    });
+    mockFrameStream = {
+      screenshotSrc: "data:image/jpeg;base64,bridge-frame",
+      metadata: createSession().lastFrameMetadata,
+      connected: true,
+      frameStale: true,
+    };
+
+    const view = renderBrowserTab();
+    const screenshot = view.getByAltText("Example page") as HTMLImageElement;
+
+    expect(screenshot.src).toContain("orpc-frame");
+    expect(screenshot.src).not.toContain("bridge-frame");
   });
 
   test("shows ready state even with non-live stream state at about:blank", () => {
