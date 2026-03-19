@@ -1019,6 +1019,53 @@ describe("AgentSession startup auto-retry recovery", () => {
     session.dispose();
   });
 
+  test("does not schedule startup auto-retry when pending ask_user_question turn has error metadata", async () => {
+    const workspaceId = "startup-retry-ask-user-with-error";
+    const { session, historyService, events, cleanup } = await createSessionBundle(workspaceId);
+    cleanups.push(cleanup);
+
+    const writePartialResult = await historyService.writePartial(
+      workspaceId,
+      createMuxMessage(
+        "assistant-1",
+        "assistant",
+        "",
+        {
+          timestamp: Date.now(),
+          model: "anthropic:claude-sonnet-4-5",
+          partial: true,
+          agentId: "exec",
+          error: "Connection dropped",
+          errorType: "network",
+        },
+        [
+          {
+            type: "dynamic-tool",
+            state: "input-available",
+            toolCallId: "tool-ask",
+            toolName: "ask_user_question",
+            input: { question: "Name?" },
+          },
+        ]
+      )
+    );
+    expect(writePartialResult.success).toBe(true);
+
+    const startupRetryModelHint = await session.getStartupAutoRetryModelHint();
+    expect(startupRetryModelHint).toBeNull();
+
+    session.ensureStartupAutoRetryCheck();
+
+    const startupCheckPromise = (
+      session as unknown as { startupAutoRetryCheckPromise: Promise<void> | null }
+    ).startupAutoRetryCheckPromise;
+    await startupCheckPromise;
+
+    expect(events.some((event) => event.type === "auto-retry-scheduled")).toBe(false);
+
+    session.dispose();
+  });
+
   test("does not schedule startup auto-retry when a failed tool follows ask_user_question", async () => {
     const workspaceId = "startup-retry-ask-user-failed-tail";
     const { session, historyService, events, cleanup } = await createSessionBundle(workspaceId);

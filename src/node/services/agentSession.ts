@@ -943,12 +943,6 @@ export class AgentSession {
       return false;
     }
 
-    // Error metadata means the turn has failed; startup auto-retry should treat
-    // this as interrupted/retryable, not an intentional waiting state.
-    if (message.metadata?.error != null) {
-      return false;
-    }
-
     let latestPendingQuestionIndex = -1;
     for (let partIndex = 0; partIndex < message.parts.length; partIndex += 1) {
       const part = message.parts[partIndex];

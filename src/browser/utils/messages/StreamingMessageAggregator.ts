@@ -169,6 +169,7 @@ function hasFailureResult(result: unknown): boolean {
 }
 
 interface AskUserQuestionResolutionOptions {
+  suppressForMessageError: boolean;
   suppressForLaterFailedTool: boolean;
 }
 
@@ -185,9 +186,9 @@ function resolveAskUserQuestionToolCallId(
     return null;
   }
 
-  // Error metadata means this turn ended in failure; surface retry/error state
-  // instead of presenting the turn as awaiting user input.
-  if (message.metadata?.error != null) {
+  if (options.suppressForMessageError && message.metadata?.error != null) {
+    // Error metadata means this turn ended in failure; surface retry/error state
+    // instead of presenting the turn as awaiting user input.
     return null;
   }
 
@@ -264,7 +265,10 @@ function resolveAskUserQuestionToolCallId(
  * retry/interruption affordances can be shown.
  */
 function getAwaitingAskUserQuestionToolCallId(message: MuxMessage): string | null {
-  return resolveAskUserQuestionToolCallId(message, { suppressForLaterFailedTool: true });
+  return resolveAskUserQuestionToolCallId(message, {
+    suppressForMessageError: true,
+    suppressForLaterFailedTool: true,
+  });
 }
 
 /**
@@ -273,7 +277,10 @@ function getAwaitingAskUserQuestionToolCallId(message: MuxMessage): string | nul
  * auto-retry intentionally defers.
  */
 function getAnswerableAskUserQuestionToolCallId(message: MuxMessage): string | null {
-  return resolveAskUserQuestionToolCallId(message, { suppressForLaterFailedTool: false });
+  return resolveAskUserQuestionToolCallId(message, {
+    suppressForMessageError: false,
+    suppressForLaterFailedTool: false,
+  });
 }
 
 function resolveRouteProvider(

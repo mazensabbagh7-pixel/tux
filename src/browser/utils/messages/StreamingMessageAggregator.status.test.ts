@@ -440,6 +440,14 @@ describe("ask_user_question waiting state", () => {
     ]);
 
     expect(aggregator.hasAwaitingUserQuestion()).toBe(false);
+
+    const askRow = aggregator
+      .getDisplayedMessages()
+      .find((message) => message.type === "tool" && message.toolName === "ask_user_question");
+    if (askRow?.type !== "tool") {
+      throw new Error("Expected ask_user_question tool row");
+    }
+    expect(askRow.status).toBe("executing");
   });
 
   it("ignores plan-display rows when inferring awaiting input", () => {
