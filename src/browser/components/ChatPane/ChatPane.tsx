@@ -293,6 +293,15 @@ export const ChatPane: React.FC<ChatPaneProps> = (props) => {
   );
   const deferredMessages = shouldBypassDeferral ? transformedMessages : deferredTransformedMessages;
 
+  const hasVisibleExecutingAskUserQuestion = deferredMessages.some(
+    (message) =>
+      message.type === "tool" &&
+      message.toolName === "ask_user_question" &&
+      message.status === "executing"
+  );
+  const suppressRetryForVisibleAwaitingQuestion =
+    workspaceState.awaitingUserQuestion && hasVisibleExecutingAskUserQuestion;
+
   const latestMessageId = getLastNonDecorativeMessage(deferredMessages)?.id ?? null;
   const messageListContextValue = useMemo(
     () => ({
@@ -573,7 +582,7 @@ export const ChatPane: React.FC<ChatPaneProps> = (props) => {
         workspaceState.pendingStreamStartTime,
         workspaceState.runtimeStatus,
         workspaceState.lastAbortReason,
-        workspaceState.awaitingUserQuestion
+        suppressRetryForVisibleAwaitingQuestion
       )
     : null;
 
@@ -864,7 +873,7 @@ export const ChatPane: React.FC<ChatPaneProps> = (props) => {
                             {shouldShowInterruptedBarrier(
                               msg,
                               deferredMessages,
-                              workspaceState.awaitingUserQuestion
+                              suppressRetryForVisibleAwaitingQuestion
                             ) && <InterruptedBarrier />}
                           </React.Fragment>
                         );
