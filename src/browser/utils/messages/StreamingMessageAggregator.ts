@@ -776,6 +776,19 @@ export class StreamingMessageAggregator {
         return false;
       }
 
+      // If a later tool has already failed, the latest visible state is an
+      // interruption/error and retry affordances should remain visible.
+      const hasLaterFailedTool = message.parts.some(
+        (part, partIndex) =>
+          partIndex > latestPendingQuestionIndex &&
+          isDynamicToolPart(part) &&
+          part.state === "output-available" &&
+          hasFailureResult(part.output)
+      );
+      if (hasLaterFailedTool) {
+        return false;
+      }
+
       // Persisted partial turns can include additional trailing text/reasoning
       // emitted after the question. Treat that as an interrupted tail rather than
       // a pure waiting state.

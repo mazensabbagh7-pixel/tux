@@ -141,6 +141,53 @@ describe("ask_user_question waiting state", () => {
     expect(aggregator.hasAwaitingUserQuestion()).toBe(true);
   });
 
+  it("does not report awaiting input when a later tool result fails after the question", () => {
+    const aggregator = new StreamingMessageAggregator("2024-01-01T00:00:00.000Z");
+
+    aggregator.loadHistoricalMessages([
+      {
+        id: "assistant-1",
+        role: "assistant" as const,
+        parts: [
+          {
+            type: "dynamic-tool" as const,
+            toolCallId: "call-ask-1",
+            toolName: "ask_user_question",
+            state: "input-available" as const,
+            input: {
+              questions: [
+                {
+                  header: "Approach",
+                  question: "Which approach should we take?",
+                  options: [
+                    { label: "A", description: "Approach A" },
+                    { label: "B", description: "Approach B" },
+                  ],
+                  multiSelect: false,
+                },
+              ],
+            },
+          },
+          {
+            type: "dynamic-tool" as const,
+            toolCallId: "call-todo-1",
+            toolName: "todo_write",
+            state: "output-available" as const,
+            input: { todos: [{ content: "Waiting for answers", status: "in_progress" }] },
+            output: { success: false, error: "write failed" },
+          },
+        ],
+        metadata: {
+          timestamp: 1000,
+          historySequence: 1,
+          partial: true,
+        },
+      },
+    ]);
+
+    expect(aggregator.hasAwaitingUserQuestion()).toBe(false);
+  });
+
   it("does not report awaiting input when a later partial text segment follows the question", () => {
     const aggregator = new StreamingMessageAggregator("2024-01-01T00:00:00.000Z");
 
