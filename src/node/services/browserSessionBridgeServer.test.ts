@@ -36,6 +36,7 @@ interface MockBrowserSessionService {
 
 class FakeBridgeWebSocket extends EventEmitter {
   public readyState: number = WebSocket.OPEN;
+  public bufferedAmount = 0;
   public readonly send = mock((_: string) => {
     /* noop */
   });
@@ -320,6 +321,40 @@ describe("BrowserFrameBridgeServer", () => {
         JSON.stringify({
           type: "frame",
           ...nextFrame,
+        })
+      );
+    } finally {
+      ws.close();
+      await bridgeServer.server.stop();
+    }
+  });
+
+  test("drops live frames when the websocket send buffer is already backed up", async () => {
+    const bridgeServer = createBridgeServer();
+    const ws = new FakeBridgeWebSocket();
+    const privateBridgeServer = bridgeServer.server as unknown as PrivateBrowserFrameBridgeServer;
+
+    try {
+      privateBridgeServer.handleUpgradedConnection(
+        ws as unknown as WebSocket,
+        {
+          url: `/?token=${VALID_TOKEN}`,
+        } as http.IncomingMessage
+      );
+
+      ws.bufferedAmount = 1_048_577;
+      bridgeServer.emitFrame(VALID_WORKSPACE_ID, {
+        base64Data: "backed-up-frame",
+        metadata: createLiveSession().lastFrameMetadata,
+      });
+
+      expect(ws.send).toHaveBeenCalledTimes(1);
+      expect(ws.send).toHaveBeenNthCalledWith(
+        1,
+        JSON.stringify({
+          type: "frame",
+          base64Data: "initial-frame",
+          metadata: createLiveSession().lastFrameMetadata,
         })
       );
     } finally {

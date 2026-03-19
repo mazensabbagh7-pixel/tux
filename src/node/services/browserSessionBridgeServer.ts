@@ -12,6 +12,7 @@ const MISSING_SESSION_CLOSE_CODE = 4002;
 const SESSION_MISMATCH_CLOSE_CODE = 4003;
 const SERVER_STOPPING_CLOSE_CODE = 1001;
 const HEARTBEAT_INTERVAL_MS = 30_000;
+const MAX_BUFFERED_FRAME_BYTES = 1_048_576;
 const REQUEST_BASE_URL = "http://localhost";
 
 function createBridgeWebSocketServer(): WebSocketServer {
@@ -247,6 +248,16 @@ export class BrowserFrameBridgeServer {
         }
 
         if (ws.readyState !== WebSocket.OPEN) {
+          return;
+        }
+
+        // Slow consumers can build up a large ws send queue; drop stale frames so the latest
+        // screenshot can catch up instead of retaining every intermediate JPEG in memory.
+        if (ws.bufferedAmount > MAX_BUFFERED_FRAME_BYTES) {
+          log.debug("BrowserFrameBridgeServer skipping frame due to backpressure", {
+            workspaceId: tokenInfo.workspaceId,
+            bufferedAmount: ws.bufferedAmount,
+          });
           return;
         }
 
