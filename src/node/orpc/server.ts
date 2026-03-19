@@ -21,7 +21,7 @@ import type { ORPCContext } from "@/node/orpc/context";
 import { extractCookieValues, extractWsHeaders, safeEq } from "@/node/orpc/authMiddleware";
 import { VERSION } from "@/version";
 import { formatOrpcError } from "@/node/orpc/formatOrpcError";
-import { DESKTOP_WS_PATH, ORPC_WS_PATH } from "@/node/orpc/wsPaths";
+import { BROWSER_FRAME_WS_PATH, DESKTOP_WS_PATH, ORPC_WS_PATH } from "@/node/orpc/wsPaths";
 import { log } from "@/node/services/log";
 import {
   SERVER_AUTH_SESSION_COOKIE_NAME,
@@ -34,7 +34,7 @@ import { assert } from "@/common/utils/assert";
 
 type AliveWebSocket = WebSocket & { isAlive?: boolean };
 
-export { DESKTOP_WS_PATH, ORPC_WS_PATH };
+export { BROWSER_FRAME_WS_PATH, DESKTOP_WS_PATH, ORPC_WS_PATH };
 
 const WS_HEARTBEAT_INTERVAL_MS = 30_000;
 
@@ -59,6 +59,11 @@ export interface OrpcServerOptions {
   router?: AppRouter;
   /** Desktop bridge upgrade/shutdown hooks for /desktop/ws */
   desktopBridgeServer?: Pick<ORPCContext["desktopBridgeServer"], "handleUpgrade" | "stop">;
+  /** Browser frame bridge upgrade/shutdown hooks for /browser/ws */
+  browserFrameBridgeServer?: Pick<
+    ORPCContext["browserFrameBridgeServer"],
+    "handleUpgrade" | "stop"
+  >;
   /**
    * Allow HTTPS browser origins when reverse proxies forward X-Forwarded-Proto=http.
    * Keep disabled by default and only enable when TLS is terminated before mux.
@@ -483,6 +488,7 @@ export async function createOrpcServer({
   },
   router: existingRouter,
   desktopBridgeServer = context.desktopBridgeServer,
+  browserFrameBridgeServer = context.browserFrameBridgeServer,
 }: OrpcServerOptions): Promise<OrpcServer> {
   // Express app setup
   const app = express();
@@ -1425,6 +1431,15 @@ export async function createOrpcServer({
       return;
     }
 
+    if (pathname === BROWSER_FRAME_WS_PATH) {
+      assert(
+        browserFrameBridgeServer,
+        "createOrpcServer requires browserFrameBridgeServer for browser frame relay upgrades"
+      );
+      browserFrameBridgeServer.handleUpgrade(req, socket, head);
+      return;
+    }
+
     socket.destroy();
   });
 
@@ -1539,6 +1554,9 @@ export async function createOrpcServer({
       // before awaiting httpServer.close() to avoid shutdown hanging on upgraded sockets.
       if (desktopBridgeServer) {
         await desktopBridgeServer.stop();
+      }
+      if (browserFrameBridgeServer) {
+        await browserFrameBridgeServer.stop();
       }
 
       // Then close HTTP server.

@@ -2091,6 +2091,21 @@ export const browserSession = {
       .strict(),
     output: eventIterator(BrowserSessionEventSchema),
   },
+  getFrameStreamBootstrap: {
+    input: z.object({ workspaceId: z.string() }),
+    output: z.discriminatedUnion("available", [
+      z.object({
+        available: z.literal(true),
+        bridgePath: z.string(),
+        token: z.string(),
+        localBridgeBaseUrl: z.string(),
+      }),
+      z.object({
+        available: z.literal(false),
+        reason: z.enum(["no_active_session", "server_unavailable"]),
+      }),
+    ]),
+  },
   navigate: {
     input: z
       .object({

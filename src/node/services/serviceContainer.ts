@@ -64,6 +64,8 @@ import { ServerAuthService } from "@/node/services/serverAuthService";
 import { DesktopBridgeServer } from "@/node/services/desktop/DesktopBridgeServer";
 import { DesktopSessionManager } from "@/node/services/desktop/DesktopSessionManager";
 import { DesktopTokenManager } from "@/node/services/desktop/DesktopTokenManager";
+import { BrowserFrameBridgeServer } from "@/node/services/browserSessionBridgeServer";
+import { BrowserSessionTokenManager } from "@/node/services/browserSessionTokenManager";
 import type { ORPCContext } from "@/node/orpc/context";
 import type { ExternalSecretResolver } from "@/common/types/secrets";
 
@@ -134,6 +136,8 @@ export class ServiceContainer {
   public readonly desktopSessionManager: DesktopSessionManager;
   public readonly desktopTokenManager: DesktopTokenManager;
   public readonly desktopBridgeServer: DesktopBridgeServer;
+  public readonly browserSessionTokenManager: BrowserSessionTokenManager;
+  public readonly browserFrameBridgeServer: BrowserFrameBridgeServer;
   public readonly sshPromptService = new SshPromptService();
   private readonly ptyService: PTYService;
   public readonly idleCompactionService: IdleCompactionService;
@@ -213,6 +217,11 @@ export class ServiceContainer {
     this.desktopBridgeServer = new DesktopBridgeServer({
       desktopSessionManager: this.desktopSessionManager,
       desktopTokenManager: this.desktopTokenManager,
+    });
+    this.browserSessionTokenManager = new BrowserSessionTokenManager();
+    this.browserFrameBridgeServer = new BrowserFrameBridgeServer({
+      browserSessionService: this.browserSessionService,
+      browserSessionTokenManager: this.browserSessionTokenManager,
     });
 
     // Idle compaction service - auto-compacts workspaces after configured idle period
@@ -588,6 +597,8 @@ export class ServiceContainer {
       desktopSessionManager: this.desktopSessionManager,
       desktopTokenManager: this.desktopTokenManager,
       desktopBridgeServer: this.desktopBridgeServer,
+      browserSessionTokenManager: this.browserSessionTokenManager,
+      browserFrameBridgeServer: this.browserFrameBridgeServer,
     };
   }
 
@@ -595,10 +606,12 @@ export class ServiceContainer {
    * Shutdown services that need cleanup
    */
   async shutdown(): Promise<void> {
-    // Stop the bridge before closing sessions so desktop clients get a clean disconnect.
+    // Stop relay bridges before closing sessions so connected clients get a clean disconnect.
     await this.desktopBridgeServer.stop();
     this.desktopTokenManager.dispose();
     await this.desktopSessionManager.closeAll();
+    await this.browserFrameBridgeServer.stop();
+    this.browserSessionTokenManager.dispose();
     this.idleCompactionService.stop();
     this.browserSessionService.dispose();
     this.streamPortRegistry.dispose();
@@ -619,10 +632,12 @@ export class ServiceContainer {
    * Terminates all background processes to prevent orphans.
    */
   async dispose(): Promise<void> {
-    // Stop the bridge before closing sessions so desktop clients get a clean disconnect.
+    // Stop relay bridges before closing sessions so connected clients get a clean disconnect.
     await this.desktopBridgeServer.stop();
     this.desktopTokenManager.dispose();
     await this.desktopSessionManager.closeAll();
+    await this.browserFrameBridgeServer.stop();
+    this.browserSessionTokenManager.dispose();
     this.browserSessionService.dispose();
     this.streamPortRegistry.dispose();
     await this.analyticsService.dispose();

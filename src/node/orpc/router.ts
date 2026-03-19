@@ -78,7 +78,7 @@ import type { MuxMessage } from "@/common/types/message";
 import { coerceThinkingLevel } from "@/common/types/thinking";
 import { normalizeLegacyMuxMetadata } from "@/node/utils/messages/legacy";
 import { log } from "@/node/services/log";
-import { DESKTOP_WS_PATH } from "@/node/orpc/wsPaths";
+import { BROWSER_FRAME_WS_PATH, DESKTOP_WS_PATH } from "@/node/orpc/wsPaths";
 import { SERVER_AUTH_SESSION_COOKIE_NAME } from "@/node/services/serverAuthService";
 import {
   readSubagentTranscriptArtifactsFile,
@@ -1150,6 +1150,26 @@ export const router = (authToken?: string) => {
             signal?.removeEventListener("abort", onAbort);
             service.off(eventName, onEvent);
           }
+        }),
+      getFrameStreamBootstrap: t
+        .input(schemas.browserSession.getFrameStreamBootstrap.input)
+        .output(schemas.browserSession.getFrameStreamBootstrap.output)
+        .handler(({ context, input }) => {
+          const session = context.browserSessionService.getActiveSession(input.workspaceId);
+          if (!session) {
+            return { available: false as const, reason: "no_active_session" as const };
+          }
+          const serverInfo = context.serverService.getServerInfo();
+          if (!serverInfo) {
+            return { available: false as const, reason: "server_unavailable" as const };
+          }
+          const token = context.browserSessionTokenManager.mint(input.workspaceId, session.id);
+          return {
+            available: true as const,
+            bridgePath: BROWSER_FRAME_WS_PATH,
+            token,
+            localBridgeBaseUrl: serverInfo.baseUrl,
+          };
         }),
     },
     uiLayouts: {

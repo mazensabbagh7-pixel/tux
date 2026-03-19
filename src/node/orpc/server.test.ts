@@ -6,7 +6,7 @@ import { WebSocket, WebSocketServer } from "ws";
 import { RPCLink as HTTPRPCLink } from "@orpc/client/fetch";
 import { createORPCClient } from "@orpc/client";
 import type { RouterClient } from "@orpc/server";
-import { createOrpcServer, DESKTOP_WS_PATH } from "./server";
+import { createOrpcServer, DESKTOP_WS_PATH, BROWSER_FRAME_WS_PATH } from "./server";
 import type { ORPCContext } from "./context";
 import type { AppRouter } from "./router";
 import { Config } from "@/node/config";
@@ -1250,6 +1250,77 @@ describe("createOrpcServer", () => {
     }
   });
 
+  test("routes browser frame WebSocket connections to the browser frame bridge server without ORPC origin validation", async () => {
+    const stubContext: Partial<ORPCContext> = {};
+    const browserFrameRelayServer = new WebSocketServer({ noServer: true });
+    let browserFrameRelayServerStopped = false;
+    const browserFrameRequests: Array<{ origin: string | null; url: string | undefined }> = [];
+    const browserFrameBridgeServer = {
+      handleUpgrade(
+        req: Parameters<WebSocketServer["handleUpgrade"]>[0],
+        socket: Parameters<WebSocketServer["handleUpgrade"]>[1],
+        head: Parameters<WebSocketServer["handleUpgrade"]>[2]
+      ) {
+        browserFrameRelayServer.handleUpgrade(req, socket, head, (ws) => {
+          browserFrameRelayServer.emit("connection", ws, req);
+        });
+      },
+      async stop() {
+        if (browserFrameRelayServerStopped) {
+          return;
+        }
+
+        browserFrameRelayServerStopped = true;
+        await new Promise<void>((resolve) => {
+          browserFrameRelayServer.close(() => resolve());
+        });
+      },
+    };
+
+    browserFrameRelayServer.on("connection", (_ws, req) => {
+      browserFrameRequests.push({
+        origin: typeof req.headers.origin === "string" ? req.headers.origin : null,
+        url: req.url,
+      });
+    });
+
+    let server: Awaited<ReturnType<typeof createOrpcServer>> | null = null;
+    let ws: WebSocket | null = null;
+
+    try {
+      server = await createOrpcServer({
+        host: "127.0.0.1",
+        port: 0,
+        context: stubContext as ORPCContext,
+        browserFrameBridgeServer,
+      });
+
+      ws = new WebSocket(
+        `${server.baseUrl.replace(/^http/, "ws")}${BROWSER_FRAME_WS_PATH}?token=test-token`,
+        {
+          headers: { origin: "https://evil.example.com" },
+        }
+      );
+
+      await waitForWebSocketOpen(ws);
+      expect(browserFrameRequests).toEqual([
+        {
+          origin: "https://evil.example.com",
+          url: `${BROWSER_FRAME_WS_PATH}?token=test-token`,
+        },
+      ]);
+
+      await closeWebSocket(ws);
+      ws = null;
+    } finally {
+      ws?.terminate();
+      if (server) {
+        await server.close();
+      } else {
+        await browserFrameBridgeServer.stop();
+      }
+    }
+  });
   test("accepts same-origin WebSocket connections", async () => {
     const stubContext: Partial<ORPCContext> = {};
 
