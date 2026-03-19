@@ -168,6 +168,88 @@ function hasFailureResult(result: unknown): boolean {
   return false;
 }
 
+/**
+ * Returns the toolCallId of the latest ask_user_question that is still truly
+ * awaiting user input in this assistant turn, or null when waiting should be
+ * suppressed in favor of interruption/retry UX.
+ */
+function getAwaitingAskUserQuestionToolCallId(message: MuxMessage): string | null {
+  if (message.role !== "assistant") {
+    return null;
+  }
+
+  // Error metadata means this turn ended in failure; surface retry/error state
+  // instead of presenting the turn as awaiting user input.
+  if (message.metadata?.error != null) {
+    return null;
+  }
+
+  let latestPendingQuestionIndex = -1;
+  let latestPendingQuestionToolCallId: string | null = null;
+  for (let partIndex = 0; partIndex < message.parts.length; partIndex++) {
+    const part = message.parts[partIndex];
+    if (
+      isDynamicToolPart(part) &&
+      part.toolName === "ask_user_question" &&
+      part.state === "input-available"
+    ) {
+      latestPendingQuestionIndex = partIndex;
+      latestPendingQuestionToolCallId = part.toolCallId;
+    }
+  }
+
+  if (latestPendingQuestionIndex === -1 || latestPendingQuestionToolCallId === null) {
+    return null;
+  }
+
+  // If a later tool call is still unfinished, that later interruption should
+  // win over the earlier ask_user_question waiting state.
+  const hasLaterPendingTool = message.parts.some(
+    (part, partIndex) =>
+      partIndex > latestPendingQuestionIndex &&
+      isDynamicToolPart(part) &&
+      part.state === "input-available"
+  );
+  if (hasLaterPendingTool) {
+    return null;
+  }
+
+  // If a later tool has already failed, the latest visible state is an
+  // interruption/error and retry affordances should remain visible.
+  const hasLaterFailedTool = message.parts.some(
+    (part, partIndex) =>
+      partIndex > latestPendingQuestionIndex &&
+      isDynamicToolPart(part) &&
+      ((part.state === "output-available" && hasFailureResult(part.output)) ||
+        (part.state === "output-redacted" && part.failed === true))
+  );
+  if (hasLaterFailedTool) {
+    return null;
+  }
+
+  // Persisted partial turns can include additional trailing text/reasoning
+  // emitted after the question. Treat that as an interrupted tail rather than
+  // a pure waiting state.
+  if (message.metadata?.partial === true) {
+    const hasLaterTextOrReasoning = message.parts.some((part, partIndex) => {
+      if (partIndex <= latestPendingQuestionIndex) {
+        return false;
+      }
+
+      return (
+        (part.type === "text" && part.text.length > 0) ||
+        (part.type === "reasoning" && part.text.length > 0)
+      );
+    });
+
+    if (hasLaterTextOrReasoning) {
+      return null;
+    }
+  }
+
+  return latestPendingQuestionToolCallId;
+}
+
 function resolveRouteProvider(
   routeProvider: string | undefined,
   routedThroughGateway: boolean | undefined
@@ -742,74 +824,7 @@ export class StreamingMessageAggregator {
         return false;
       }
 
-      // Error metadata means this turn ended in failure; surface retry/error state
-      // instead of presenting the turn as awaiting user input.
-      if (message.metadata?.error != null) {
-        return false;
-      }
-
-      let latestPendingQuestionIndex = -1;
-      for (let partIndex = 0; partIndex < message.parts.length; partIndex++) {
-        const part = message.parts[partIndex];
-        if (
-          isDynamicToolPart(part) &&
-          part.toolName === "ask_user_question" &&
-          part.state === "input-available"
-        ) {
-          latestPendingQuestionIndex = partIndex;
-        }
-      }
-
-      if (latestPendingQuestionIndex === -1) {
-        return false;
-      }
-
-      // If a later tool call is still unfinished, that later interruption should
-      // win over the earlier ask_user_question waiting state.
-      const hasLaterPendingTool = message.parts.some(
-        (part, partIndex) =>
-          partIndex > latestPendingQuestionIndex &&
-          isDynamicToolPart(part) &&
-          part.state === "input-available"
-      );
-      if (hasLaterPendingTool) {
-        return false;
-      }
-
-      // If a later tool has already failed, the latest visible state is an
-      // interruption/error and retry affordances should remain visible.
-      const hasLaterFailedTool = message.parts.some(
-        (part, partIndex) =>
-          partIndex > latestPendingQuestionIndex &&
-          isDynamicToolPart(part) &&
-          ((part.state === "output-available" && hasFailureResult(part.output)) ||
-            (part.state === "output-redacted" && part.failed === true))
-      );
-      if (hasLaterFailedTool) {
-        return false;
-      }
-
-      // Persisted partial turns can include additional trailing text/reasoning
-      // emitted after the question. Treat that as an interrupted tail rather than
-      // a pure waiting state.
-      if (message.metadata?.partial === true) {
-        const hasLaterTextOrReasoning = message.parts.some((part, partIndex) => {
-          if (partIndex <= latestPendingQuestionIndex) {
-            return false;
-          }
-
-          return (
-            (part.type === "text" && part.text.length > 0) ||
-            (part.type === "reasoning" && part.text.length > 0)
-          );
-        });
-
-        if (hasLaterTextOrReasoning) {
-          return false;
-        }
-      }
-
-      return true;
+      return getAwaitingAskUserQuestionToolCallId(message) !== null;
     }
 
     return false;
@@ -2720,6 +2735,8 @@ export class StreamingMessageAggregator {
       // Merge adjacent text/reasoning parts for display
       const mergedParts = mergeAdjacentParts(message.parts);
 
+      const awaitingAskUserQuestionToolCallId = getAwaitingAskUserQuestionToolCallId(message);
+
       // Find the last part that will produce a DisplayedMessage
       // (reasoning, text parts with content, OR tool parts)
       let lastPartIndex = -1;
@@ -2804,7 +2821,12 @@ export class StreamingMessageAggregator {
             // so after restart we should keep it answerable ("executing") instead of
             // showing retry/auto-resume UX.
             if (part.toolName === "ask_user_question") {
-              status = "executing";
+              status =
+                part.toolCallId === awaitingAskUserQuestionToolCallId
+                  ? "executing"
+                  : isPartial
+                    ? "interrupted"
+                    : "executing";
             } else if (isPartial) {
               status = "interrupted";
             } else {
