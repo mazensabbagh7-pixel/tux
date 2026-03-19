@@ -1,6 +1,6 @@
 import { EventEmitter } from "node:events";
 import * as http from "node:http";
-import * as net from "node:net";
+import type * as net from "node:net";
 import { describe, expect, mock, test, type Mock } from "bun:test";
 import { WebSocket } from "ws";
 import type { BrowserFramePayload, BrowserSession } from "@/common/types/browserSession";
@@ -26,7 +26,9 @@ interface MockBrowserSessionService {
 
 class FakeBridgeWebSocket extends EventEmitter {
   public readyState: number = WebSocket.OPEN;
-  public readonly send = mock((_: string) => {});
+  public readonly send = mock((_: string) => {
+    /* noop */
+  });
   public readonly close = mock((code?: number, reason?: string) => {
     if (this.readyState === WebSocket.CLOSED) {
       return;
@@ -47,6 +49,18 @@ class FakeBridgeWebSocket extends EventEmitter {
 
 interface PrivateBrowserFrameBridgeServer {
   handleUpgradedConnection: (ws: WebSocket, request: http.IncomingMessage) => void;
+}
+
+function isTimerCallback(handler: TimerHandler): handler is (...args: unknown[]) => void {
+  return typeof handler === "function";
+}
+
+function requireHeartbeatCallback(callback: (() => void) | null): () => void {
+  if (callback === null) {
+    throw new Error("Expected BrowserFrameBridgeServer to register a heartbeat interval");
+  }
+
+  return callback;
 }
 
 function createLiveSession(overrides: Partial<BrowserSession> = {}): BrowserSession {
@@ -256,7 +270,7 @@ describe("BrowserFrameBridgeServer", () => {
 
     try {
       const ws = new WebSocket(`ws://127.0.0.1:${upgradeHarness.port}/`);
-      await expect(waitForWebSocketClose(ws)).resolves.toEqual({
+      expect(await waitForWebSocketClose(ws)).toEqual({
         code: 4001,
         reason: "Invalid or expired token",
       });
@@ -276,7 +290,7 @@ describe("BrowserFrameBridgeServer", () => {
 
     try {
       const ws = new WebSocket(`ws://127.0.0.1:${upgradeHarness.port}/?token=bad-token`);
-      await expect(waitForWebSocketClose(ws)).resolves.toEqual({
+      expect(await waitForWebSocketClose(ws)).toEqual({
         code: 4001,
         reason: "Invalid or expired token",
       });
@@ -290,15 +304,19 @@ describe("BrowserFrameBridgeServer", () => {
     const bridgeServer = createBridgeServer({
       browserSessionService: {
         getActiveSession: mock(() => null),
-        onFrameEvent: mock(() => {}),
-        offFrameEvent: mock(() => {}),
+        onFrameEvent: mock(() => {
+          /* noop */
+        }),
+        offFrameEvent: mock(() => {
+          /* noop */
+        }),
       },
     });
     const upgradeHarness = await listenUpgradeServer(bridgeServer.server);
 
     try {
       const ws = new WebSocket(`ws://127.0.0.1:${upgradeHarness.port}/?token=${VALID_TOKEN}`);
-      await expect(waitForWebSocketClose(ws)).resolves.toEqual({
+      expect(await waitForWebSocketClose(ws)).toEqual({
         code: 4002,
         reason: "No active browser session",
       });
@@ -312,15 +330,19 @@ describe("BrowserFrameBridgeServer", () => {
     const bridgeServer = createBridgeServer({
       browserSessionService: {
         getActiveSession: mock(() => createLiveSession({ id: "different-session" })),
-        onFrameEvent: mock(() => {}),
-        offFrameEvent: mock(() => {}),
+        onFrameEvent: mock(() => {
+          /* noop */
+        }),
+        offFrameEvent: mock(() => {
+          /* noop */
+        }),
       },
     });
     const upgradeHarness = await listenUpgradeServer(bridgeServer.server);
 
     try {
       const ws = new WebSocket(`ws://127.0.0.1:${upgradeHarness.port}/?token=${VALID_TOKEN}`);
-      await expect(waitForWebSocketClose(ws)).resolves.toEqual({
+      expect(await waitForWebSocketClose(ws)).toEqual({
         code: 4003,
         reason: "Session mismatch",
       });
@@ -339,7 +361,7 @@ describe("BrowserFrameBridgeServer", () => {
 
     globalThis.setInterval = ((handler: TimerHandler, delay?: number, ...args: unknown[]) => {
       expect(delay).toBe(30_000);
-      if (typeof handler !== "function") {
+      if (!isTimerCallback(handler)) {
         throw new TypeError("Expected BrowserFrameBridgeServer to schedule a function heartbeat");
       }
       heartbeatCallback = () => {
@@ -365,13 +387,10 @@ describe("BrowserFrameBridgeServer", () => {
         })
       );
 
-      const fireHeartbeat: (() => void) | null = heartbeatCallback;
-      expect(fireHeartbeat).not.toBeNull();
-      if (!fireHeartbeat) {
-        throw new Error("Expected BrowserFrameBridgeServer to register a heartbeat interval");
-      }
+      const fireHeartbeat = requireHeartbeatCallback(heartbeatCallback);
+      expect(typeof fireHeartbeat).toBe("function");
 
-      (fireHeartbeat as () => void)();
+      fireHeartbeat();
 
       expect(ws.send).toHaveBeenNthCalledWith(2, JSON.stringify({ type: "heartbeat" }));
     } finally {
@@ -397,7 +416,7 @@ describe("BrowserFrameBridgeServer", () => {
       await bridgeServer.server.stop();
 
       expect(ws.close).toHaveBeenCalledWith(1001, "Server stopping");
-      await expect(bridgeServer.server.stop()).resolves.toBeUndefined();
+      expect(await bridgeServer.server.stop()).toBeUndefined();
     } finally {
       ws.close();
     }
