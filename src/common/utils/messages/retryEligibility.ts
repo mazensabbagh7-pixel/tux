@@ -164,7 +164,8 @@ export function hasExecutingAskUserQuestionInLatestTurn(messages: DisplayedMessa
           message.status === "pending" ||
           message.status === "interrupted" ||
           message.status === "failed" ||
-          message.status === "completed"
+          message.status === "completed" ||
+          message.status === "redacted"
         );
       case "assistant":
       case "reasoning":
