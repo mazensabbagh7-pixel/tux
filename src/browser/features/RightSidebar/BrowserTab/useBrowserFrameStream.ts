@@ -239,9 +239,9 @@ export function useBrowserFrameStream(
         }
 
         if (!result.available) {
-          if (hasEverConnectedRef.current) {
-            scheduleReconnectRef.current();
-          }
+          // Always retry on unavailability — transient startup races or backend
+          // readiness delays should not strand frame streaming permanently.
+          scheduleReconnectRef.current();
           return;
         }
 
@@ -327,9 +327,9 @@ export function useBrowserFrameStream(
         setConnected(false);
         setScreenshotSrc(null);
         setMetadata(null);
-        if (hasEverConnectedRef.current) {
-          scheduleReconnectRef.current();
-        }
+        // Always retry — transient errors during initial connect should not
+        // strand frame streaming permanently.
+        scheduleReconnectRef.current();
       }
     })();
   };

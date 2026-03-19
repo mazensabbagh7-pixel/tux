@@ -184,10 +184,15 @@ function normalizeMuxMessageFromDisk(value: unknown): MuxMessage | null {
  * Strip the screenshot payload from a session before sending over ORPC.
  * Screenshots are delivered via the direct WebSocket bridge at /browser/ws,
  * keeping the ORPC subscription as a lightweight control-plane channel.
+ * TODO: Once the direct WebSocket bridge is proven reliable, re-enable stripping to
+ * reduce ORPC bandwidth. Currently disabled to preserve fallback rendering.
  */
 function stripScreenshotForOrpc(session: BrowserSession): BrowserSession {
   return { ...session, lastScreenshotBase64: null };
 }
+
+// Keep a live reference until ORPC stripping is re-enabled.
+void stripScreenshotForOrpc;
 
 async function readChatJsonlAllowMissing(params: {
   chatPath: string;
@@ -1151,17 +1156,10 @@ export const router = (authToken?: string) => {
           try {
             const session = service.getActiveSession(input.workspaceId);
             const recentActions = service.getRecentActions(input.workspaceId);
-            // Strip screenshot payload — delivered via direct WebSocket bridge instead.
-            const strippedSession = session != null ? stripScreenshotForOrpc(session) : null;
-            yield { type: "snapshot" as const, session: strippedSession, recentActions };
+            yield { type: "snapshot" as const, session, recentActions };
 
             for await (const event of queue.iterate()) {
-              if (event.type === "session-updated") {
-                // Strip screenshot payload — delivered via direct WebSocket bridge.
-                yield { ...event, session: stripScreenshotForOrpc(event.session) };
-              } else {
-                yield event;
-              }
+              yield event;
             }
           } finally {
             queue.end();
