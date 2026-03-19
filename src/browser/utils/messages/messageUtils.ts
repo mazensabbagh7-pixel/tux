@@ -91,7 +91,30 @@ export function shouldShowInterruptedBarrier(
   )
     return false;
 
-  const lastMessage = getLastNonDecorativeMessage(allMessages);
+  const lastMessage = (() => {
+    const latest = getLastNonDecorativeMessage(allMessages);
+    if (latest?.type !== "plan-display") {
+      return latest;
+    }
+
+    // /plan previews are ephemeral transcript rows and should not redefine the
+    // latest actionable assistant turn for interruption UI.
+    for (let i = allMessages.length - 1; i >= 0; i--) {
+      const candidate = allMessages[i];
+      if (
+        candidate.type === "plan-display" ||
+        candidate.type === "history-hidden" ||
+        candidate.type === "workspace-init" ||
+        candidate.type === "compaction-boundary"
+      ) {
+        continue;
+      }
+      return candidate;
+    }
+
+    return undefined;
+  })();
+
   const isLatestTurnRow =
     lastMessage != null &&
     "historyId" in msg &&

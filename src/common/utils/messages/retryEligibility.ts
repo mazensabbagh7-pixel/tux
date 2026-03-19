@@ -98,8 +98,7 @@ function isDecorativeTranscriptMessage(message: DisplayedMessage): boolean {
   return (
     message.type === "history-hidden" ||
     message.type === "workspace-init" ||
-    message.type === "compaction-boundary" ||
-    message.type === "plan-display"
+    message.type === "compaction-boundary"
   );
 }
 
