@@ -146,7 +146,7 @@ describe("ask_user_question waiting state", () => {
     if (askRow?.type !== "tool") {
       throw new Error("Expected ask_user_question tool row");
     }
-    expect(askRow.status).toBe("interrupted");
+    expect(askRow.status).toBe("executing");
   });
 
   it("does not report awaiting input when a later tool result fails after the question", () => {
@@ -201,7 +201,7 @@ describe("ask_user_question waiting state", () => {
     if (askRow?.type !== "tool") {
       throw new Error("Expected ask_user_question tool row");
     }
-    expect(askRow.status).toBe("interrupted");
+    expect(askRow.status).toBe("executing");
   });
 
   it("does not report awaiting input when a later failed redacted tool follows the question", () => {
@@ -256,7 +256,7 @@ describe("ask_user_question waiting state", () => {
     if (askRow?.type !== "tool") {
       throw new Error("Expected ask_user_question tool row");
     }
-    expect(askRow.status).toBe("interrupted");
+    expect(askRow.status).toBe("executing");
   });
 
   it("does not report awaiting input when a later partial text segment follows the question", () => {
@@ -304,7 +304,7 @@ describe("ask_user_question waiting state", () => {
     if (askRow?.type !== "tool") {
       throw new Error("Expected ask_user_question tool row");
     }
-    expect(askRow.status).toBe("interrupted");
+    expect(askRow.status).toBe("executing");
   });
   it("does not treat older question turns as awaiting after chat moves on", () => {
     const aggregator = new StreamingMessageAggregator("2024-01-01T00:00:00.000Z");

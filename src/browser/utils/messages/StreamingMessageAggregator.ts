@@ -170,6 +170,8 @@ function hasFailureResult(result: unknown): boolean {
 
 interface AskUserQuestionResolutionOptions {
   suppressForMessageError: boolean;
+  suppressForLaterToolPart: boolean;
+  suppressForLaterTextOrReasoning: boolean;
 }
 
 /**
@@ -209,20 +211,25 @@ function resolveAskUserQuestionToolCallId(
     return null;
   }
 
-  // ask_user_question execution blocks until the user has answered. If any
-  // later tool part exists, the question has already been consumed and the turn
-  // should recover as interrupted/output tail instead of awaiting input.
-  const hasLaterToolPart = message.parts.some(
-    (part, partIndex) => partIndex > latestPendingQuestionIndex && isDynamicToolPart(part)
+  // A later unfinished tool takes precedence over the earlier question.
+  const hasLaterPendingTool = message.parts.some(
+    (part, partIndex) =>
+      partIndex > latestPendingQuestionIndex &&
+      isDynamicToolPart(part) &&
+      part.state === "input-available"
   );
-  if (hasLaterToolPart) {
+  if (hasLaterPendingTool) {
     return null;
   }
 
-  // Persisted partial turns can include additional trailing text/reasoning
-  // emitted after the question. Treat that as an interrupted tail rather than
-  // a pure waiting state.
-  if (message.metadata?.partial === true) {
+  const hasLaterToolPart = message.parts.some(
+    (part, partIndex) => partIndex > latestPendingQuestionIndex && isDynamicToolPart(part)
+  );
+  if (options.suppressForLaterToolPart && hasLaterToolPart) {
+    return null;
+  }
+
+  if (options.suppressForLaterTextOrReasoning && message.metadata?.partial === true) {
     const hasLaterTextOrReasoning = message.parts.some((part, partIndex) => {
       if (partIndex <= latestPendingQuestionIndex) {
         return false;
@@ -249,16 +256,21 @@ function resolveAskUserQuestionToolCallId(
 function getAwaitingAskUserQuestionToolCallId(message: MuxMessage): string | null {
   return resolveAskUserQuestionToolCallId(message, {
     suppressForMessageError: true,
+    suppressForLaterToolPart: true,
+    suppressForLaterTextOrReasoning: true,
   });
 }
 
 /**
- * Answer UI can stay available for message-level error tails, but once any later
- * tool part exists the question has already been consumed and is no longer answerable.
+ * Keep persisted ask_user_question rows answerable after restart, even when
+ * later partial output exists. answerAskUserQuestion can still resolve the
+ * pending prompt from disk without replaying the full turn.
  */
 function getAnswerableAskUserQuestionToolCallId(message: MuxMessage): string | null {
   return resolveAskUserQuestionToolCallId(message, {
     suppressForMessageError: false,
+    suppressForLaterToolPart: false,
+    suppressForLaterTextOrReasoning: false,
   });
 }
 

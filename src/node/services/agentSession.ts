@@ -959,33 +959,14 @@ export class AgentSession {
       return false;
     }
 
-    // ask_user_question execution blocks on user input. Any later dynamic-tool
-    // part means the question already resolved and startup recovery should treat
-    // the turn as interrupted tail output rather than pending input.
-    const hasLaterToolPart = message.parts.some(
-      (part, partIndex) => partIndex > latestPendingQuestionIndex && part.type === "dynamic-tool"
+    const hasLaterPendingTool = message.parts.some(
+      (part, partIndex) =>
+        partIndex > latestPendingQuestionIndex &&
+        part.type === "dynamic-tool" &&
+        part.state === "input-available"
     );
-    if (hasLaterToolPart) {
+    if (hasLaterPendingTool) {
       return false;
-    }
-
-    // If the stream produced text/reasoning after asking the question, this
-    // should recover as an interrupted tail after restart.
-    if (message.metadata?.partial === true) {
-      const hasLaterTextOrReasoning = message.parts.some((part, partIndex) => {
-        if (partIndex <= latestPendingQuestionIndex) {
-          return false;
-        }
-
-        return (
-          (part.type === "text" && part.text.length > 0) ||
-          (part.type === "reasoning" && part.text.length > 0)
-        );
-      });
-
-      if (hasLaterTextOrReasoning) {
-        return false;
-      }
     }
 
     return true;

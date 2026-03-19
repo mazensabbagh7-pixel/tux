@@ -1066,7 +1066,7 @@ describe("AgentSession startup auto-retry recovery", () => {
     session.dispose();
   });
 
-  test("schedules startup auto-retry when a failed tool follows ask_user_question", async () => {
+  test("does not schedule startup auto-retry when a failed tool follows ask_user_question", async () => {
     const workspaceId = "startup-retry-ask-user-failed-tail";
     const { session, historyService, events, cleanup } = await createSessionBundle(workspaceId);
     cleanups.push(cleanup);
@@ -1113,7 +1113,7 @@ describe("AgentSession startup auto-retry recovery", () => {
     expect(writePartialResult.success).toBe(true);
 
     const startupRetryModelHint = await session.getStartupAutoRetryModelHint();
-    expect(startupRetryModelHint).toBe("anthropic:claude-sonnet-4-5");
+    expect(startupRetryModelHint).toBeNull();
 
     session.ensureStartupAutoRetryCheck();
 
@@ -1122,12 +1122,12 @@ describe("AgentSession startup auto-retry recovery", () => {
     ).startupAutoRetryCheckPromise;
     await startupCheckPromise;
 
-    expect(events.some((event) => event.type === "auto-retry-scheduled")).toBe(true);
+    expect(events.some((event) => event.type === "auto-retry-scheduled")).toBe(false);
 
     session.dispose();
   });
 
-  test("schedules startup auto-retry when text follows ask_user_question", async () => {
+  test("does not schedule startup auto-retry when text follows ask_user_question", async () => {
     const workspaceId = "startup-retry-ask-user-text-tail";
     const { session, historyService, events, cleanup } = await createSessionBundle(workspaceId);
     cleanups.push(cleanup);
@@ -1170,7 +1170,7 @@ describe("AgentSession startup auto-retry recovery", () => {
     expect(writePartialResult.success).toBe(true);
 
     const startupRetryModelHint = await session.getStartupAutoRetryModelHint();
-    expect(startupRetryModelHint).toBe("anthropic:claude-sonnet-4-5");
+    expect(startupRetryModelHint).toBeNull();
 
     session.ensureStartupAutoRetryCheck();
 
@@ -1179,7 +1179,7 @@ describe("AgentSession startup auto-retry recovery", () => {
     ).startupAutoRetryCheckPromise;
     await startupCheckPromise;
 
-    expect(events.some((event) => event.type === "auto-retry-scheduled")).toBe(true);
+    expect(events.some((event) => event.type === "auto-retry-scheduled")).toBe(false);
 
     session.dispose();
   });
