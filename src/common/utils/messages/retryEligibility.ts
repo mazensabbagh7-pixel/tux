@@ -122,7 +122,30 @@ export function getLastNonDecorativeMessage(
  * not suppress interruption/retry UI once conversation has moved on.
  */
 export function hasExecutingAskUserQuestionInLatestTurn(messages: DisplayedMessage[]): boolean {
-  const lastMessage = getLastNonDecorativeMessage(messages);
+  const lastMessage = (() => {
+    const latest = getLastNonDecorativeMessage(messages);
+    if (latest?.type !== "plan-display") {
+      return latest;
+    }
+
+    // /plan previews are ephemeral transcript rows and should not redefine the
+    // latest actionable turn when inferring pending ask_user_question state.
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const candidate = messages[i];
+      if (
+        candidate.type === "plan-display" ||
+        candidate.type === "history-hidden" ||
+        candidate.type === "workspace-init" ||
+        candidate.type === "compaction-boundary"
+      ) {
+        continue;
+      }
+      return candidate;
+    }
+
+    return undefined;
+  })();
+
   if (!lastMessage || !("historyId" in lastMessage)) {
     return false;
   }
