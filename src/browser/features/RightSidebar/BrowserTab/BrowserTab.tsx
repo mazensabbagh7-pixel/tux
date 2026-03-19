@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 import {
   Camera,
@@ -158,6 +158,23 @@ export function BrowserTab(props: BrowserTabProps) {
   const sessionActive =
     session != null && (session.status === "live" || session.status === "starting");
   const frameStream = useBrowserFrameStream(props.workspaceId, sessionActive);
+  const lastOrpcScreenshotRef = useRef<string | null>(null);
+  const prevSessionIdRef = useRef<string | null>(null);
+  const currentSessionId = session != null && session.status !== "ended" ? session.id : null;
+
+  // Clear the cached fallback when the session changes or ends so stale screenshots do not leak
+  // into the next browser run.
+  if (currentSessionId !== prevSessionIdRef.current) {
+    prevSessionIdRef.current = currentSessionId;
+    lastOrpcScreenshotRef.current = null;
+  }
+
+  // Remember the last screenshot received via ORPC so stripped incremental updates can still
+  // render the last known frame while the live bridge reconnects.
+  if (session?.lastScreenshotBase64) {
+    lastOrpcScreenshotRef.current = `data:image/jpeg;base64,${session.lastScreenshotBase64}`;
+  }
+
   // Suppress the blank-page screenshot so the ready-state placeholder renders instead
   // of an empty white frame. The viewport shows its placeholder prop when screenshotSrc is null.
   const isBlankPage = session?.currentUrl === "about:blank";
@@ -170,6 +187,9 @@ export function BrowserTab(props: BrowserTabProps) {
     }
     if (session?.lastScreenshotBase64) {
       return `data:image/jpeg;base64,${session.lastScreenshotBase64}`;
+    }
+    if (lastOrpcScreenshotRef.current) {
+      return lastOrpcScreenshotRef.current;
     }
     return null;
   })();
