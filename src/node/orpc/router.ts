@@ -72,7 +72,7 @@ import assert from "node:assert/strict";
 import * as fsPromises from "fs/promises";
 import * as path from "node:path";
 
-import type { BrowserSessionEvent } from "@/common/types/browserSession";
+import type { BrowserSession, BrowserSessionEvent } from "@/common/types/browserSession";
 import type { DevToolsEvent } from "@/common/types/devtools";
 import type { MuxMessage } from "@/common/types/message";
 import { coerceThinkingLevel } from "@/common/types/thinking";
@@ -178,6 +178,15 @@ function normalizeMuxMessageFromDisk(value: unknown): MuxMessage | null {
   }
 
   return normalizeLegacyMuxMetadata(value as MuxMessage);
+}
+
+/**
+ * Strip the screenshot payload from a session before sending over ORPC.
+ * Screenshots are delivered via the direct WebSocket bridge at /browser/ws,
+ * keeping the ORPC subscription as a lightweight control-plane channel.
+ */
+function stripScreenshotForOrpc(session: BrowserSession): BrowserSession {
+  return { ...session, lastScreenshotBase64: null };
 }
 
 async function readChatJsonlAllowMissing(params: {
@@ -1142,9 +1151,18 @@ export const router = (authToken?: string) => {
           try {
             const session = service.getActiveSession(input.workspaceId);
             const recentActions = service.getRecentActions(input.workspaceId);
-            yield { type: "snapshot" as const, session, recentActions };
+            // Strip screenshot payload — delivered via direct WebSocket bridge instead.
+            const strippedSession = session != null ? stripScreenshotForOrpc(session) : null;
+            yield { type: "snapshot" as const, session: strippedSession, recentActions };
 
-            yield* queue.iterate();
+            for await (const event of queue.iterate()) {
+              if (event.type === "session-updated") {
+                // Strip screenshot payload — delivered via direct WebSocket bridge.
+                yield { ...event, session: stripScreenshotForOrpc(event.session) };
+              } else {
+                yield event;
+              }
+            }
           } finally {
             queue.end();
             signal?.removeEventListener("abort", onAbort);
