@@ -223,6 +223,34 @@ describe("hasInterruptedStream", () => {
 
     expect(hasInterruptedStream(messages)).toBe(false);
   });
+
+  it("returns true when latest row is stream-error even if turn includes executing ask_user_question", () => {
+    const messages: DisplayedMessage[] = [
+      {
+        type: "tool",
+        id: "tool-ask",
+        historyId: "assistant-1",
+        toolName: "ask_user_question",
+        toolCallId: "call-ask",
+        args: { questions: [] },
+        status: "executing",
+        isPartial: true,
+        historySequence: 2,
+        streamSequence: 0,
+        isLastPartOfMessage: false,
+      },
+      {
+        type: "stream-error",
+        id: "assistant-1-error",
+        historyId: "assistant-1",
+        error: "Connection dropped",
+        errorType: "network",
+        historySequence: 2,
+      },
+    ];
+
+    expect(hasInterruptedStream(messages)).toBe(true);
+  });
   it("returns true for partial tool message", () => {
     const messages: DisplayedMessage[] = [
       {

@@ -736,6 +736,12 @@ export class StreamingMessageAggregator {
         return false;
       }
 
+      // Error metadata means this turn ended in failure; surface retry/error state
+      // instead of presenting the turn as awaiting user input.
+      if (message.metadata?.error != null) {
+        return false;
+      }
+
       return message.parts.some(
         (part) =>
           isDynamicToolPart(part) &&

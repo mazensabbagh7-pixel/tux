@@ -127,6 +127,11 @@ export function hasExecutingAskUserQuestionInLatestTurn(messages: DisplayedMessa
     return false;
   }
 
+  // If the latest visible row is a stream error, preserve interruption/retry UX.
+  if (lastMessage.type === "stream-error") {
+    return false;
+  }
+
   const latestHistoryId = lastMessage.historyId;
   for (let i = messages.length - 1; i >= 0; i--) {
     const message = messages[i];
