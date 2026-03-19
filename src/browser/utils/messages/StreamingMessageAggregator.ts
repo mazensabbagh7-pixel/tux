@@ -782,8 +782,8 @@ export class StreamingMessageAggregator {
         (part, partIndex) =>
           partIndex > latestPendingQuestionIndex &&
           isDynamicToolPart(part) &&
-          part.state === "output-available" &&
-          hasFailureResult(part.output)
+          ((part.state === "output-available" && hasFailureResult(part.output)) ||
+            (part.state === "output-redacted" && part.failed === true))
       );
       if (hasLaterFailedTool) {
         return false;
