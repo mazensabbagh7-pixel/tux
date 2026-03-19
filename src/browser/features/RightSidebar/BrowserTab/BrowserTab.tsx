@@ -25,6 +25,7 @@ import type {
 import { normalizeBrowserUrl } from "@/common/utils/browserUrl";
 import { BrowserViewport } from "./BrowserViewport";
 import { getActionDisplayInfo } from "./browserActionDisplay";
+import { useBrowserFrameStream } from "./useBrowserFrameStream";
 import { useBrowserSessionSubscription } from "./useBrowserSessionSubscription";
 
 interface BrowserTabProps {
@@ -154,13 +155,24 @@ export function BrowserTab(props: BrowserTabProps) {
 
   const isStarting =
     startingSession || autoStartState.autoStartPending || session?.status === "starting";
+  const sessionActive =
+    session != null && (session.status === "live" || session.status === "starting");
+  const frameStream = useBrowserFrameStream(props.workspaceId, sessionActive);
   // Suppress the blank-page screenshot so the ready-state placeholder renders instead
   // of an empty white frame. The viewport shows its placeholder prop when screenshotSrc is null.
   const isBlankPage = session?.currentUrl === "about:blank";
-  const screenshotSrc =
-    session?.lastScreenshotBase64 && !isBlankPage
-      ? `data:image/jpeg;base64,${session.lastScreenshotBase64}`
-      : null;
+  const screenshotSrc = (() => {
+    if (isBlankPage) {
+      return null;
+    }
+    if (frameStream.connected && frameStream.screenshotSrc) {
+      return frameStream.screenshotSrc;
+    }
+    if (session?.lastScreenshotBase64) {
+      return `data:image/jpeg;base64,${session.lastScreenshotBase64}`;
+    }
+    return null;
+  })();
   const visibleError =
     startError ?? error ?? session?.lastError ?? session?.streamErrorMessage ?? null;
   const visibleClosedNotice = visibleError == null ? getEndedSessionNotice(session) : null;
