@@ -261,7 +261,7 @@ describe("BrowserSessionService frame events", () => {
       expect.unreachable("expected update listener to keep receiving BrowserSessionEvent updates");
     }
     expect(updateEvents[1].session.title).toBe("Updated title");
-    expect(updateEvents[1].session.lastScreenshotBase64).toBeNull();
+    expect(updateEvents[1].session.lastScreenshotBase64).toBe("frame-base64");
     expect(service.getActiveSession(workspaceId)?.lastScreenshotBase64).toBe("frame-base64");
   });
 });
