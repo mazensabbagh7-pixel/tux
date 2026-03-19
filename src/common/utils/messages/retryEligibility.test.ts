@@ -251,6 +251,27 @@ describe("hasInterruptedStream", () => {
 
     expect(hasInterruptedStream(messages)).toBe(true);
   });
+
+  it("returns false when authoritative awaitingUserQuestion flag is true", () => {
+    const messages: DisplayedMessage[] = [
+      {
+        type: "assistant",
+        id: "assistant-tail",
+        historyId: "assistant-1",
+        content: "Please answer above.",
+        historySequence: 2,
+        streamSequence: 0,
+        isStreaming: false,
+        isPartial: true,
+        isLastPartOfMessage: true,
+        isCompacted: false,
+        isIdleCompacted: false,
+      },
+    ];
+
+    expect(hasInterruptedStream(messages, null, null, null, true)).toBe(false);
+    expect(isEligibleForAutoRetry(messages, null, null, null, true)).toBe(false);
+  });
   it("returns true for partial tool message", () => {
     const messages: DisplayedMessage[] = [
       {

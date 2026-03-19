@@ -572,7 +572,8 @@ export const ChatPane: React.FC<ChatPaneProps> = (props) => {
         workspaceState.messages,
         workspaceState.pendingStreamStartTime,
         workspaceState.runtimeStatus,
-        workspaceState.lastAbortReason
+        workspaceState.lastAbortReason,
+        workspaceState.awaitingUserQuestion
       )
     : null;
 

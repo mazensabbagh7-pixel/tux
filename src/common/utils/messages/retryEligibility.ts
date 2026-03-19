@@ -173,7 +173,8 @@ export function hasExecutingAskUserQuestionInLatestTurn(messages: DisplayedMessa
 function computeHasInterruptedStream(
   messages: DisplayedMessage[],
   pendingStreamStartTime: number | null = null,
-  runtimeStatus: RuntimeStatusEvent | null = null
+  runtimeStatus: RuntimeStatusEvent | null = null,
+  awaitingUserQuestion = false
 ): boolean {
   if (messages.length === 0) return false;
 
@@ -204,6 +205,13 @@ function computeHasInterruptedStream(
   // The backend's ensureReady() is still running - this happens when reconnecting to a stopped workspace.
   // runtimeStatus is set during ensureReady() and cleared when ready/error.
   if (runtimeStatus !== null && lastMessage.type !== "stream-error") {
+    return false;
+  }
+
+  // WorkspaceStore derives awaitingUserQuestion from untruncated history. When
+  // provided, trust that authoritative signal so display truncation cannot
+  // re-enable interruption/retry UI for intentionally pending questions.
+  if (awaitingUserQuestion) {
     return false;
   }
 
@@ -239,12 +247,14 @@ export function getInterruptionContext(
   messages: DisplayedMessage[],
   pendingStreamStartTime: number | null = null,
   runtimeStatus: RuntimeStatusEvent | null = null,
-  lastAbortReason: StreamAbortReasonSnapshot | null = null
+  lastAbortReason: StreamAbortReasonSnapshot | null = null,
+  awaitingUserQuestion = false
 ): InterruptionContext {
   const hasInterrupted = computeHasInterruptedStream(
     messages,
     pendingStreamStartTime,
-    runtimeStatus
+    runtimeStatus,
+    awaitingUserQuestion
   );
 
   if (!hasInterrupted) {
@@ -281,10 +291,16 @@ export function hasInterruptedStream(
   messages: DisplayedMessage[],
   pendingStreamStartTime: number | null = null,
   runtimeStatus: RuntimeStatusEvent | null = null,
-  lastAbortReason: StreamAbortReasonSnapshot | null = null
+  lastAbortReason: StreamAbortReasonSnapshot | null = null,
+  awaitingUserQuestion = false
 ): boolean {
-  return getInterruptionContext(messages, pendingStreamStartTime, runtimeStatus, lastAbortReason)
-    .hasInterruptedStream;
+  return getInterruptionContext(
+    messages,
+    pendingStreamStartTime,
+    runtimeStatus,
+    lastAbortReason,
+    awaitingUserQuestion
+  ).hasInterruptedStream;
 }
 
 /**
@@ -302,8 +318,14 @@ export function isEligibleForAutoRetry(
   messages: DisplayedMessage[],
   pendingStreamStartTime: number | null = null,
   runtimeStatus: RuntimeStatusEvent | null = null,
-  lastAbortReason: StreamAbortReasonSnapshot | null = null
+  lastAbortReason: StreamAbortReasonSnapshot | null = null,
+  awaitingUserQuestion = false
 ): boolean {
-  return getInterruptionContext(messages, pendingStreamStartTime, runtimeStatus, lastAbortReason)
-    .isEligibleForAutoRetry;
+  return getInterruptionContext(
+    messages,
+    pendingStreamStartTime,
+    runtimeStatus,
+    lastAbortReason,
+    awaitingUserQuestion
+  ).isEligibleForAutoRetry;
 }
