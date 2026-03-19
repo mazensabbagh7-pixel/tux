@@ -346,7 +346,7 @@ describe("ask_user_question waiting state", () => {
     expect(aggregator.hasAwaitingUserQuestion()).toBe(false);
   });
 
-  it("keeps awaiting state even when display truncation hides the ask_user_question row", () => {
+  it("does not report awaiting input when truncation hides the ask_user_question row", () => {
     const aggregator = new StreamingMessageAggregator("2024-01-01T00:00:00.000Z");
 
     const trailingToolParts = Array.from({ length: 80 }, (_, index) => ({
@@ -398,7 +398,7 @@ describe("ask_user_question waiting state", () => {
         (message) => message.type === "tool" && message.toolName === "ask_user_question"
       )
     ).toBe(false);
-    expect(aggregator.hasAwaitingUserQuestion()).toBe(true);
+    expect(aggregator.hasAwaitingUserQuestion()).toBe(false);
   });
 
   it("does not report awaiting input when latest assistant turn has stream error metadata", () => {

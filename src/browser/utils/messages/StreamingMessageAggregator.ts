@@ -834,11 +834,10 @@ export class StreamingMessageAggregator {
     const showSyntheticMessages =
       typeof window !== "undefined" && window.api?.debugLlmRequest === true;
 
-    // Use untruncated history so long turns cannot hide an awaiting question
-    // behind history-hidden markers in getDisplayedMessages().
+    // Start from untruncated history so we identify the latest assistant turn
+    // even when recent transcript rows include structural markers.
     const allMessages = this.getAllMessages();
 
-    // Find the latest history message that is visible in the transcript.
     for (let i = allMessages.length - 1; i >= 0; i--) {
       const message = allMessages[i];
       const isSynthetic = message.metadata?.synthetic === true;
@@ -857,7 +856,21 @@ export class StreamingMessageAggregator {
         return false;
       }
 
-      return getAwaitingAskUserQuestionToolCallId(message) !== null;
+      const awaitingToolCallId = getAwaitingAskUserQuestionToolCallId(message);
+      if (awaitingToolCallId === null) {
+        return false;
+      }
+
+      // Only surface workspace-level awaiting state when the matching
+      // ask_user_question row is still visible. Otherwise the transcript has no
+      // answer affordance and should recover through interrupted/retry UI.
+      return this.getDisplayedMessages().some(
+        (displayedMessage) =>
+          displayedMessage.type === "tool" &&
+          displayedMessage.toolName === "ask_user_question" &&
+          displayedMessage.toolCallId === awaitingToolCallId &&
+          displayedMessage.status === "executing"
+      );
     }
 
     return false;
