@@ -94,6 +94,60 @@ describe("ask_user_question waiting state", () => {
     expect(aggregator.hasAwaitingUserQuestion()).toBe(true);
   });
 
+  it("keeps awaiting input when sibling input-available tools follow ask_user_question", () => {
+    const aggregator = new StreamingMessageAggregator("2024-01-01T00:00:00.000Z");
+
+    aggregator.loadHistoricalMessages([
+      {
+        id: "assistant-1",
+        role: "assistant" as const,
+        parts: [
+          {
+            type: "dynamic-tool" as const,
+            toolCallId: "call-ask-1",
+            toolName: "ask_user_question",
+            state: "input-available" as const,
+            input: {
+              questions: [
+                {
+                  header: "Approach",
+                  question: "Which approach should we take?",
+                  options: [
+                    { label: "A", description: "Approach A" },
+                    { label: "B", description: "Approach B" },
+                  ],
+                  multiSelect: false,
+                },
+              ],
+            },
+          },
+          {
+            type: "dynamic-tool" as const,
+            toolCallId: "call-todo-1",
+            toolName: "todo_write",
+            state: "input-available" as const,
+            input: { todos: [{ content: "Waiting for answers", status: "in_progress" }] },
+          },
+        ],
+        metadata: {
+          timestamp: 1000,
+          historySequence: 1,
+          partial: true,
+        },
+      },
+    ]);
+
+    expect(aggregator.hasAwaitingUserQuestion()).toBe(true);
+
+    const askRow = aggregator
+      .getDisplayedMessages()
+      .find((message) => message.type === "tool" && message.toolName === "ask_user_question");
+    if (askRow?.type !== "tool") {
+      throw new Error("Expected ask_user_question tool row");
+    }
+    expect(askRow.status).toBe("executing");
+  });
+
   it("does not report awaiting input when completed tool output follows ask_user_question", () => {
     const aggregator = new StreamingMessageAggregator("2024-01-01T00:00:00.000Z");
 

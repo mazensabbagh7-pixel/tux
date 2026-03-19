@@ -211,21 +211,16 @@ function resolveAskUserQuestionToolCallId(
     return null;
   }
 
-  // A later unfinished tool takes precedence over the earlier question.
-  const hasLaterPendingTool = message.parts.some(
+  // Provider-planned sibling tools can remain input-available after the question;
+  // keep ask_user_question answerable in that case. Only resolved tool output
+  // tails should suppress the awaiting-input workspace signal.
+  const hasLaterResolvedToolPart = message.parts.some(
     (part, partIndex) =>
       partIndex > latestPendingQuestionIndex &&
       isDynamicToolPart(part) &&
-      part.state === "input-available"
+      (part.state === "output-available" || part.state === "output-redacted")
   );
-  if (hasLaterPendingTool) {
-    return null;
-  }
-
-  const hasLaterToolPart = message.parts.some(
-    (part, partIndex) => partIndex > latestPendingQuestionIndex && isDynamicToolPart(part)
-  );
-  if (options.suppressForLaterToolPart && hasLaterToolPart) {
+  if (options.suppressForLaterToolPart && hasLaterResolvedToolPart) {
     return null;
   }
 

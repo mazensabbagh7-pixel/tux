@@ -959,16 +959,6 @@ export class AgentSession {
       return false;
     }
 
-    const hasLaterPendingTool = message.parts.some(
-      (part, partIndex) =>
-        partIndex > latestPendingQuestionIndex &&
-        part.type === "dynamic-tool" &&
-        part.state === "input-available"
-    );
-    if (hasLaterPendingTool) {
-      return false;
-    }
-
     // Completed/redacted tool output after ask_user_question means restart recovery
     // should treat the turn as an interrupted tail (auto-retry), not pending input.
     const hasLaterCompletedToolOutput = message.parts.some((part, partIndex) => {
