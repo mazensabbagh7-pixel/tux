@@ -251,8 +251,8 @@ function resolveAskUserQuestionToolCallId(
 function getAwaitingAskUserQuestionToolCallId(message: MuxMessage): string | null {
   return resolveAskUserQuestionToolCallId(message, {
     suppressForMessageError: true,
-    suppressForLaterToolPart: true,
-    suppressForLaterTextOrReasoning: true,
+    suppressForLaterToolPart: false,
+    suppressForLaterTextOrReasoning: false,
   });
 }
 
@@ -842,21 +842,7 @@ export class StreamingMessageAggregator {
         return false;
       }
 
-      const awaitingToolCallId = getAwaitingAskUserQuestionToolCallId(message);
-      if (awaitingToolCallId === null) {
-        return false;
-      }
-
-      // Only surface workspace-level awaiting state when the matching
-      // ask_user_question row is still visible. Otherwise the transcript has no
-      // answer affordance and should recover through interrupted/retry UI.
-      return this.getDisplayedMessages().some(
-        (displayedMessage) =>
-          displayedMessage.type === "tool" &&
-          displayedMessage.toolName === "ask_user_question" &&
-          displayedMessage.toolCallId === awaitingToolCallId &&
-          displayedMessage.status === "executing"
-      );
+      return getAwaitingAskUserQuestionToolCallId(message) !== null;
     }
 
     return false;

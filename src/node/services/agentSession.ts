@@ -959,34 +959,6 @@ export class AgentSession {
       return false;
     }
 
-    // Completed/redacted tool output after ask_user_question means restart recovery
-    // should treat the turn as an interrupted tail (auto-retry), not pending input.
-    const hasLaterCompletedToolOutput = message.parts.some((part, partIndex) => {
-      if (partIndex <= latestPendingQuestionIndex || part.type !== "dynamic-tool") {
-        return false;
-      }
-
-      if (part.state === "output-redacted") {
-        return part.failed !== true;
-      }
-
-      if (part.state !== "output-available") {
-        return false;
-      }
-
-      const output = part.output;
-      const isExplicitFailure =
-        typeof output === "object" &&
-        output !== null &&
-        (("success" in output && output.success === false) ||
-          ("error" in output && Boolean(output.error)));
-
-      return !isExplicitFailure;
-    });
-    if (hasLaterCompletedToolOutput) {
-      return false;
-    }
-
     return true;
   }
 

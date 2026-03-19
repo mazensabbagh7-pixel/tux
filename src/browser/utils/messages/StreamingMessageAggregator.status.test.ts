@@ -148,7 +148,7 @@ describe("ask_user_question waiting state", () => {
     expect(askRow.status).toBe("executing");
   });
 
-  it("does not report awaiting input when completed tool output follows ask_user_question", () => {
+  it("keeps awaiting input when completed tool output follows ask_user_question", () => {
     const aggregator = new StreamingMessageAggregator("2024-01-01T00:00:00.000Z");
 
     aggregator.loadHistoricalMessages([
@@ -192,7 +192,7 @@ describe("ask_user_question waiting state", () => {
       },
     ]);
 
-    expect(aggregator.hasAwaitingUserQuestion()).toBe(false);
+    expect(aggregator.hasAwaitingUserQuestion()).toBe(true);
 
     const askRow = aggregator
       .getDisplayedMessages()
@@ -203,7 +203,7 @@ describe("ask_user_question waiting state", () => {
     expect(askRow.status).toBe("executing");
   });
 
-  it("does not report awaiting input when a later tool result fails after the question", () => {
+  it("keeps awaiting input when a later tool result fails after the question", () => {
     const aggregator = new StreamingMessageAggregator("2024-01-01T00:00:00.000Z");
 
     aggregator.loadHistoricalMessages([
@@ -247,7 +247,7 @@ describe("ask_user_question waiting state", () => {
       },
     ]);
 
-    expect(aggregator.hasAwaitingUserQuestion()).toBe(false);
+    expect(aggregator.hasAwaitingUserQuestion()).toBe(true);
 
     const askRow = aggregator
       .getDisplayedMessages()
@@ -258,7 +258,7 @@ describe("ask_user_question waiting state", () => {
     expect(askRow.status).toBe("executing");
   });
 
-  it("does not report awaiting input when a later failed redacted tool follows the question", () => {
+  it("keeps awaiting input when a later failed redacted tool follows the question", () => {
     const aggregator = new StreamingMessageAggregator("2024-01-01T00:00:00.000Z");
 
     aggregator.loadHistoricalMessages([
@@ -302,7 +302,7 @@ describe("ask_user_question waiting state", () => {
       },
     ]);
 
-    expect(aggregator.hasAwaitingUserQuestion()).toBe(false);
+    expect(aggregator.hasAwaitingUserQuestion()).toBe(true);
 
     const askRow = aggregator
       .getDisplayedMessages()
@@ -313,7 +313,7 @@ describe("ask_user_question waiting state", () => {
     expect(askRow.status).toBe("executing");
   });
 
-  it("does not report awaiting input when a later partial text segment follows the question", () => {
+  it("keeps awaiting input when a later partial text segment follows the question", () => {
     const aggregator = new StreamingMessageAggregator("2024-01-01T00:00:00.000Z");
 
     aggregator.loadHistoricalMessages([
@@ -350,7 +350,7 @@ describe("ask_user_question waiting state", () => {
       },
     ]);
 
-    expect(aggregator.hasAwaitingUserQuestion()).toBe(false);
+    expect(aggregator.hasAwaitingUserQuestion()).toBe(true);
 
     const askRow = aggregator
       .getDisplayedMessages()
@@ -408,7 +408,7 @@ describe("ask_user_question waiting state", () => {
     expect(aggregator.hasAwaitingUserQuestion()).toBe(false);
   });
 
-  it("does not report awaiting input when truncation hides the ask_user_question row", () => {
+  it("keeps awaiting input when truncation hides the ask_user_question row", () => {
     const aggregator = new StreamingMessageAggregator("2024-01-01T00:00:00.000Z");
 
     const trailingToolParts = Array.from({ length: 80 }, (_, index) => ({
@@ -460,7 +460,7 @@ describe("ask_user_question waiting state", () => {
         (message) => message.type === "tool" && message.toolName === "ask_user_question"
       )
     ).toBe(false);
-    expect(aggregator.hasAwaitingUserQuestion()).toBe(false);
+    expect(aggregator.hasAwaitingUserQuestion()).toBe(true);
   });
 
   it("does not report awaiting input when latest assistant turn has stream error metadata", () => {
