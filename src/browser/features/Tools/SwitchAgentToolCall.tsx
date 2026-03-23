@@ -57,7 +57,7 @@ export const SwitchAgentToolCall: React.FC<SwitchAgentToolCallProps> = (props) =
   return (
     <ToolContainer expanded={expanded}>
       <ToolHeader onClick={hasReason ? toggleExpanded : undefined}>
-        {hasReason && <ExpandIcon expanded={expanded}>▶</ExpandIcon>}
+        {hasReason && <ExpandIcon expanded={expanded} />}
         <ToolIcon toolName="switch_agent" />
         <span className="text-muted-foreground italic">
           {handoffLabel}: <span className={targetAgentColorClass}>{targetAgentLabel}</span>

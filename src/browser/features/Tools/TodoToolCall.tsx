@@ -28,7 +28,7 @@ export const TodoToolCall: React.FC<TodoToolCallProps> = ({
   return (
     <ToolContainer expanded={expanded}>
       <ToolHeader onClick={toggleExpanded}>
-        <ExpandIcon expanded={expanded}>▶</ExpandIcon>
+        <ExpandIcon expanded={expanded} />
         <ToolIcon toolName="todo_write" />
         <StatusIndicator status={status}>{statusDisplay}</StatusIndicator>
       </ToolHeader>

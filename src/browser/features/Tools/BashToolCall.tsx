@@ -235,7 +235,7 @@ export const BashToolCall: React.FC<BashToolCallProps> = ({
   return (
     <ToolContainer expanded={expanded} data-tool-call>
       <ToolHeader onClick={handleToggle} data-tool-header>
-        <ExpandIcon expanded={expanded}>▶</ExpandIcon>
+        <ExpandIcon expanded={expanded} />
         <ToolIcon toolName="bash" />
         <span className="text-[#94A3B8] font-mono max-w-96 truncate" data-tool-command>{args.script}</span>
         {isBackground && backgroundProcessId && workspaceId && (

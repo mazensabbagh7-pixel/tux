@@ -561,7 +561,7 @@ export function AskUserQuestionToolCall(props: {
   return (
     <ToolContainer expanded={expanded}>
       <ToolHeader onClick={toggleExpanded}>
-        <ExpandIcon expanded={expanded}>▶</ExpandIcon>
+        <ExpandIcon expanded={expanded} />
         <div className="flex flex-1 flex-col">
           <ToolName>{title}</ToolName>
           <div className="text-muted-foreground text-xs">

@@ -69,7 +69,7 @@ export const GenericToolCall: React.FC<GenericToolCallProps> = ({
   return (
     <ToolContainer expanded={shouldShowDetails} data-tool-call>
       <ToolHeader onClick={() => hasDetails && toggleExpanded()} data-tool-header>
-        {hasDetails && <ExpandIcon expanded={shouldShowDetails}>▶</ExpandIcon>}
+        {hasDetails && <ExpandIcon expanded={shouldShowDetails} />}
         {TOOL_NAME_TO_ICON[toolName] && <ToolIcon toolName={toolName} />}
         <ToolName>{toolName}</ToolName>
         <StatusIndicator status={status} data-tool-status>{getStatusDisplay(status)}</StatusIndicator>

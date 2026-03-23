@@ -87,7 +87,7 @@ export const AgentSkillReadToolCall: React.FC<AgentSkillReadToolCallProps> = ({
   return (
     <ToolContainer expanded={expanded} className="@container">
       <ToolHeader onClick={toggleExpanded}>
-        <ExpandIcon expanded={expanded}>▶</ExpandIcon>
+        <ExpandIcon expanded={expanded} />
         <ToolIcon toolName="agent_skill_read" />
         <div className="text-text font-monospace flex max-w-96 min-w-0 items-baseline gap-1.5">
           <span className="text-secondary whitespace-nowrap">Read skill:</span>

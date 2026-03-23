@@ -10,6 +10,7 @@ import {
   ArrowRightLeft,
   Bell,
   BookOpen,
+  ChevronRight,
   Database,
   FileText,
   GitCommit,
@@ -74,15 +75,17 @@ interface ExpandIconProps extends React.HTMLAttributes<HTMLSpanElement> {
   expanded: boolean;
 }
 
-export const ExpandIcon: React.FC<ExpandIconProps> = ({ expanded, className, ...props }) => (
+export const ExpandIcon: React.FC<ExpandIconProps> = ({ expanded, className, children: _children, ...props }) => (
   <span
     className={cn(
-      "inline-block transition-transform duration-200 text-[10px]",
+      "inline-flex items-center justify-center transition-transform duration-200 text-[#888895]",
       expanded ? "rotate-90" : "rotate-0",
       className
     )}
     {...props}
-  />
+  >
+    <ChevronRight className="h-3.5 w-3.5" />
+  </span>
 );
 
 export const ToolName: React.FC<React.HTMLAttributes<HTMLSpanElement>> = ({

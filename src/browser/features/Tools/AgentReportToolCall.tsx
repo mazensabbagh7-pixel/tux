@@ -45,7 +45,7 @@ export const AgentReportToolCall: React.FC<AgentReportToolCallProps> = ({
   return (
     <ToolContainer expanded={expanded}>
       <ToolHeader onClick={toggleExpanded}>
-        <ExpandIcon expanded={expanded}>▶</ExpandIcon>
+        <ExpandIcon expanded={expanded} />
         <ToolIcon toolName="agent_report" />
         <ToolName>{title}</ToolName>
         <StatusIndicator status={status}>{getStatusDisplay(status)}</StatusIndicator>

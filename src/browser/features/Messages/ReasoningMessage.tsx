@@ -5,7 +5,7 @@ import { TypewriterMarkdown } from "./TypewriterMarkdown";
 import { normalizeReasoningMarkdown } from "./MarkdownStyles";
 import { cn } from "@/common/lib/utils";
 import { Shimmer } from "../AIElements/Shimmer";
-import { Lightbulb } from "lucide-react";
+import { ChevronRight, Lightbulb } from "lucide-react";
 
 interface ReasoningMessageProps {
   message: DisplayedMessage & { type: "reasoning" };
@@ -179,11 +179,11 @@ export const ReasoningMessage: React.FC<ReasoningMessageProps> = ({ message, cla
         {isCollapsible && (
           <span
             className={cn(
-              "text-[#888895] opacity-60 transition-transform duration-200 ease-in-out text-xs",
+              "inline-flex items-center justify-center text-[#888895] opacity-60 transition-transform duration-200 ease-in-out",
               isExpanded ? "rotate-90" : "rotate-0"
             )}
           >
-            ▸
+            <ChevronRight className="h-3.5 w-3.5" />
           </span>
         )}
       </div>

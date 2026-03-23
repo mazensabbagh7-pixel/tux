@@ -813,7 +813,7 @@ export const TaskToolCall: React.FC<TaskToolCallProps> = ({
   return (
     <ToolContainer expanded={expanded}>
       <ToolHeader onClick={toggleExpanded}>
-        <ExpandIcon expanded={expanded}>▶</ExpandIcon>
+        <ExpandIcon expanded={expanded} />
         <TaskIcon toolName="task" />
         <ToolName>task</ToolName>
         {kindBadge}
@@ -1024,7 +1024,7 @@ export const TaskAwaitToolCall: React.FC<TaskAwaitToolCallProps> = ({
   return (
     <ToolContainer expanded={expanded}>
       <ToolHeader onClick={toggleExpanded}>
-        <ExpandIcon expanded={expanded}>▶</ExpandIcon>
+        <ExpandIcon expanded={expanded} />
         <TaskIcon toolName="task_await" />
         <ToolName>task_await</ToolName>
         {totalCount > 0 && (
@@ -1191,7 +1191,7 @@ export const TaskListToolCall: React.FC<TaskListToolCallProps> = ({
   return (
     <ToolContainer expanded={expanded}>
       <ToolHeader onClick={toggleExpanded}>
-        <ExpandIcon expanded={expanded}>▶</ExpandIcon>
+        <ExpandIcon expanded={expanded} />
         <TaskIcon toolName="task_list" />
         <ToolName>task_list</ToolName>
         <span className="text-muted text-[10px]">{tasks.length} task(s)</span>
@@ -1266,7 +1266,7 @@ export const TaskTerminateToolCall: React.FC<TaskTerminateToolCallProps> = ({
   return (
     <ToolContainer expanded={expanded}>
       <ToolHeader onClick={toggleExpanded}>
-        <ExpandIcon expanded={expanded}>▶</ExpandIcon>
+        <ExpandIcon expanded={expanded} />
         <TaskIcon toolName="task_terminate" />
         <ToolName>task_terminate</ToolName>
         <span className="text-interrupted text-[10px]">
