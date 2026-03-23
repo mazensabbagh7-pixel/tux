@@ -43,7 +43,7 @@ interface ToolContainerProps extends React.HTMLAttributes<HTMLDivElement> {
 export const ToolContainer: React.FC<ToolContainerProps> = ({ expanded, className, ...props }) => (
   <div
     className={cn(
-      "my-2 rounded font-mono text-[11px] transition-all duration-200",
+      "my-2 rounded font-mono text-[13px] text-[#888895] transition-all duration-200",
       "[container-type:inline-size]",
       expanded ? "py-2 px-3" : "py-1 px-3",
       className
@@ -63,7 +63,7 @@ export const ToolHeader: React.FC<React.HTMLAttributes<HTMLDivElement>> = ({
 }) => (
   <ToolChrome
     className={cn(
-      "flex items-center gap-2 cursor-pointer select-none text-secondary hover:text-foreground",
+      "flex items-center gap-2 cursor-pointer select-none text-[#888895] hover:text-foreground",
       className
     )}
     {...props}
@@ -121,8 +121,8 @@ export const StatusIndicator: React.FC<StatusIndicatorProps> = ({
 }) => (
   <span
     className={cn(
-      "text-[10px] ml-auto opacity-80 whitespace-nowrap shrink-0",
-      "[&_.status-text]:inline [@container(max-width:350px)]:[&_.status-text]:hidden",
+      "text-[0px] leading-[0] ml-auto whitespace-nowrap shrink-0 [&_svg]:text-[12px] [&_svg]:w-3.5 [&_svg]:h-3.5",
+      "[&_.status-text]:hidden",
       getStatusColor(status),
       className
     )}
@@ -303,9 +303,10 @@ export const ExitCodeBadge: React.FC<ExitCodeBadgeProps> = ({ exitCode, classNam
   <span
     className={cn(
       "inline-block shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium whitespace-nowrap",
-      exitCode === 0 ? "bg-success text-on-success" : "bg-danger text-on-danger",
+      exitCode === 0 ? "bg-[#052E16] text-[#16A34A]" : "bg-[#450A0A] text-[#F87171]",
       className
     )}
+    data-exit-code={exitCode}
   >
     {exitCode}
   </span>

@@ -125,12 +125,14 @@ export const ReasoningMessage: React.FC<ReasoningMessageProps> = ({ message, cla
 
   return (
     <div
+      data-reasoning
       className={cn(
-        "my-2 px-2 py-1 bg-[color-mix(in_srgb,var(--color-thinking-mode)_5%,transparent)] rounded relative",
+        "my-2 px-2 py-1 rounded relative",
         className
       )}
     >
       <div
+        data-reasoning-toggle
         className={cn(
           "flex items-center justify-between gap-2 select-none",
           isCollapsible && "cursor-pointer",
@@ -141,17 +143,17 @@ export const ReasoningMessage: React.FC<ReasoningMessageProps> = ({ message, cla
         <div
           className={cn(
             "flex flex-1 items-center gap-1 min-w-0 text-xs opacity-80",
-            "text-thinking-mode"
+            "text-[var(--color-muted-agent,#888895)]"
           )}
         >
           <span className="text-xs">
             <Lightbulb className={cn("size-3.5", isStreaming && "animate-pulse")} />
           </span>
-          <div className="flex min-w-0 items-center gap-1 truncate">
+          <div data-reasoning-badge className="flex min-w-0 items-center gap-1 truncate">
             {isStreaming ? (
               <Shimmer colorClass="var(--color-thinking-mode)">Thinking...</Shimmer>
             ) : hasContent ? (
-              <span className={cn("truncate whitespace-nowrap text-text", REASONING_FONT_CLASSES)}>
+              <span data-reasoning-preview className={cn("truncate whitespace-nowrap text-text", REASONING_FONT_CLASSES)}>
                 {parsedLeadingBoldSummary ? (
                   <>
                     <strong>{parsedLeadingBoldSummary.boldText}</strong>
@@ -177,7 +179,7 @@ export const ReasoningMessage: React.FC<ReasoningMessageProps> = ({ message, cla
         {isCollapsible && (
           <span
             className={cn(
-              "text-thinking-mode opacity-60 transition-transform duration-200 ease-in-out text-xs",
+              "text-[#888895] opacity-60 transition-transform duration-200 ease-in-out text-xs",
               isExpanded ? "rotate-90" : "rotate-0"
             )}
           >
@@ -190,6 +192,7 @@ export const ReasoningMessage: React.FC<ReasoningMessageProps> = ({ message, cla
           Use CSS transitions for smooth height changes instead of conditional rendering. */}
       <div
         ref={contentRef}
+        data-reasoning-content
         className={cn(
           REASONING_FONT_CLASSES,
           "italic opacity-85 [&_p]:mt-0 [&_p]:mb-1 [&_p:last-child]:mb-0",

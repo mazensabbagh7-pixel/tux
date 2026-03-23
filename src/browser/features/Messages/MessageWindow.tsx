@@ -82,7 +82,7 @@ export const MessageWindow: React.FC<MessageWindowProps> = ({
       <div
         className={cn(
           variant === "user" &&
-            "bg-[var(--color-user-surface)] border border-[var(--color-user-border)] rounded-lg px-3 py-2 overflow-x-auto shadow-sm",
+            "bg-[var(--color-user-surface)] border border-transparent hover:border-[var(--color-user-border)] rounded-lg px-3 py-2 overflow-x-auto shadow-sm",
           variant === "assistant" && "px-1 py-1"
         )}
       >

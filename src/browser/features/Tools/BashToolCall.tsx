@@ -233,11 +233,11 @@ export const BashToolCall: React.FC<BashToolCallProps> = ({
     toggleExpanded();
   };
   return (
-    <ToolContainer expanded={expanded}>
-      <ToolHeader onClick={handleToggle}>
+    <ToolContainer expanded={expanded} data-tool-call>
+      <ToolHeader onClick={handleToggle} data-tool-header>
         <ExpandIcon expanded={expanded}>▶</ExpandIcon>
         <ToolIcon toolName="bash" />
-        <span className="text-text font-monospace max-w-96 truncate">{args.script}</span>
+        <span className="text-[#94A3B8] font-mono max-w-96 truncate" data-tool-command>{args.script}</span>
         {isBackground && backgroundProcessId && workspaceId && (
           <Tooltip>
             <TooltipTrigger asChild>
@@ -278,7 +278,7 @@ export const BashToolCall: React.FC<BashToolCallProps> = ({
             {result && <ExitCodeBadge exitCode={result.exitCode} className="ml-2" />}
           </>
         )}
-        <StatusIndicator status={effectiveStatus}>
+        <StatusIndicator status={effectiveStatus} data-tool-status>
           {getStatusDisplay(effectiveStatus)}
         </StatusIndicator>
         {/* Show "Background" button when bash is executing and can be sent to background.

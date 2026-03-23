@@ -95,7 +95,7 @@ export const TodoList: React.FC<TodoListProps> = ({ todos }) => {
   let pendingIndex = 0;
 
   return (
-    <div className="flex flex-col gap-[3px] px-2 py-1.5">
+    <div className="step-list flex flex-col gap-[3px] px-2 py-1.5">
       {todos.map((todo, index) => {
         const currentCompletedIndex = todo.status === "completed" ? completedIndex++ : undefined;
         const currentPendingIndex = todo.status === "pending" ? pendingIndex++ : undefined;
@@ -111,7 +111,12 @@ export const TodoList: React.FC<TodoListProps> = ({ todos }) => {
         return (
           <div
             key={index}
-            className="font-monospace flex items-start gap-1.5 rounded border-l-2 px-2 py-1 text-[11px] leading-[1.35]"
+            className={cn(
+              "step-item font-monospace flex items-start gap-1.5 rounded border-l-2 px-2 py-1 text-[11px] leading-[1.35]",
+              todo.status === "in_progress" && "step-active",
+              todo.status === "completed" && "step-done",
+              todo.status === "pending" && "step-pending"
+            )}
             style={{
               background: statusBgColors[todo.status],
               borderLeftColor: statusBorderColors[todo.status],

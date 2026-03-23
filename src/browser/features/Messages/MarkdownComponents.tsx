@@ -224,10 +224,21 @@ const CodeBlock: React.FC<CodeBlockProps> = ({ code, language, highlightLanguage
   );
 };
 
+interface TableProps {
+  children?: ReactNode;
+}
+
 // Custom components for markdown rendering
 export const markdownComponents = {
   // Pass through pre element - let code component handle the wrapping
   pre: ({ children }: PreProps) => <>{children}</>,
+
+  // Wrap tables in a scroll container for horizontal overflow.
+  table: ({ children }: TableProps) => (
+    <div className="table-scroll-wrapper">
+      <table>{children}</table>
+    </div>
+  ),
 
   // Custom anchor to open links externally
   a: ({ href, children }: AnchorProps) => {

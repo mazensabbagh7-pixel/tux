@@ -141,8 +141,8 @@ export const FileEditToolCall: React.FC<FileEditToolCallProps> = ({
     : [];
 
   return (
-    <ToolContainer expanded={expanded}>
-      <ToolHeader className="hover:text-secondary cursor-default">
+    <ToolContainer expanded={expanded} className="file-change-card">
+      <ToolHeader className="file-change-header hover:text-secondary cursor-default">
         <div
           onClick={toggleExpanded}
           className="hover:text-text flex flex-1 cursor-pointer items-center gap-2"
@@ -165,7 +165,7 @@ export const FileEditToolCall: React.FC<FileEditToolCallProps> = ({
       </ToolHeader>
 
       {expanded && (
-        <ToolDetails>
+        <ToolDetails className="file-change-body">
           {showInvocation && (
             <DetailSection>
               <DetailLabel>Invocation</DetailLabel>

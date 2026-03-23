@@ -142,25 +142,29 @@ export const UserMessage: React.FC<UserMessageProps> = ({
   const syntheticClassName = cn(className, isSynthetic && "opacity-70");
 
   return (
-    <MessageWindow
-      label={label}
-      message={message}
-      buttons={buttons}
-      className={syntheticClassName}
-      variant="user"
-    >
-      {isLocalCommandOutput ? (
-        <TerminalOutput output={extractedOutput} isError={false} />
-      ) : (
-        <UserMessageContent
-          content={content}
-          commandPrefix={message.commandPrefix}
-          agentSkillSnapshot={message.agentSkill?.snapshot}
-          reviews={message.reviews}
-          fileParts={message.fileParts}
-          variant="sent"
-        />
-      )}
-    </MessageWindow>
+    <div data-user-message>
+      <MessageWindow
+        label={label}
+        message={message}
+        buttons={buttons}
+        className={syntheticClassName}
+        variant="user"
+      >
+        <div data-message-role="user">
+          {isLocalCommandOutput ? (
+            <TerminalOutput output={extractedOutput} isError={false} />
+          ) : (
+            <UserMessageContent
+              content={content}
+              commandPrefix={message.commandPrefix}
+              agentSkillSnapshot={message.agentSkill?.snapshot}
+              reviews={message.reviews}
+              fileParts={message.fileParts}
+              variant="sent"
+            />
+          )}
+        </div>
+      </MessageWindow>
+    </div>
   );
 };

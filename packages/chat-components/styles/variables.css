@@ -7,7 +7,7 @@
 
 :root {
   /* Base colors - dark theme default */
-  --color-background: #1e1e1e;
+  --color-background: #09090B;
   --color-foreground: #e4e4e7;
   --color-text: #e4e4e7;
   --color-muted: #a1a1aa;
@@ -16,7 +16,7 @@
   --color-accent: #3f3f46;
 
   /* Code blocks */
-  --color-code-bg: #0d0d0d;
+  --color-code-bg: #141416;
   --color-code-border: #27272a;
 
   /* User messages */
@@ -42,6 +42,22 @@
   /* Diff colors */
   --color-diff-add-bg: rgba(16, 185, 129, 0.1);
   --color-diff-remove-bg: rgba(239, 68, 68, 0.1);
+
+  /* Links & inline code */
+  --color-link: #60A5FA;
+  --color-inline-code: #94A3B8;
+
+  /* Danger text */
+  --color-danger-text: #F87171;
+
+  /* Badge colors */
+  --color-success-badge-bg: #052E16;
+  --color-success-badge-text: #16A34A;
+  --color-danger-badge-bg: #450A0A;
+  --color-danger-badge-text: #F87171;
+
+  /* Muted agent */
+  --color-muted-agent: #888895;
 }
 
 /* Light theme */
@@ -67,7 +83,7 @@
 
 /* Dark theme (explicit) */
 .dark {
-  --color-background: #1e1e1e;
+  --color-background: #09090B;
   --color-foreground: #e4e4e7;
   --color-text: #e4e4e7;
   --color-muted: #a1a1aa;
@@ -75,7 +91,7 @@
   --color-card: #27272a;
   --color-accent: #3f3f46;
 
-  --color-code-bg: #0d0d0d;
+  --color-code-bg: #141416;
   --color-code-border: #27272a;
 
   --color-user-surface: #27272a;
