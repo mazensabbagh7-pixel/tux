@@ -63,6 +63,7 @@ import {
   type MuxFilePart,
   type MuxMessage,
   type ReviewNoteDataForDisplay,
+  type StartupRetrySendOptions,
 } from "@/common/types/message";
 import { createRuntime } from "@/node/runtime/runtimeFactory";
 import { createRuntimeForWorkspace } from "@/node/runtime/runtimeHelpers";
@@ -144,6 +145,14 @@ interface CompactionRequestMetadata {
       mode?: "exec" | "plan"; // Legacy: older versions stored mode instead of agentId
     };
   };
+}
+
+interface AutoRetryResumeRequest {
+  // Same-session auto-retry must preserve the full normalized request because
+  // ACP correlation/delegation lives in transient send options that are
+  // intentionally omitted from durable startup-recovery snapshots.
+  options: SendMessageOptions;
+  agentInitiated?: boolean;
 }
 
 interface SwitchAgentResult {
@@ -300,8 +309,7 @@ export class AgentSession {
   private readonly compactionMonitor: CompactionMonitor;
 
   private readonly retryManager: RetryManager;
-  private lastAutoRetryOptions?: SendMessageOptions;
-  private lastAutoRetryAgentInitiated?: boolean;
+  private lastAutoRetryResumeRequest?: AutoRetryResumeRequest;
   /** Startup recovery should run once per session to avoid duplicate retry timers on reconnect. */
   private startupRecoveryScheduled = false;
   private startupRecoveryPromise: Promise<void> | null = null;
@@ -650,6 +658,21 @@ export class AgentSession {
     this.retryManager.handleStreamFailure(error);
   }
 
+  private setAutoRetryResumeState(
+    options: SendMessageOptions | undefined,
+    agentInitiated?: boolean
+  ): void {
+    if (!options) {
+      this.lastAutoRetryResumeRequest = undefined;
+      return;
+    }
+
+    this.lastAutoRetryResumeRequest = {
+      options,
+      ...(agentInitiated === true ? { agentInitiated: true } : {}),
+    };
+  }
+
   private extractRetryFailureMessage(error: SendMessageError): string | undefined {
     if ("message" in error && typeof error.message === "string") {
       return error.message;
@@ -663,14 +686,14 @@ export class AgentSession {
   }
 
   private async retryActiveStream(): Promise<void> {
-    const options = this.lastAutoRetryOptions;
-    if (!options) {
+    const request = this.lastAutoRetryResumeRequest;
+    if (!request) {
       this.emitRetryEvent({ type: "auto-retry-abandoned", reason: "missing_retry_options" });
       return;
     }
 
-    const result = await this.resumeStream(options, {
-      agentInitiated: this.lastAutoRetryAgentInitiated,
+    const result = await this.resumeStream(request.options, {
+      agentInitiated: request.agentInitiated === true ? true : undefined,
     });
     if (result.success) {
       if (!result.data.started) {
@@ -1011,10 +1034,10 @@ export class AgentSession {
     return true;
   }
 
-  private async deriveStartupAutoRetryOptions(params: {
+  private async deriveStartupAutoRetryRequest(params: {
     partial: MuxMessage | null;
     historyTail: MuxMessage[];
-  }): Promise<SendMessageOptions | undefined> {
+  }): Promise<StartupRetrySendOptions | undefined> {
     const lastUserMessage = [...params.historyTail]
       .reverse()
       .find((message): message is MuxMessage & { role: "user" } =>
@@ -1089,7 +1112,7 @@ export class AgentSession {
       const requestedThinkingLevel =
         baseThinkingLevel ?? coerceThinkingLevel(compactSettings?.thinkingLevel) ?? "off";
 
-      const compactionOptions: SendMessageOptions = {
+      const compactionRequest: StartupRetrySendOptions = {
         model: compactionModel,
         agentId: "compact",
         thinkingLevel: enforceThinkingPolicy(compactionModel, requestedThinkingLevel),
@@ -1098,69 +1121,76 @@ export class AgentSession {
             ? lastUserMuxMetadata.parsed.maxOutputTokens
             : persistedMaxOutputTokens,
         toolPolicy: [{ regex_match: ".*", action: "disable" }],
-        skipAiSettingsPersistence: true,
         disableWorkspaceAgents: persistedDisableWorkspaceAgents,
       };
 
       if (persistedAdditionalSystemInstructions !== undefined) {
-        compactionOptions.additionalSystemInstructions = persistedAdditionalSystemInstructions;
+        compactionRequest.additionalSystemInstructions = persistedAdditionalSystemInstructions;
       }
       if (persistedProviderOptions) {
-        compactionOptions.providerOptions = persistedProviderOptions;
+        compactionRequest.providerOptions = persistedProviderOptions;
       }
       if (persistedExperiments) {
-        compactionOptions.experiments = persistedExperiments;
+        compactionRequest.experiments = persistedExperiments;
       }
       if (persistedSystem1ThinkingLevel) {
-        compactionOptions.system1ThinkingLevel = persistedSystem1ThinkingLevel;
+        compactionRequest.system1ThinkingLevel = persistedSystem1ThinkingLevel;
       }
       if (persistedSystem1Model) {
-        compactionOptions.system1Model = persistedSystem1Model;
+        compactionRequest.system1Model = persistedSystem1Model;
       }
 
-      return compactionOptions;
+      if (persistedRetrySendOptions?.agentInitiated === true) {
+        compactionRequest.agentInitiated = true;
+      }
+
+      return compactionRequest;
     }
 
-    const retryOptions: SendMessageOptions = {
+    const retryRequest: StartupRetrySendOptions = {
       model: baseModel,
       agentId: baseAgentId,
     };
     if (baseThinkingLevel) {
-      retryOptions.thinkingLevel = baseThinkingLevel;
+      retryRequest.thinkingLevel = baseThinkingLevel;
     }
     if (persistedSystem1ThinkingLevel) {
-      retryOptions.system1ThinkingLevel = persistedSystem1ThinkingLevel;
+      retryRequest.system1ThinkingLevel = persistedSystem1ThinkingLevel;
     }
     if (persistedSystem1Model) {
-      retryOptions.system1Model = persistedSystem1Model;
+      retryRequest.system1Model = persistedSystem1Model;
     }
     if (persistedToolPolicy) {
-      retryOptions.toolPolicy = persistedToolPolicy;
+      retryRequest.toolPolicy = persistedToolPolicy;
     }
     if (persistedAdditionalSystemInstructions !== undefined) {
-      retryOptions.additionalSystemInstructions = persistedAdditionalSystemInstructions;
+      retryRequest.additionalSystemInstructions = persistedAdditionalSystemInstructions;
     }
     if (persistedMaxOutputTokens !== undefined) {
-      retryOptions.maxOutputTokens = persistedMaxOutputTokens;
+      retryRequest.maxOutputTokens = persistedMaxOutputTokens;
     }
     if (persistedProviderOptions) {
-      retryOptions.providerOptions = persistedProviderOptions;
+      retryRequest.providerOptions = persistedProviderOptions;
     }
     if (persistedExperiments) {
-      retryOptions.experiments = persistedExperiments;
+      retryRequest.experiments = persistedExperiments;
     }
     if (typeof persistedDisableWorkspaceAgents === "boolean") {
-      retryOptions.disableWorkspaceAgents = persistedDisableWorkspaceAgents;
+      retryRequest.disableWorkspaceAgents = persistedDisableWorkspaceAgents;
     }
 
-    return retryOptions;
+    if (persistedRetrySendOptions?.agentInitiated === true) {
+      retryRequest.agentInitiated = true;
+    }
+
+    return retryRequest;
   }
 
   async getStartupAutoRetryModelHint(): Promise<string | null> {
     this.assertNotDisposed("getStartupAutoRetryModelHint");
 
-    if (this.lastAutoRetryOptions?.model) {
-      return this.lastAutoRetryOptions.model;
+    if (this.lastAutoRetryResumeRequest?.options.model) {
+      return this.lastAutoRetryResumeRequest.options.model;
     }
 
     const [partial, historyResult] = await Promise.all([
@@ -1187,11 +1217,11 @@ export class AgentSession {
       return null;
     }
 
-    const retryOptions = await this.deriveStartupAutoRetryOptions({
+    const retryRequest = await this.deriveStartupAutoRetryRequest({
       partial,
       historyTail: historyResult.data,
     });
-    return retryOptions?.model ?? null;
+    return retryRequest?.model ?? null;
   }
 
   private resetStartupAutoRetryHistoryReadBackoff(): void {
@@ -1279,16 +1309,19 @@ export class AgentSession {
       }
     }
 
-    const retryOptions =
-      this.lastAutoRetryOptions ??
-      (await this.deriveStartupAutoRetryOptions({
+    if (!this.lastAutoRetryResumeRequest) {
+      const retryRequest = await this.deriveStartupAutoRetryRequest({
         partial,
         historyTail: historyResult.data,
-      }));
+      });
 
-    if (!retryOptions) {
-      this.emitRetryEvent({ type: "auto-retry-abandoned", reason: "missing_retry_options" });
-      return "completed";
+      if (!retryRequest) {
+        this.emitRetryEvent({ type: "auto-retry-abandoned", reason: "missing_retry_options" });
+        return "completed";
+      }
+
+      const { agentInitiated, ...resumeOptions } = retryRequest;
+      this.setAutoRetryResumeState(resumeOptions, agentInitiated);
     }
 
     // Disk reads above may race with user actions; retry once the current work settles
@@ -1297,15 +1330,6 @@ export class AgentSession {
       this.startupAutoRetryDeferredRetryDelayMs = 0;
       return "deferred";
     }
-
-    const startupRetryAgentInitiated =
-      this.lastAutoRetryAgentInitiated ??
-      (startupRetryUserMessage?.metadata?.retrySendOptions?.agentInitiated === true
-        ? true
-        : undefined);
-
-    this.lastAutoRetryOptions = retryOptions;
-    this.lastAutoRetryAgentInitiated = startupRetryAgentInitiated;
     await this.handleStreamFailureForAutoRetry({
       type: "unknown",
       message: "startup_interrupted_stream",
@@ -2399,6 +2423,9 @@ export class AgentSession {
       await this.persistAutoRetryEnabledPreference(true);
     }
 
+    // Same-session retry should resume the exact accepted request we just finalized
+    // in history, even if runtime warmup fails before streamWithHistory() starts.
+    this.setAutoRetryResumeState(optionsForStream, agentInitiated);
     this.setTurnPhase(TurnPhase.PREPARING);
 
     const startPreparedStream = async (): Promise<Result<void, SendMessageError>> => {
@@ -2483,6 +2510,9 @@ export class AgentSession {
       return Ok({ started: false });
     }
 
+    // A resumed attempt becomes the latest live resume request as soon as we
+    // accept its options, even if startup fails before the stream fully begins.
+    this.setAutoRetryResumeState(optionsForStream, internal?.agentInitiated);
     this.setTurnPhase(TurnPhase.PREPARING);
     try {
       // Must await here so the finally block runs after streaming completes,
@@ -2929,8 +2959,6 @@ export class AgentSession {
     this.activeStreamErrorEventReceived = false;
     this.activeStreamFailureHandled = false;
     this.activeStreamHadPostCompactionInjection = false;
-    this.lastAutoRetryOptions = options;
-    this.lastAutoRetryAgentInitiated = agentInitiated === true ? true : undefined;
     const providersConfigForCompaction = this.getProvidersConfigForCompaction();
     this.activeStreamContext = {
       modelString,
@@ -3258,8 +3286,13 @@ export class AgentSession {
 
     // Capture attribution before finalizeCompactionRetry() clears active stream state.
     const retryAgentInitiated = this.activeStreamContext?.agentInitiated;
+    const retryOptionsForResume = retryOptions ?? {
+      model: context.modelString,
+      agentId: WORKSPACE_DEFAULTS.agentId,
+    };
 
     await this.finalizeCompactionRetry(data.messageId);
+    this.setAutoRetryResumeState(retryOptionsForResume, retryAgentInitiated);
     this.setTurnPhase(TurnPhase.PREPARING);
     let retryResult: Result<void, SendMessageError>;
     try {
@@ -3638,6 +3671,7 @@ export class AgentSession {
           },
         };
 
+    this.setAutoRetryResumeState(retryOptions, context.agentInitiated);
     this.setTurnPhase(TurnPhase.PREPARING);
     let retryResult: Result<void, SendMessageError>;
     try {
@@ -4755,6 +4789,11 @@ export class AgentSession {
     if (metadata) {
       options.muxMetadata = metadata;
     }
+
+    // The compaction summary is now the source of truth for the next live resume
+    // request. Pre-arm retry state from the reconstructed follow-up so failures
+    // before stream startup do not fall back to the already-completed compact turn.
+    this.setAutoRetryResumeState(options);
 
     // Await sendMessage to ensure the follow-up is persisted before returning.
     // This guarantees ordering: the follow-up message is written to history
