@@ -2,7 +2,8 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 
 import type { Runtime } from "@/node/runtime/Runtime";
-import { SSHRuntime } from "@/node/runtime/SSHRuntime";
+import { LocalRuntime } from "@/node/runtime/LocalRuntime";
+import { RemoteRuntime } from "@/node/runtime/RemoteRuntime";
 import { getErrorMessage } from "@/common/utils/errors";
 import { execBuffered, readFileString } from "@/node/utils/runtime/helpers";
 import { shellQuote } from "@/node/runtime/backgroundCommands";
@@ -39,16 +40,43 @@ export function agentVisitKey(id: AgentId, scope: AgentDefinitionScope): string 
 }
 
 /**
+ * When the caller already knows which scope supplied an agent definition, skip any higher-priority
+ * scopes so resolution stays anchored to that package instead of re-probing more specific roots.
+ *
+ * Examples:
+ * - Known global agent → skip project scope
+ * - Known built-in agent → skip project + global scopes
+ */
+export function getSkipScopesAboveForKnownScope(
+  scope: AgentDefinitionScope
+): AgentDefinitionScope | undefined {
+  switch (scope) {
+    case "project":
+      return undefined;
+    case "global":
+      return "project";
+    case "built-in":
+      return "global";
+  }
+}
+
+/**
  * Compute the skipScopesAbove value when resolving a base agent.
- * If the base has the same ID as the current agent, skip the current scope
- * to allow project/global agents to extend built-ins of the same name.
+ *
+ * Same-name inheritance (for example project/exec -> global|built-in exec) still skips the current
+ * scope entirely. Otherwise, keep the lookup anchored to the current package's scope so a known
+ * global or built-in agent does not widen back into project/global overrides during inheritance.
  */
 export function computeBaseSkipScope(
   baseId: AgentId,
   currentId: AgentId,
   currentScope: AgentDefinitionScope
 ): AgentDefinitionScope | undefined {
-  return baseId === currentId ? currentScope : undefined;
+  if (baseId === currentId) {
+    return currentScope;
+  }
+
+  return getSkipScopesAboveForKnownScope(currentScope);
 }
 
 const GLOBAL_AGENTS_ROOT = "~/.mux/agents";
@@ -129,6 +157,48 @@ export function getDefaultAgentDefinitionsRoots(
     projectRoot: runtime.normalizePath(".mux/agents", workspacePath),
     globalRoot: GLOBAL_AGENTS_ROOT,
   };
+}
+
+interface AgentDefinitionScanCandidate {
+  scope: Exclude<AgentDefinitionScope, "built-in">;
+  root: string;
+  runtime: Runtime;
+}
+
+function getGlobalAgentRuntime(runtime: Runtime, workspacePath: string): Runtime {
+  // Remote workspaces (SSH, Docker) should read host-global agent definitions from the local
+  // machine while keeping project-scoped agents on the remote workspace filesystem.
+  return runtime instanceof RemoteRuntime ? new LocalRuntime(workspacePath) : runtime;
+}
+
+function buildDiscoveryScans(
+  runtime: Runtime,
+  workspacePath: string,
+  roots: AgentDefinitionsRoots
+): AgentDefinitionScanCandidate[] {
+  return [
+    {
+      scope: "global",
+      root: roots.globalRoot,
+      runtime: getGlobalAgentRuntime(runtime, workspacePath),
+    },
+    { scope: "project", root: roots.projectRoot, runtime },
+  ];
+}
+
+function buildReadCandidates(
+  runtime: Runtime,
+  workspacePath: string,
+  roots: AgentDefinitionsRoots
+): AgentDefinitionScanCandidate[] {
+  return [
+    { scope: "project", root: roots.projectRoot, runtime },
+    {
+      scope: "global",
+      root: roots.globalRoot,
+      runtime: getGlobalAgentRuntime(runtime, workspacePath),
+    },
+  ];
 }
 
 async function listAgentFilesFromLocalFs(root: string): Promise<string[]> {
@@ -291,23 +361,20 @@ export async function discoverAgentDefinitions(
     });
   }
 
-  const scans: Array<{ scope: Exclude<AgentDefinitionScope, "built-in">; root: string }> = [
-    { scope: "global", root: roots.globalRoot },
-    { scope: "project", root: roots.projectRoot },
-  ];
+  const scans = buildDiscoveryScans(runtime, workspacePath, roots);
 
   for (const scan of scans) {
     let resolvedRoot: string;
     try {
-      resolvedRoot = await runtime.resolvePath(scan.root);
+      resolvedRoot = await scan.runtime.resolvePath(scan.root);
     } catch (err) {
       log.warn(`Failed to resolve agents root ${scan.root}: ${getErrorMessage(err)}`);
       continue;
     }
 
     const filenames =
-      runtime instanceof SSHRuntime
-        ? await listAgentFilesFromRuntime(runtime, resolvedRoot, { cwd: workspacePath })
+      scan.runtime instanceof RemoteRuntime
+        ? await listAgentFilesFromRuntime(scan.runtime, resolvedRoot, { cwd: workspacePath })
         : await listAgentFilesFromLocalFs(resolvedRoot);
 
     for (const filename of filenames) {
@@ -317,9 +384,9 @@ export async function discoverAgentDefinitions(
         continue;
       }
 
-      const filePath = runtime.normalizePath(filename, resolvedRoot);
+      const filePath = scan.runtime.normalizePath(filename, resolvedRoot);
       const result = await readAgentDescriptorFromFileWithDisabled(
-        runtime,
+        scan.runtime,
         filePath,
         agentId,
         scan.scope
@@ -375,10 +442,7 @@ export async function readAgentDefinition(
   }
 
   // Precedence: project overrides global overrides built-in.
-  const candidates: Array<{ scope: Exclude<AgentDefinitionScope, "built-in">; root: string }> = [
-    { scope: "project", root: roots.projectRoot },
-    { scope: "global", root: roots.globalRoot },
-  ];
+  const candidates = buildReadCandidates(runtime, workspacePath, roots);
 
   for (const candidate of candidates) {
     if (skipScopes.has(candidate.scope)) {
@@ -387,15 +451,15 @@ export async function readAgentDefinition(
 
     let resolvedRoot: string;
     try {
-      resolvedRoot = await runtime.resolvePath(candidate.root);
+      resolvedRoot = await candidate.runtime.resolvePath(candidate.root);
     } catch {
       continue;
     }
 
-    const filePath = runtime.normalizePath(`${agentId}.md`, resolvedRoot);
+    const filePath = candidate.runtime.normalizePath(`${agentId}.md`, resolvedRoot);
 
     try {
-      const stat = await runtime.stat(filePath);
+      const stat = await candidate.runtime.stat(filePath);
       if (stat.isDirectory) {
         continue;
       }
@@ -405,7 +469,7 @@ export async function readAgentDefinition(
         throw new Error(sizeValidation.error);
       }
 
-      const content = await readFileString(runtime, filePath);
+      const content = await readFileString(candidate.runtime, filePath);
       const parsed = parseAgentDefinitionMarkdown({ content, byteSize: stat.size });
 
       const pkg: AgentDefinitionPackage = {
