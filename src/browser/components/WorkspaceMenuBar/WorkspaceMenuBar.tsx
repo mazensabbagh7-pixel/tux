@@ -235,14 +235,14 @@ export const WorkspaceMenuBar: React.FC<WorkspaceMenuBarProps> = ({
   }, [workspaceId, namedWorkspacePath, openInEditor, runtimeConfig]);
 
   // Mirror sidebar archive behavior so the workspace menu bar matches existing actions.
-  // Guards with isArchiving to prevent duplicate calls on slow API paths.
   /**
    * Execute the archive call (optionally with acknowledged untracked paths).
-   * This is the "do it" step after any confirmation has been accepted.
+   * Callers are responsible for the isArchiving guard — this function only does the RPC
+   * and error display. Called from handleArchiveChat (no-confirmation path) and from
+   * the confirmation modal's onConfirm.
    */
   const executeArchive = useCallback(
     async (anchorEl?: HTMLElement, acknowledgedUntrackedPaths?: string[]) => {
-      if (isArchiving) return;
       setIsArchiving(true);
       try {
         const res = await archiveWorkspace(
@@ -261,7 +261,7 @@ export const WorkspaceMenuBar: React.FC<WorkspaceMenuBarProps> = ({
         setIsArchiving(false);
       }
     },
-    [workspaceId, archiveWorkspace, archiveError, isArchiving]
+    [workspaceId, archiveWorkspace, archiveError]
   );
 
   /**
@@ -274,31 +274,39 @@ export const WorkspaceMenuBar: React.FC<WorkspaceMenuBarProps> = ({
     async (anchorEl?: HTMLElement) => {
       if (isArchiving) return;
 
-      // Run preflight to check for untracked files that can't be preserved.
-      const preflight = await preflightArchiveWorkspace(workspaceId);
-      if (!preflight.success) {
-        const rect = anchorEl?.getBoundingClientRect();
-        archiveError.showError(
-          workspaceId,
-          preflight.error ?? "Failed to check archive readiness",
-          rect ? { top: rect.top + window.scrollY, left: rect.right + 10 } : undefined
-        );
-        return;
-      }
+      // Set the in-flight guard before the async preflight call so duplicate clicks
+      // during the await are rejected.
+      setIsArchiving(true);
+      try {
+        // Run preflight to check for untracked files that can't be preserved.
+        const preflight = await preflightArchiveWorkspace(workspaceId);
+        if (!preflight.success) {
+          const rect = anchorEl?.getBoundingClientRect();
+          archiveError.showError(
+            workspaceId,
+            preflight.error ?? "Failed to check archive readiness",
+            rect ? { top: rect.top + window.scrollY, left: rect.right + 10 } : undefined
+          );
+          return;
+        }
 
-      const preflightData = preflight.data;
-      const untrackedPaths =
-        preflightData?.kind === "confirm-lossy-untracked-files" ? preflightData.paths : null;
-      const streamingNow = isWorking;
+        const preflightData = preflight.data;
+        const untrackedPaths =
+          preflightData?.kind === "confirm-lossy-untracked-files" ? preflightData.paths : null;
+        const streamingNow = isWorking;
 
-      if (untrackedPaths || streamingNow) {
-        // Show a single combined confirmation dialog for all warnings.
-        setArchiveUntrackedPaths(untrackedPaths);
-        setArchiveConfirmIsStreaming(streamingNow);
-        setArchiveConfirmOpen(true);
-      } else {
-        // No warnings — archive immediately.
-        void executeArchive(anchorEl);
+        if (untrackedPaths || streamingNow) {
+          // Show a single combined confirmation dialog for all warnings.
+          setArchiveUntrackedPaths(untrackedPaths);
+          setArchiveConfirmIsStreaming(streamingNow);
+          setArchiveConfirmOpen(true);
+        } else {
+          // No warnings — archive immediately. Await so the finally block doesn't
+          // clear isArchiving before the archive call completes.
+          await executeArchive(anchorEl);
+        }
+      } finally {
+        setIsArchiving(false);
       }
     },
     [workspaceId, preflightArchiveWorkspace, archiveError, isWorking, isArchiving, executeArchive]
