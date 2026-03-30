@@ -742,4 +742,64 @@ describe("WorktreeArchiveSnapshotService", () => {
       )
     ).toBe(false);
   });
+
+  test("getUnsupportedUntrackedPaths returns empty array for clean workspace", async () => {
+    const result = await fixture.service.getUnsupportedUntrackedPaths({
+      workspaceId: fixture.workspaceId,
+      workspaceMetadata: fixture.metadata,
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data).toEqual([]);
+    }
+  });
+
+  test("getUnsupportedUntrackedPaths returns sorted untracked paths", async () => {
+    await fs.writeFile(path.join(fixture.workspacePath, "z-file.txt"), "z\n", "utf-8");
+    await fs.writeFile(path.join(fixture.workspacePath, "a-file.txt"), "a\n", "utf-8");
+    await fs.mkdir(path.join(fixture.workspacePath, "cache-dir"));
+    await fs.writeFile(path.join(fixture.workspacePath, "cache-dir", "tmp"), "t\n", "utf-8");
+
+    const result = await fixture.service.getUnsupportedUntrackedPaths({
+      workspaceId: fixture.workspaceId,
+      workspaceMetadata: fixture.metadata,
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data).toEqual(["a-file.txt", "cache-dir/", "z-file.txt"]);
+    }
+  });
+
+  test("captureSnapshotForArchive succeeds with skipUnsupportedUntrackedCheck", async () => {
+    // Make workspace dirty (tracked changes) so snapshot captures something meaningful.
+    await makeWorkspaceDirty(fixture);
+
+    // Add untracked files that would normally block capture.
+    await fs.writeFile(path.join(fixture.workspacePath, "untracked.txt"), "hello\n", "utf-8");
+
+    // Without skip flag, capture should fail.
+    const failResult = await fixture.service.captureSnapshotForArchive({
+      workspaceId: fixture.workspaceId,
+      workspaceMetadata: fixture.metadata,
+    });
+    expect(failResult.success).toBe(false);
+
+    // Clean up the failed attempt's state dir (if any).
+    const sessionDir = fixture.config.getSessionDir(fixture.workspaceId);
+    await fs.rm(path.join(sessionDir, "archive-state"), { recursive: true, force: true });
+
+    // With skip flag, capture should succeed.
+    const okResult = await fixture.service.captureSnapshotForArchive({
+      workspaceId: fixture.workspaceId,
+      workspaceMetadata: fixture.metadata,
+      skipUnsupportedUntrackedCheck: true,
+    });
+    expect(okResult.success).toBe(true);
+    if (okResult.success) {
+      expect(okResult.data.version).toBe(1);
+      expect(okResult.data.projects.length).toBeGreaterThan(0);
+    }
+  });
 });
