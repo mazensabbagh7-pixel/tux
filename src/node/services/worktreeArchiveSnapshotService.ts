@@ -212,8 +212,13 @@ export class WorktreeArchiveSnapshotService {
   async captureSnapshotForArchive(args: {
     workspaceId: string;
     workspaceMetadata: WorkspaceMetadata;
-    /** When true, skip the untracked-file check (caller already validated & acknowledged). */
-    skipUnsupportedUntrackedCheck?: boolean;
+    /**
+     * When provided, the capture re-verifies the current untracked-file set against these
+     * acknowledged paths instead of throwing unconditionally. If the sets still match,
+     * capture proceeds (lossy). If they diverge, capture fails safely.
+     * When omitted, any untracked files cause the default strict failure.
+     */
+    acknowledgedUntrackedPaths?: string[];
   }): Promise<Result<WorktreeArchiveSnapshot>> {
     assert(
       args.workspaceId.trim().length > 0,
@@ -273,7 +278,22 @@ export class WorktreeArchiveSnapshotService {
 
       const projectSnapshots: WorktreeArchiveSnapshotProject[] = [];
       for (const projectRepo of projectRepos) {
-        if (!args.skipUnsupportedUntrackedCheck) {
+        if (args.acknowledgedUntrackedPaths != null) {
+          // Re-verify untracked files at capture time to close the race window between
+          // the preflight check and actual snapshot capture. Any files created after the
+          // user reviewed the dialog are caught here.
+          const currentUntracked = await this.listUnsupportedUntrackedFiles(projectRepo.repoCwd);
+          // Paths the user acknowledged but that no longer exist are harmless — only
+          // new (unacknowledged) paths are dangerous.
+          const acknowledgedSet = new Set(args.acknowledgedUntrackedPaths);
+          const newPaths = currentUntracked.filter((p) => !acknowledgedSet.has(p));
+          if (newPaths.length > 0) {
+            throw new Error(
+              "Untracked files changed since you reviewed them. " +
+                `New files: ${newPaths.join(", ")}. Please try again.`
+            );
+          }
+        } else {
           await this.ensureNoUnsupportedUntrackedFiles(projectRepo.repoCwd);
         }
         await this.ensureNoDirtySubmodules(projectRepo.repoCwd);

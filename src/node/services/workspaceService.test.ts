@@ -3870,7 +3870,7 @@ describe("WorkspaceService archive snapshots", () => {
     expect(captureSnapshotForArchive).toHaveBeenCalledWith({
       workspaceId,
       workspaceMetadata,
-      skipUnsupportedUntrackedCheck: false,
+      acknowledgedUntrackedPaths: undefined,
     });
   });
 
@@ -4109,32 +4109,44 @@ describe("WorkspaceService preflightArchive and acknowledged archive", () => {
     const result = await workspaceService.archive(workspaceId, untrackedPaths);
 
     expect(result).toEqual(Ok(undefined));
-    // The capture should have been called with skipUnsupportedUntrackedCheck: true.
+    // The capture should have been called with acknowledgedUntrackedPaths.
     expect(captureSnapshotForArchive).toHaveBeenCalledWith({
       workspaceId,
       workspaceMetadata,
-      skipUnsupportedUntrackedCheck: true,
+      acknowledgedUntrackedPaths: untrackedPaths,
     });
   });
 
   test("archive fails safely when acknowledged paths diverge from current", async () => {
-    // Current untracked files differ from what user acknowledged.
+    // Capture itself re-verifies untracked files and detects the mismatch.
+    const captureSnapshotForArchive = mock(() =>
+      Promise.resolve(
+        Err(
+          "Failed to capture archive snapshot: Untracked files changed since you reviewed them. " +
+            "New files: new-file.txt. Please try again."
+        )
+      )
+    );
     workspaceService.setWorktreeArchiveSnapshotService({
       preflightSnapshotForArchive: mock(() => Promise.resolve(Ok(undefined))),
-      captureSnapshotForArchive: mock(() => Promise.resolve(Err("should not run"))),
+      captureSnapshotForArchive,
       restoreSnapshotAfterUnarchive: mock(() => Promise.resolve(Ok("skipped" as const))),
-      getUnsupportedUntrackedPaths: mock(() =>
-        Promise.resolve(Ok([".cache/", "new-file.txt", "temp.txt"]))
-      ),
+      getUnsupportedUntrackedPaths: mock(() => Promise.resolve(Ok([]))),
     });
 
-    // User only acknowledged two of the three.
+    // User only acknowledged two files, but a third appeared at capture time.
     const result = await workspaceService.archive(workspaceId, [".cache/", "temp.txt"]);
 
     expect(result.success).toBe(false);
     if (!result.success) {
-      expect(result.error).toContain("preconditions changed");
+      expect(result.error).toContain("changed since you reviewed");
     }
+    // Capture was called with the acknowledged paths so it can re-verify.
+    expect(captureSnapshotForArchive).toHaveBeenCalledWith({
+      workspaceId,
+      workspaceMetadata,
+      acknowledgedUntrackedPaths: [".cache/", "temp.txt"],
+    });
   });
 
   test("archive without acknowledgedUntrackedPaths fails on untracked files via preflight", async () => {

@@ -772,14 +772,14 @@ describe("WorktreeArchiveSnapshotService", () => {
     }
   });
 
-  test("captureSnapshotForArchive succeeds with skipUnsupportedUntrackedCheck", async () => {
+  test("captureSnapshotForArchive succeeds with matching acknowledgedUntrackedPaths", async () => {
     // Make workspace dirty (tracked changes) so snapshot captures something meaningful.
     await makeWorkspaceDirty(fixture);
 
     // Add untracked files that would normally block capture.
     await fs.writeFile(path.join(fixture.workspacePath, "untracked.txt"), "hello\n", "utf-8");
 
-    // Without skip flag, capture should fail.
+    // Without acknowledgement, capture should fail.
     const failResult = await fixture.service.captureSnapshotForArchive({
       workspaceId: fixture.workspaceId,
       workspaceMetadata: fixture.metadata,
@@ -790,16 +790,38 @@ describe("WorktreeArchiveSnapshotService", () => {
     const sessionDir = fixture.config.getSessionDir(fixture.workspaceId);
     await fs.rm(path.join(sessionDir, "archive-state"), { recursive: true, force: true });
 
-    // With skip flag, capture should succeed.
+    // With matching acknowledged paths, capture should succeed.
     const okResult = await fixture.service.captureSnapshotForArchive({
       workspaceId: fixture.workspaceId,
       workspaceMetadata: fixture.metadata,
-      skipUnsupportedUntrackedCheck: true,
+      acknowledgedUntrackedPaths: ["untracked.txt"],
     });
     expect(okResult.success).toBe(true);
     if (okResult.success) {
       expect(okResult.data.version).toBe(1);
       expect(okResult.data.projects.length).toBeGreaterThan(0);
+    }
+  });
+
+  test("captureSnapshotForArchive fails when new untracked files appear after acknowledgement", async () => {
+    // Make workspace dirty (tracked changes).
+    await makeWorkspaceDirty(fixture);
+
+    // Add untracked files.
+    await fs.writeFile(path.join(fixture.workspacePath, "old-file.txt"), "old\n", "utf-8");
+    await fs.writeFile(path.join(fixture.workspacePath, "new-file.txt"), "new\n", "utf-8");
+
+    // User only acknowledged "old-file.txt" — "new-file.txt" appeared after the dialog.
+    const result = await fixture.service.captureSnapshotForArchive({
+      workspaceId: fixture.workspaceId,
+      workspaceMetadata: fixture.metadata,
+      acknowledgedUntrackedPaths: ["old-file.txt"],
+    });
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error).toContain("new-file.txt");
+      expect(result.error).toContain("changed since you reviewed");
     }
   });
 });

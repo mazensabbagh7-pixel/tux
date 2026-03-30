@@ -3763,40 +3763,9 @@ export class WorkspaceService extends EventEmitter {
         beforeArchiveMetadata &&
         isWorktreeRuntime(beforeArchiveMetadata.runtimeConfig)
       ) {
-        // When the caller provided acknowledgedUntrackedPaths, verify that the current set of
-        // untracked files still matches what the user reviewed. If they diverged (race), fail
-        // safely so the user can re-review rather than silently deleting unseen files.
-        let skipUnsupportedUntrackedCheck = false;
-        if (acknowledgedUntrackedPaths != null) {
-          const untrackedResult =
-            await this.worktreeArchiveSnapshotService!.getUnsupportedUntrackedPaths({
-              workspaceId,
-              workspaceMetadata: beforeArchiveMetadata,
-            });
-          if (!untrackedResult.success) {
-            return Err(untrackedResult.error);
-          }
-
-          const currentSorted = [...untrackedResult.data].sort();
-          const acknowledgedSorted = [...acknowledgedUntrackedPaths].sort();
-          if (
-            currentSorted.length !== acknowledgedSorted.length ||
-            currentSorted.some((p, i) => p !== acknowledgedSorted[i])
-          ) {
-            return Err(
-              "Archive preconditions changed. The set of untracked files no longer matches " +
-                "what you reviewed. Please try again."
-            );
-          }
-
-          log.info("Archive proceeding with acknowledged lossy untracked files", {
-            workspaceId,
-            acknowledgedPaths: acknowledgedSorted,
-          });
-          skipUnsupportedUntrackedCheck = true;
-        }
-
-        if (!skipUnsupportedUntrackedCheck) {
+        // When the caller has NOT acknowledged untracked files, run the strict preflight
+        // that rejects any untracked files outright.
+        if (acknowledgedUntrackedPaths == null) {
           const preflightResult =
             await this.worktreeArchiveSnapshotService!.preflightSnapshotForArchive({
               workspaceId,
@@ -3805,14 +3774,21 @@ export class WorkspaceService extends EventEmitter {
           if (!preflightResult.success) {
             return Err(preflightResult.error);
           }
+        } else {
+          log.info("Archive proceeding with acknowledged lossy untracked files", {
+            workspaceId,
+            acknowledgedPaths: acknowledgedUntrackedPaths,
+          });
         }
 
         await this.stopLiveWorkspaceActivityForArchive(workspaceId);
 
+        // Pass acknowledgedUntrackedPaths to capture so it re-verifies at capture time,
+        // closing the race window between the user's dialog and actual snapshot capture.
         const captureResult = await this.worktreeArchiveSnapshotService!.captureSnapshotForArchive({
           workspaceId,
           workspaceMetadata: beforeArchiveMetadata,
-          skipUnsupportedUntrackedCheck,
+          acknowledgedUntrackedPaths,
         });
         if (!captureResult.success) {
           return Err(captureResult.error);
