@@ -2,6 +2,7 @@ import { eventIterator } from "@orpc/server";
 import { UIModeSchema } from "../../types/mode";
 import { z } from "zod";
 import { CODER_ARCHIVE_BEHAVIORS } from "@/common/config/coderArchiveBehavior";
+import { WORKTREE_ARCHIVE_BEHAVIORS } from "@/common/config/worktreeArchiveBehavior";
 import { EXPERIMENT_IDS } from "@/common/constants/experiments";
 import { ChatStatsSchema, SessionUsageFileSchema } from "./chatStats";
 import {
@@ -957,8 +958,24 @@ export const workspace = {
     }),
     output: ResultSchema(z.void(), z.string()),
   },
-  archive: {
+  preflightArchive: {
     input: z.object({ workspaceId: z.string() }),
+    output: ResultSchema(
+      z.discriminatedUnion("kind", [
+        z.object({ kind: z.literal("ready") }),
+        z.object({
+          kind: z.literal("confirm-lossy-untracked-files"),
+          paths: z.array(z.string()),
+        }),
+      ]),
+      z.string()
+    ),
+  },
+  archive: {
+    input: z.object({
+      workspaceId: z.string(),
+      acknowledgedUntrackedPaths: z.array(z.string()).nullish(),
+    }),
     output: ResultSchema(z.void(), z.string()),
   },
   unarchive: {
@@ -1380,6 +1397,9 @@ export const workspace = {
 };
 
 export type WorkspaceSendMessageOutput = z.infer<typeof workspace.sendMessage.output>;
+export type ArchivePreflightResult =
+  | { kind: "ready" }
+  | { kind: "confirm-lossy-untracked-files"; paths: string[] };
 
 // Tasks (agent sub-workspaces)
 export const tasks = {
@@ -1702,7 +1722,7 @@ export const config = {
       defaultModel: z.string().optional(),
       hiddenModels: z.array(z.string()).optional(),
       coderWorkspaceArchiveBehavior: z.enum(CODER_ARCHIVE_BEHAVIORS),
-      deleteWorktreeOnArchive: z.boolean(),
+      worktreeArchiveBehavior: z.enum(WORKTREE_ARCHIVE_BEHAVIORS),
       runtimeEnablement: z.record(z.string(), z.boolean()),
       defaultRuntime: z.string().nullable(),
       agentAiDefaults: AgentAiDefaultsSchema,
@@ -1759,7 +1779,7 @@ export const config = {
     input: z
       .object({
         coderWorkspaceArchiveBehavior: z.enum(CODER_ARCHIVE_BEHAVIORS),
-        deleteWorktreeOnArchive: z.boolean(),
+        worktreeArchiveBehavior: z.enum(WORKTREE_ARCHIVE_BEHAVIORS),
       })
       .strict(),
     output: z.void(),

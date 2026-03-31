@@ -582,7 +582,7 @@ export const router = (authToken?: string) => {
             hiddenModels: config.hiddenModels,
             coderWorkspaceArchiveBehavior:
               config.coderWorkspaceArchiveBehavior ?? DEFAULT_CODER_ARCHIVE_BEHAVIOR,
-            deleteWorktreeOnArchive: config.deleteWorktreeOnArchive === true,
+            worktreeArchiveBehavior: config.worktreeArchiveBehavior ?? "keep",
             runtimeEnablement: normalizeRuntimeEnablement(config.runtimeEnablement),
             defaultRuntime: config.defaultRuntime ?? null,
             agentAiDefaults: config.agentAiDefaults ?? {},
@@ -773,7 +773,7 @@ export const router = (authToken?: string) => {
             return {
               ...config,
               coderWorkspaceArchiveBehavior: input.coderWorkspaceArchiveBehavior,
-              deleteWorktreeOnArchive: input.deleteWorktreeOnArchive,
+              worktreeArchiveBehavior: input.worktreeArchiveBehavior,
             };
           });
         }),
@@ -3067,11 +3067,20 @@ export const router = (authToken?: string) => {
         .handler(async ({ context, input }) => {
           return context.workspaceService.regenerateTitle(input.workspaceId);
         }),
+      preflightArchive: t
+        .input(schemas.workspace.preflightArchive.input)
+        .output(schemas.workspace.preflightArchive.output)
+        .handler(async ({ context, input }) => {
+          return context.workspaceService.preflightArchive(input.workspaceId);
+        }),
       archive: t
         .input(schemas.workspace.archive.input)
         .output(schemas.workspace.archive.output)
         .handler(async ({ context, input }) => {
-          return context.workspaceService.archive(input.workspaceId);
+          return context.workspaceService.archive(
+            input.workspaceId,
+            input.acknowledgedUntrackedPaths ?? undefined
+          );
         }),
       unarchive: t
         .input(schemas.workspace.unarchive.input)

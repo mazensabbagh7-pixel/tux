@@ -272,6 +272,7 @@ export const ArchivedWorkspaces: React.FC<ArchivedWorkspacesProps> = ({
     error: string;
   } | null>(null);
   const deleteWorktreeError = usePopoverError();
+  const unarchiveError = usePopoverError();
 
   // Bulk selection state
   const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set());
@@ -518,7 +519,7 @@ export const ArchivedWorkspaces: React.FC<ArchivedWorkspacesProps> = ({
     onWorkspacesChanged?.();
   };
 
-  const handleUnarchive = async (workspaceId: string) => {
+  const handleUnarchive = async (workspaceId: string, anchorEl?: HTMLElement) => {
     setProcessingIds((prev) => new Set(prev).add(workspaceId));
     try {
       const result = await unarchiveWorkspace(workspaceId);
@@ -534,6 +535,17 @@ export const ArchivedWorkspaces: React.FC<ArchivedWorkspacesProps> = ({
           });
         }
         onWorkspacesChanged?.();
+        return;
+      }
+
+      if (anchorEl) {
+        const rect = anchorEl.getBoundingClientRect();
+        unarchiveError.showError(workspaceId, result.error ?? "Failed to restore workspace", {
+          top: rect.top + window.scrollY,
+          left: rect.right + 10,
+        });
+      } else {
+        unarchiveError.showError(workspaceId, result.error ?? "Failed to restore workspace");
       }
     } finally {
       setProcessingIds((prev) => {
@@ -718,6 +730,11 @@ export const ArchivedWorkspaces: React.FC<ArchivedWorkspacesProps> = ({
         }}
       />
       <PopoverError
+        error={unarchiveError.error}
+        prefix="Failed to restore workspace"
+        onDismiss={unarchiveError.clearError}
+      />
+      <PopoverError
         error={deleteWorktreeError.error}
         prefix="Failed to delete managed worktree"
         onDismiss={deleteWorktreeError.clearError}
@@ -790,12 +807,12 @@ export const ArchivedWorkspaces: React.FC<ArchivedWorkspacesProps> = ({
                         <button
                           onClick={() => void handleBulkDeleteWorktree()}
                           className="text-muted rounded p-1 transition-colors hover:bg-white/10 hover:text-orange-300"
-                          aria-label="Delete managed worktrees for selected"
+                          aria-label="Remove local checkouts for selected"
                         >
                           <FolderX className="h-4 w-4" />
                         </button>
                       </TooltipTrigger>
-                      <TooltipContent>Delete managed worktrees only</TooltipContent>
+                      <TooltipContent>Remove local checkouts</TooltipContent>
                     </Tooltip>
                   )}
                   <Tooltip>
@@ -931,7 +948,9 @@ export const ArchivedWorkspaces: React.FC<ArchivedWorkspacesProps> = ({
                             <Tooltip>
                               <TooltipTrigger asChild>
                                 <button
-                                  onClick={() => void handleUnarchive(workspace.id)}
+                                  onClick={(event) =>
+                                    void handleUnarchive(workspace.id, event.currentTarget)
+                                  }
                                   disabled={isProcessing}
                                   className="text-muted hover:text-foreground rounded p-1.5 transition-colors hover:bg-white/10 disabled:opacity-50"
                                   aria-label={`Restore workspace ${displayTitle}`}
@@ -950,7 +969,7 @@ export const ArchivedWorkspaces: React.FC<ArchivedWorkspacesProps> = ({
                                     }
                                     disabled={isProcessing}
                                     className="text-muted rounded p-1.5 transition-colors hover:bg-white/10 hover:text-orange-300 disabled:opacity-50"
-                                    aria-label={`Delete worktree for workspace ${displayTitle}`}
+                                    aria-label={`Remove local checkout for workspace ${displayTitle}`}
                                   >
                                     {isDeletingWorktree ? (
                                       <Loader2 className="h-4 w-4 animate-spin" />
@@ -959,7 +978,7 @@ export const ArchivedWorkspaces: React.FC<ArchivedWorkspacesProps> = ({
                                     )}
                                   </button>
                                 </TooltipTrigger>
-                                <TooltipContent>Delete managed worktree only</TooltipContent>
+                                <TooltipContent>Remove local checkout</TooltipContent>
                               </Tooltip>
                             )}
                             <Tooltip>

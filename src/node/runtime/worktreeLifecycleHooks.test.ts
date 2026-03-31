@@ -79,7 +79,7 @@ describe("createWorktreeArchiveHook", () => {
     return tempRoot;
   }
 
-  it("skips deletion when deleteWorktreeOnArchive is false", async () => {
+  it("skips deletion when worktree archive behavior keeps the checkout", async () => {
     const srcBaseDir = await createTempRoot();
     const workspaceMetadata = createWorkspaceMetadata({
       runtimeConfig: { type: "worktree", srcBaseDir },
@@ -88,7 +88,7 @@ describe("createWorktreeArchiveHook", () => {
     await mkdir(managedPath, { recursive: true });
 
     const hook = createWorktreeArchiveHook({
-      getDeleteWorktreeOnArchive: () => false,
+      getWorktreeArchiveBehavior: () => "keep",
     });
 
     const result = await hook({ workspaceId: workspaceMetadata.id, workspaceMetadata });
@@ -130,7 +130,7 @@ describe("createWorktreeArchiveHook", () => {
     );
 
     const hook = createWorktreeArchiveHook({
-      getDeleteWorktreeOnArchive: () => true,
+      getWorktreeArchiveBehavior: () => "delete",
     });
 
     const result = await hook({ workspaceId: workspaceMetadata.id, workspaceMetadata });
@@ -144,6 +144,33 @@ describe("createWorktreeArchiveHook", () => {
     expect(await pathExists(managedPath)).toBe(false);
   });
 
+  it("skips snapshot cleanup for multi-project workspaces so restore can rehydrate safely", async () => {
+    const srcBaseDir = await createTempRoot();
+    const workspaceMetadata = createWorkspaceMetadata({
+      runtimeConfig: { type: "worktree", srcBaseDir },
+      projects: [
+        { projectPath: "/tmp/project-a", projectName: "project-a" },
+        { projectPath: "/tmp/project-b", projectName: "project-b" },
+      ],
+    });
+    const managedPath = getManagedPath(workspaceMetadata);
+    await mkdir(managedPath, { recursive: true });
+    const debugSpy = spyOn(log, "debug").mockImplementation(() => undefined);
+
+    const hook = createWorktreeArchiveHook({
+      getWorktreeArchiveBehavior: () => "snapshot",
+    });
+
+    const result = await hook({ workspaceId: workspaceMetadata.id, workspaceMetadata });
+
+    expect(result).toEqual(Ok(undefined));
+    expect(await pathExists(managedPath)).toBe(true);
+    expect(debugSpy).toHaveBeenCalledWith(
+      "Skipping snapshot worktree cleanup for multi-project archive",
+      { workspaceId: workspaceMetadata.id }
+    );
+  });
+
   it("skips cleanup for non-worktree runtimes even when cleanup is enabled", async () => {
     const tempRoot = await createTempRoot();
     const untouchedPath = path.join(tempRoot, "project-name", "workspace-name");
@@ -154,7 +181,7 @@ describe("createWorktreeArchiveHook", () => {
     });
 
     const hook = createWorktreeArchiveHook({
-      getDeleteWorktreeOnArchive: () => true,
+      getWorktreeArchiveBehavior: () => "snapshot",
     });
 
     const result = await hook({ workspaceId: workspaceMetadata.id, workspaceMetadata });
@@ -179,7 +206,7 @@ describe("createWorktreeArchiveHook", () => {
     );
 
     const hook = createWorktreeArchiveHook({
-      getDeleteWorktreeOnArchive: () => true,
+      getWorktreeArchiveBehavior: () => "delete",
     });
 
     const result = await hook({ workspaceId: workspaceMetadata.id, workspaceMetadata });
@@ -220,7 +247,7 @@ describe("createWorktreeArchiveHook", () => {
     );
     const debugSpy = spyOn(log, "debug").mockImplementation(() => undefined);
     const hook = createWorktreeArchiveHook({
-      getDeleteWorktreeOnArchive: () => true,
+      getWorktreeArchiveBehavior: () => "delete",
     });
 
     const result = await hook({ workspaceId: workspaceMetadata.id, workspaceMetadata });
@@ -262,7 +289,7 @@ describe("createWorktreeArchiveHook", () => {
     );
     const debugSpy = spyOn(log, "debug").mockImplementation(() => undefined);
     const hook = createWorktreeArchiveHook({
-      getDeleteWorktreeOnArchive: () => true,
+      getWorktreeArchiveBehavior: () => "delete",
     });
 
     const result = await hook({ workspaceId: workspaceMetadata.id, workspaceMetadata });
@@ -305,7 +332,7 @@ describe("createWorktreeArchiveHook", () => {
     );
     const debugSpy = spyOn(log, "debug").mockImplementation(() => undefined);
     const hook = createWorktreeArchiveHook({
-      getDeleteWorktreeOnArchive: () => true,
+      getWorktreeArchiveBehavior: () => "delete",
     });
 
     const result = await hook({ workspaceId: workspaceMetadata.id, workspaceMetadata });

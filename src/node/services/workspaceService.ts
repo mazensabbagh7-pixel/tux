@@ -2,6 +2,8 @@ import { EventEmitter } from "events";
 import * as path from "path";
 import * as fsPromises from "fs/promises";
 import assert from "@/common/utils/assert";
+import { DEFAULT_WORKTREE_ARCHIVE_BEHAVIOR } from "@/common/config/worktreeArchiveBehavior";
+import type { WorktreeArchiveSnapshot } from "@/common/schemas/project";
 import { isWorkspaceArchived } from "@/common/utils/archive";
 import { MUX_HELP_CHAT_WORKSPACE_ID } from "@/common/constants/muxChat";
 import { MULTI_PROJECT_CONFIG_KEY } from "@/common/constants/multiProject";
@@ -119,11 +121,13 @@ import type {
 import type { TerminalService } from "@/node/services/terminalService";
 import type { DesktopSessionManager } from "@/node/services/desktop/DesktopSessionManager";
 import type { WorkspaceAISettingsSchema } from "@/common/orpc/schemas";
+import type { ArchivePreflightResult } from "@/common/orpc/schemas/api";
 import type { SessionTimingService } from "@/node/services/sessionTimingService";
 import type { SessionUsageService } from "@/node/services/sessionUsageService";
 import type { BackgroundProcessManager } from "@/node/services/backgroundProcessManager";
 import type { WorkspaceLifecycleHooks } from "@/node/services/workspaceLifecycleHooks";
 import type { TaskService } from "@/node/services/taskService";
+import type { WorktreeArchiveSnapshotService } from "@/node/services/worktreeArchiveSnapshotService";
 
 import { DisposableTempDir } from "@/node/services/tempDir";
 import { createBashTool } from "@/node/services/tools/bash";
@@ -168,6 +172,13 @@ const MAX_WORKSPACE_NAME_COLLISION_RETRIES = 3;
 
 // Shared type for workspace-scoped AI settings (model + thinking)
 type WorkspaceAISettings = z.infer<typeof WorkspaceAISettingsSchema>;
+type WorktreeArchiveSnapshotLifecycleService = Pick<
+  WorktreeArchiveSnapshotService,
+  | "preflightSnapshotForArchive"
+  | "captureSnapshotForArchive"
+  | "restoreSnapshotAfterUnarchive"
+  | "getUnsupportedUntrackedPaths"
+>;
 interface WorkspaceAgentStatus {
   emoji: string;
   message: string;
@@ -1138,6 +1149,7 @@ export class WorkspaceService extends EventEmitter {
   private desktopSessionManager?: DesktopSessionManager;
   private readonly sessionTimingService?: SessionTimingService;
   private workspaceLifecycleHooks?: WorkspaceLifecycleHooks;
+  private worktreeArchiveSnapshotService?: WorktreeArchiveSnapshotLifecycleService;
   private taskService?: TaskService;
 
   /**
@@ -1176,12 +1188,22 @@ export class WorkspaceService extends EventEmitter {
     this.workspaceLifecycleHooks = hooks;
   }
 
+  setWorktreeArchiveSnapshotService(service: WorktreeArchiveSnapshotLifecycleService): void {
+    this.worktreeArchiveSnapshotService = service;
+  }
+
   /**
    * Set the task service for auto-resume counter resets.
    * Called after construction due to circular dependency.
    */
   setTaskService(taskService: TaskService): void {
     this.taskService = taskService;
+  }
+
+  private getWorktreeArchiveBehavior(): "keep" | "delete" | "snapshot" {
+    return (
+      this.config.loadConfigOrDefault().worktreeArchiveBehavior ?? DEFAULT_WORKTREE_ARCHIVE_BEHAVIOR
+    );
   }
 
   /**
@@ -1228,6 +1250,24 @@ export class WorkspaceService extends EventEmitter {
 
   isExperimentEnabled(experimentId: (typeof EXPERIMENT_IDS)[keyof typeof EXPERIMENT_IDS]): boolean {
     return this.experimentsService?.isExperimentEnabled(experimentId) === true;
+  }
+
+  private async stopLiveWorkspaceActivityForArchive(workspaceId: string): Promise<void> {
+    // Archiving removes the workspace from the sidebar; ensure we don't leave a stream running
+    // "headless" with no obvious UI affordance to interrupt it.
+    if (this.aiService.isStreaming(workspaceId)) {
+      const stopResult = await this.interruptStream(workspaceId);
+      if (!stopResult.success) {
+        log.debug("Failed to stop stream during workspace archive", {
+          workspaceId,
+          error: stopResult.error,
+        });
+      }
+    }
+
+    // Archiving hides workspace UI; do not leave terminal PTYs or desktop sessions running headless.
+    this.terminalService?.closeWorkspaceSessions(workspaceId);
+    await this.closeDesktopSessionBestEffort(workspaceId, "archive");
   }
 
   /**
@@ -3564,13 +3604,75 @@ export class WorkspaceService extends EventEmitter {
   }
 
   /**
+   * Check whether archiving a workspace requires user acknowledgement (e.g. untracked files
+   * that snapshot cannot preserve). Returns a discriminated union the frontend uses to decide
+   * whether to show a destructive confirmation dialog.
+   */
+  async preflightArchive(workspaceId: string): Promise<Result<ArchivePreflightResult>> {
+    if (workspaceId === MUX_HELP_CHAT_WORKSPACE_ID) {
+      // No special preflight needed for the help chat — archive will reject it later.
+      return Ok({ kind: "ready" as const });
+    }
+
+    try {
+      const workspace = this.config.findWorkspace(workspaceId);
+      if (!workspace) {
+        return Err("Workspace not found");
+      }
+
+      const worktreeArchiveBehavior = this.getWorktreeArchiveBehavior();
+      const snapshotBehaviorEnabled =
+        worktreeArchiveBehavior === "snapshot" && this.worktreeArchiveSnapshotService != null;
+
+      if (!snapshotBehaviorEnabled) {
+        return Ok({ kind: "ready" as const });
+      }
+
+      const metadataResult = await this.aiService.getWorkspaceMetadata(workspaceId);
+      if (!metadataResult.success) {
+        return Err(metadataResult.error);
+      }
+      const metadata = metadataResult.data;
+
+      if (!isWorktreeRuntime(metadata.runtimeConfig)) {
+        return Ok({ kind: "ready" as const });
+      }
+
+      // Multi-project workspaces skip snapshot capture entirely.
+      if (Array.isArray(metadata.projects) && metadata.projects.length > 1) {
+        return Ok({ kind: "ready" as const });
+      }
+
+      const untrackedResult =
+        await this.worktreeArchiveSnapshotService!.getUnsupportedUntrackedPaths({
+          workspaceId,
+          workspaceMetadata: metadata,
+        });
+      if (!untrackedResult.success) {
+        return Err(untrackedResult.error);
+      }
+
+      if (untrackedResult.data.length > 0) {
+        return Ok({
+          kind: "confirm-lossy-untracked-files" as const,
+          paths: untrackedResult.data,
+        });
+      }
+
+      return Ok({ kind: "ready" as const });
+    } catch (error) {
+      return Err(`Failed to preflight archive: ${getErrorMessage(error)}`);
+    }
+  }
+
+  /**
    * Archive a workspace. Archived workspaces are hidden from the main sidebar
    * but can be viewed on the project page.
    *
    * If init is still running, we abort it before archiving so we don't leave
    * orphaned post-create work running in the background.
    */
-  async archive(workspaceId: string): Promise<Result<void>> {
+  async archive(workspaceId: string, acknowledgedUntrackedPaths?: string[]): Promise<Result<void>> {
     if (workspaceId === MUX_HELP_CHAT_WORKSPACE_ID) {
       return Err("Cannot archive the Chat with Mux system workspace");
     }
@@ -3617,44 +3719,82 @@ export class WorkspaceService extends EventEmitter {
       }
 
       const { projectPath, workspacePath } = workspace;
+      const worktreeArchiveBehavior = this.getWorktreeArchiveBehavior();
+      const snapshotBehaviorEnabled =
+        worktreeArchiveBehavior === "snapshot" && this.worktreeArchiveSnapshotService != null;
+
+      let beforeArchiveMetadata: WorkspaceMetadata | undefined;
+      if (this.workspaceLifecycleHooks || snapshotBehaviorEnabled) {
+        const metadataResult = await this.aiService.getWorkspaceMetadata(workspaceId);
+        if (!metadataResult.success) {
+          return Err(metadataResult.error);
+        }
+        beforeArchiveMetadata = metadataResult.data;
+      }
+
+      const canSnapshotManagedWorktree =
+        snapshotBehaviorEnabled &&
+        beforeArchiveMetadata != null &&
+        isWorktreeRuntime(beforeArchiveMetadata.runtimeConfig);
+      const shouldSkipSnapshotCapture =
+        canSnapshotManagedWorktree &&
+        beforeArchiveMetadata != null &&
+        Array.isArray(beforeArchiveMetadata.projects) &&
+        beforeArchiveMetadata.projects.length > 1;
+      const needsSnapshotCapture = canSnapshotManagedWorktree && !shouldSkipSnapshotCapture;
 
       // Lifecycle hooks run *before* we persist archivedAt.
       //
       // NOTE: Archiving is typically a quick UI action, but it can fail if a hook needs to perform
       // cleanup (e.g., stopping a dedicated mux-created Coder workspace) and that cleanup fails.
-      if (this.workspaceLifecycleHooks) {
-        const metadataResult = await this.aiService.getWorkspaceMetadata(workspaceId);
-        if (!metadataResult.success) {
-          return Err(metadataResult.error);
-        }
-
+      if (this.workspaceLifecycleHooks && beforeArchiveMetadata) {
         const hookResult = await this.workspaceLifecycleHooks.runBeforeArchive({
           workspaceId,
-          workspaceMetadata: metadataResult.data,
+          workspaceMetadata: beforeArchiveMetadata,
         });
         if (!hookResult.success) {
           return Err(hookResult.error);
         }
       }
 
-      // Archiving removes the workspace from the sidebar; ensure we don't leave a stream running
-      // "headless" with no obvious UI affordance to interrupt it.
-      //
-      // NOTE: We only interrupt after beforeArchive hooks succeed, so a hook failure doesn't stop
-      // an active stream.
-      if (this.aiService.isStreaming(workspaceId)) {
-        const stopResult = await this.interruptStream(workspaceId);
-        if (!stopResult.success) {
-          log.debug("Failed to stop stream during workspace archive", {
+      let capturedWorktreeSnapshot: WorktreeArchiveSnapshot | undefined;
+      if (
+        needsSnapshotCapture &&
+        beforeArchiveMetadata &&
+        isWorktreeRuntime(beforeArchiveMetadata.runtimeConfig)
+      ) {
+        // When the caller has NOT acknowledged untracked files, run the strict preflight
+        // that rejects any untracked files outright.
+        if (acknowledgedUntrackedPaths == null) {
+          const preflightResult =
+            await this.worktreeArchiveSnapshotService!.preflightSnapshotForArchive({
+              workspaceId,
+              workspaceMetadata: beforeArchiveMetadata,
+            });
+          if (!preflightResult.success) {
+            return Err(preflightResult.error);
+          }
+        } else {
+          log.info("Archive proceeding with acknowledged lossy untracked files", {
             workspaceId,
-            error: stopResult.error,
+            acknowledgedPaths: acknowledgedUntrackedPaths,
           });
         }
-      }
 
-      // Archiving hides workspace UI; do not leave terminal PTYs running headless.
-      this.terminalService?.closeWorkspaceSessions(workspaceId);
-      await this.closeDesktopSessionBestEffort(workspaceId, "archive");
+        await this.stopLiveWorkspaceActivityForArchive(workspaceId);
+
+        // Pass acknowledgedUntrackedPaths to capture so it re-verifies at capture time,
+        // closing the race window between the user's dialog and actual snapshot capture.
+        const captureResult = await this.worktreeArchiveSnapshotService!.captureSnapshotForArchive({
+          workspaceId,
+          workspaceMetadata: beforeArchiveMetadata,
+          acknowledgedUntrackedPaths,
+        });
+        if (!captureResult.success) {
+          return Err(captureResult.error);
+        }
+        capturedWorktreeSnapshot = captureResult.data;
+      }
 
       await this.config.editConfig((config) => {
         const projectConfig = config.projects.get(projectPath);
@@ -3663,12 +3803,28 @@ export class WorkspaceService extends EventEmitter {
             projectConfig.workspaces.find((w) => w.id === workspaceId) ??
             projectConfig.workspaces.find((w) => w.path === workspacePath);
           if (workspaceEntry) {
-            // Just set archivedAt - archived state is derived from archivedAt > unarchivedAt
+            // Just set archivedAt - archived state is derived from archivedAt > unarchivedAt.
             workspaceEntry.archivedAt = new Date().toISOString();
+            if (capturedWorktreeSnapshot) {
+              workspaceEntry.worktreeArchiveSnapshot = capturedWorktreeSnapshot;
+            } else {
+              delete workspaceEntry.worktreeArchiveSnapshot;
+            }
           }
         }
         return config;
       });
+
+      if (!needsSnapshotCapture) {
+        try {
+          await this.stopLiveWorkspaceActivityForArchive(workspaceId);
+        } catch (error) {
+          log.debug("Failed to stop live workspace activity after archive persistence", {
+            workspaceId,
+            error: getErrorMessage(error),
+          });
+        }
+      }
 
       // Emit updated metadata
       const allMetadata = await this.config.getAllWorkspaceMetadata();
@@ -3735,6 +3891,8 @@ export class WorkspaceService extends EventEmitter {
       const { projectPath, workspacePath } = workspace;
 
       let didUnarchive = false;
+      let previousUnarchivedAt: string | undefined;
+      let persistedUnarchivedAt: string | undefined;
 
       await this.config.editConfig((config) => {
         const projectConfig = config.projects.get(projectPath);
@@ -3750,7 +3908,9 @@ export class WorkspaceService extends EventEmitter {
             if (wasArchived) {
               // Just set unarchivedAt - archived state is derived from archivedAt > unarchivedAt.
               // This also bumps workspace to top of recency.
-              workspaceEntry.unarchivedAt = new Date().toISOString();
+              previousUnarchivedAt = workspaceEntry.unarchivedAt;
+              persistedUnarchivedAt = new Date().toISOString();
+              workspaceEntry.unarchivedAt = persistedUnarchivedAt;
               didUnarchive = true;
             }
           }
@@ -3776,30 +3936,64 @@ export class WorkspaceService extends EventEmitter {
         }
       }
 
+      let hookMetadata: WorkspaceMetadata | undefined = updatedMetadata;
+      if (!hookMetadata && (this.workspaceLifecycleHooks || this.worktreeArchiveSnapshotService)) {
+        const metadataResult = await this.aiService.getWorkspaceMetadata(workspaceId);
+        if (metadataResult.success) {
+          hookMetadata = metadataResult.data;
+        } else {
+          log.debug("Failed to load workspace metadata for unarchive follow-up work", {
+            workspaceId,
+            error: metadataResult.error,
+          });
+        }
+      }
+
+      if (this.worktreeArchiveSnapshotService && hookMetadata) {
+        const restoreResult =
+          await this.worktreeArchiveSnapshotService.restoreSnapshotAfterUnarchive({
+            workspaceId,
+            workspaceMetadata: hookMetadata,
+          });
+        if (!restoreResult.success) {
+          log.debug("Failed to restore worktree archive snapshot during unarchive", {
+            workspaceId,
+            error: restoreResult.error,
+          });
+          if (persistedUnarchivedAt) {
+            await this.config.editConfig((config) => {
+              const projectConfig = config.projects.get(projectPath);
+              const workspaceEntry =
+                projectConfig?.workspaces.find((w) => w.id === workspaceId) ??
+                projectConfig?.workspaces.find((w) => w.path === workspacePath);
+              if (workspaceEntry && workspaceEntry.unarchivedAt === persistedUnarchivedAt) {
+                if (previousUnarchivedAt === undefined) {
+                  delete workspaceEntry.unarchivedAt;
+                } else {
+                  workspaceEntry.unarchivedAt = previousUnarchivedAt;
+                }
+              }
+              return config;
+            });
+            await this.emitCurrentWorkspaceMetadata(workspaceId);
+          }
+          return Err(restoreResult.error);
+        }
+      }
+
       // Lifecycle hooks run *after* we persist unarchivedAt.
       //
       // Why best-effort: Unarchive is a quick UI action and should not fail permanently due to a
       // start error (e.g., Coder workspace start).
-      if (this.workspaceLifecycleHooks) {
-        let hookMetadata: WorkspaceMetadata | undefined = updatedMetadata;
-        if (!hookMetadata) {
-          const metadataResult = await this.aiService.getWorkspaceMetadata(workspaceId);
-          if (metadataResult.success) {
-            hookMetadata = metadataResult.data;
-          } else {
-            log.debug("Failed to load workspace metadata for afterUnarchive hooks", {
-              workspaceId,
-              error: metadataResult.error,
-            });
-          }
-        }
+      if (this.workspaceLifecycleHooks && hookMetadata) {
+        await this.workspaceLifecycleHooks.runAfterUnarchive({
+          workspaceId,
+          workspaceMetadata: hookMetadata,
+        });
+      }
 
-        if (hookMetadata) {
-          await this.workspaceLifecycleHooks.runAfterUnarchive({
-            workspaceId,
-            workspaceMetadata: hookMetadata,
-          });
-        }
+      if (this.workspaceLifecycleHooks || this.worktreeArchiveSnapshotService) {
+        await this.emitCurrentWorkspaceMetadata(workspaceId);
       }
 
       return Ok(undefined);

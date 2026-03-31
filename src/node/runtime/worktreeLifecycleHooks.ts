@@ -1,3 +1,7 @@
+import {
+  shouldDeleteWorktreeOnArchive,
+  type WorktreeArchiveBehavior,
+} from "@/common/config/worktreeArchiveBehavior";
 import type { FrontendWorkspaceMetadata, WorkspaceMetadata } from "@/common/types/workspace";
 import { Ok, type Result } from "@/common/types/result";
 import { isWorktreeRuntime as isCommonWorktreeRuntime } from "@/common/types/runtime";
@@ -14,7 +18,7 @@ function hasNamedWorkspacePath(
 export const isWorktreeRuntime = isCommonWorktreeRuntime;
 
 export function createWorktreeArchiveHook(options: {
-  getDeleteWorktreeOnArchive: () => boolean;
+  getWorktreeArchiveBehavior: () => WorktreeArchiveBehavior;
 }): AfterArchiveHook {
   return async ({ workspaceMetadata }): Promise<Result<void>> => {
     const runtimeConfig = workspaceMetadata.runtimeConfig;
@@ -22,7 +26,18 @@ export function createWorktreeArchiveHook(options: {
       return Ok(undefined);
     }
 
-    if (!options.getDeleteWorktreeOnArchive()) {
+    if (!shouldDeleteWorktreeOnArchive(options.getWorktreeArchiveBehavior())) {
+      return Ok(undefined);
+    }
+
+    if (
+      options.getWorktreeArchiveBehavior() === "snapshot" &&
+      Array.isArray(workspaceMetadata.projects) &&
+      workspaceMetadata.projects.length > 1
+    ) {
+      log.debug("Skipping snapshot worktree cleanup for multi-project archive", {
+        workspaceId: workspaceMetadata.id,
+      });
       return Ok(undefined);
     }
 

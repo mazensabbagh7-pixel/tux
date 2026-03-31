@@ -97,6 +97,41 @@ describe("ArchivedWorkspaces", () => {
     mock.restore();
   });
 
+  test("shows an error when restoring an archived workspace fails", async () => {
+    unarchiveWorkspaceMock.mockImplementationOnce(() =>
+      Promise.resolve({ success: false, error: "Restore failed" })
+    );
+    const workspace = createWorkspace({
+      id: "ws-restore-error",
+      name: "restore-error",
+    });
+
+    const view = render(
+      <ArchivedWorkspaces
+        projectPath={workspace.projectPath}
+        projectName={workspace.projectName}
+        workspaces={[workspace]}
+        onWorkspacesChanged={onWorkspacesChangedMock}
+      />
+    );
+
+    fireEvent.click(view.getByLabelText("Expand archived workspaces"));
+
+    const restoreButton = await waitFor(() =>
+      view.getByLabelText(`Restore workspace ${workspace.name}`)
+    );
+    fireEvent.click(restoreButton);
+
+    await waitFor(() => {
+      expect(unarchiveWorkspaceMock).toHaveBeenCalledWith(workspace.id);
+    });
+    expect(onWorkspacesChangedMock).not.toHaveBeenCalled();
+
+    const alert = await waitFor(() => view.getByRole("alert"));
+    expect(alert.textContent).toContain("Failed to restore workspace");
+    expect(alert.textContent).toContain("Restore failed");
+  });
+
   test("shows delete worktree for archived worktree workspaces and calls the API", async () => {
     const workspace = createWorkspace({
       id: "ws-worktree",
@@ -116,7 +151,7 @@ describe("ArchivedWorkspaces", () => {
     fireEvent.click(view.getByLabelText("Expand archived workspaces"));
 
     const deleteWorktreeButton = await waitFor(() =>
-      view.getByLabelText(`Delete worktree for workspace ${workspace.name}`)
+      view.getByLabelText(`Remove local checkout for workspace ${workspace.name}`)
     );
     fireEvent.click(deleteWorktreeButton);
 
@@ -148,7 +183,7 @@ describe("ArchivedWorkspaces", () => {
     fireEvent.click(view.getByLabelText("Expand archived workspaces"));
 
     const deleteWorktreeButton = await waitFor(() =>
-      view.getByLabelText(`Delete worktree for workspace ${workspace.name}`)
+      view.getByLabelText(`Remove local checkout for workspace ${workspace.name}`)
     );
     fireEvent.click(deleteWorktreeButton);
 
@@ -187,10 +222,10 @@ describe("ArchivedWorkspaces", () => {
 
     await waitFor(() => {
       expect(
-        view.queryByLabelText(`Delete worktree for workspace ${transcriptOnlyWorkspace.name}`)
+        view.queryByLabelText(`Remove local checkout for workspace ${transcriptOnlyWorkspace.name}`)
       ).toBeNull();
       expect(
-        view.queryByLabelText(`Delete worktree for workspace ${localWorkspace.name}`)
+        view.queryByLabelText(`Remove local checkout for workspace ${localWorkspace.name}`)
       ).toBeNull();
     });
   });
