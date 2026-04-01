@@ -38,6 +38,7 @@ import {
   Eye,
   EyeOff,
   ChevronDown,
+  HeartPulse,
 } from "lucide-react";
 import { WorkspaceStatusIndicator } from "../WorkspaceStatusIndicator/WorkspaceStatusIndicator";
 import { ArchiveIcon } from "../icons/ArchiveIcon/ArchiveIcon";
@@ -178,11 +179,18 @@ function isStatusDotVisible(state: VisualState, isDraft?: boolean, isSubAgent?: 
 const LEADING_SLOT_CONTAINER_CLASSES =
   "relative z-20 flex h-4 w-4 shrink-0 items-center justify-center self-center";
 
+function HeartbeatFallbackIcon() {
+  return (
+    <HeartPulse aria-hidden="true" className="text-muted h-4 w-4" data-testid="heartbeat-icon" />
+  );
+}
+
 function StatusDot(props: {
   state: VisualState;
   isDraft?: boolean;
   isSubAgent?: boolean;
   overlay?: React.ReactNode;
+  fallback?: React.ReactNode;
 }) {
   const hasVisibleDot = isStatusDotVisible(props.state, props.isDraft, props.isSubAgent);
   const usesSubAgentConnectorDot =
@@ -190,7 +198,7 @@ function StatusDot(props: {
   const dot = props.isDraft ? (
     <span className="border-border-subtle block h-3 w-3 rounded-full border border-dashed" />
   ) : !hasVisibleDot ? (
-    <span className="block h-3 w-3 opacity-0" />
+    (props.fallback ?? <span className="block h-3 w-3 opacity-0" />)
   ) : (
     <span
       className={cn(
@@ -229,9 +237,15 @@ function StatusDot(props: {
 function QuickArchiveButton(props: {
   displayTitle: string;
   onArchiveWorkspace: (button: HTMLElement) => void;
+  fallback?: React.ReactNode;
 }) {
   return (
     <div className={LEADING_SLOT_CONTAINER_CLASSES}>
+      {props.fallback && (
+        <span className="pointer-events-none absolute inset-0 flex items-center justify-center">
+          {props.fallback}
+        </span>
+      )}
       <Tooltip>
         <TooltipTrigger asChild>
           <button
@@ -596,6 +610,13 @@ function RegularAgentListItemInner(props: AgentListItemProps) {
     !isSubAgentRow &&
     !showCompletedChildrenIndicator &&
     !showsVisibleStatusDot;
+  const shouldShowHeartbeatFallback =
+    workspaceHeartbeatsEnabled &&
+    metadata.heartbeat?.enabled === true &&
+    !isSubAgentRow &&
+    visualState === "seen" &&
+    !isDisabled;
+  const leadingSlotFallback = shouldShowHeartbeatFallback ? <HeartbeatFallbackIcon /> : undefined;
   const toggleCompletedChildren = () => {
     if (!canToggleCompletedChildren) {
       return false;
@@ -739,6 +760,7 @@ function RegularAgentListItemInner(props: AgentListItemProps) {
         {shouldShowQuickArchiveButton ? (
           <QuickArchiveButton
             displayTitle={displayTitle}
+            fallback={leadingSlotFallback}
             onArchiveWorkspace={(button) => {
               void onArchiveWorkspace(workspaceId, button);
             }}
@@ -747,6 +769,7 @@ function RegularAgentListItemInner(props: AgentListItemProps) {
           <StatusDot
             state={visualState}
             isSubAgent={isSubAgentRow}
+            fallback={leadingSlotFallback}
             overlay={
               showCompletedChildrenIndicator ? (
                 <ChevronDown
