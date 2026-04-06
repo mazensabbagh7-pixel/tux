@@ -391,9 +391,35 @@ async function readSingleProjectContextInstructions(
   runtime: Runtime,
   workspacePath: string
 ): Promise<string | null> {
+  if (isLocalProjectRuntime(metadata.runtimeConfig)) {
+    const projectRootPath =
+      (await resolveGitTopLevel(metadata.projectPath)) ?? metadata.projectPath;
+    const hierarchy = buildInstructionHierarchy(projectRootPath, metadata.projectPath);
+    const contextSegments: string[] = [];
+
+    for (const localDirectory of hierarchy.slice(0, -1)) {
+      const localInstructions = await readInstructionSet(localDirectory);
+      if (localInstructions) {
+        contextSegments.push(localInstructions);
+      }
+    }
+
+    const workspaceInstructions = await readInstructionSetFromRuntime(runtime, workspacePath);
+    if (workspaceInstructions) {
+      contextSegments.push(workspaceInstructions);
+    } else {
+      const leafProjectInstructions = await readInstructionSet(hierarchy[hierarchy.length - 1]);
+      if (leafProjectInstructions) {
+        contextSegments.push(leafProjectInstructions);
+      }
+    }
+
+    return contextSegments.length > 0 ? contextSegments.join("\n\n") : null;
+  }
+
   const projectInstructionRoots = await readInstructionHierarchy(
     runtime,
-    isLocalProjectRuntime(metadata.runtimeConfig) ? null : workspacePath,
+    workspacePath,
     metadata.projectPath
   );
   return projectInstructionRoots.length > 0 ? projectInstructionRoots.join("\n\n") : null;
