@@ -11,7 +11,7 @@ import {
   SendMessageErrorSchema,
 } from "./errors";
 import { BranchListResultSchema, FilePartSchema, MuxMessageSchema } from "./message";
-import { ProjectConfigSchema, SectionConfigSchema } from "./project";
+import { ProjectConfigSchema } from "./project";
 import { ResultSchema } from "./result";
 import { SshPromptEventSchema, SshPromptResponseInputSchema } from "./ssh";
 import {
@@ -750,51 +750,6 @@ export const projects = {
       output: ResultSchema(z.void(), z.string()),
     },
   },
-  sections: {
-    list: {
-      input: z.object({ projectPath: z.string() }),
-      output: z.array(SectionConfigSchema),
-    },
-    create: {
-      input: z.object({
-        projectPath: z.string(),
-        name: z.string().min(1),
-        color: z.string().optional(),
-      }),
-      output: ResultSchema(SectionConfigSchema, z.string()),
-    },
-    update: {
-      input: z.object({
-        projectPath: z.string(),
-        sectionId: z.string(),
-        name: z.string().min(1).optional(),
-        color: z.string().optional(),
-      }),
-      output: ResultSchema(z.void(), z.string()),
-    },
-    remove: {
-      input: z.object({
-        projectPath: z.string(),
-        sectionId: z.string(),
-      }),
-      output: ResultSchema(z.void(), z.string()),
-    },
-    reorder: {
-      input: z.object({
-        projectPath: z.string(),
-        sectionIds: z.array(z.string()),
-      }),
-      output: ResultSchema(z.void(), z.string()),
-    },
-    assignWorkspace: {
-      input: z.object({
-        projectPath: z.string(),
-        workspaceId: z.string(),
-        sectionId: z.string().nullable(),
-      }),
-      output: ResultSchema(z.void(), z.string()),
-    },
-  },
 };
 
 /**
@@ -928,8 +883,6 @@ export const workspace = {
       /** Human-readable title (e.g., "Fix plan mode over SSH") - optional for backwards compat */
       title: z.string().optional(),
       runtimeConfig: RuntimeConfigSchema.optional(),
-      /** Section ID to assign the new workspace to (optional) */
-      sectionId: z.string().optional(),
     }),
     output: z.discriminatedUnion("success", [
       z.object({ success: z.literal(true), metadata: FrontendWorkspaceMetadataSchema }),
