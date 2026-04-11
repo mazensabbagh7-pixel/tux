@@ -61,6 +61,7 @@ import { ensurePrivateDirSync } from "@/node/utils/fs";
 import { stripTrailingSlashes } from "@/node/utils/pathUtils";
 import { isProviderAutoRouteEligible } from "@/node/utils/providerRequirements";
 import { getContainerName as getDockerContainerName } from "@/node/runtime/DockerRuntime";
+import { coerceThinkingLevel, type ThinkingLevel } from "@/common/types/thinking";
 
 // Re-export project/provider types from dedicated schema/types files (for preload usage)
 export type { Workspace, ProjectConfig, ProjectsConfig, ProviderConfig, CanonicalProvidersConfig };
@@ -308,6 +309,22 @@ function parseOptionalPort(value: unknown): number | undefined {
   }
 
   return value;
+}
+
+function parseOptionalPositiveInteger(value: unknown): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value) || !Number.isInteger(value)) {
+    return undefined;
+  }
+
+  if (value <= 0) {
+    return undefined;
+  }
+
+  return value;
+}
+
+function parseOptionalThinkingLevel(value: unknown): ThinkingLevel | undefined {
+  return coerceThinkingLevel(value);
 }
 
 function parseOptionalHeartbeatIntervalMs(value: unknown): number | undefined {
@@ -672,6 +689,12 @@ export class Config {
         const routeOverrides = normalizeRouteOverridesRecord(parsed.routeOverrides);
 
         const defaultModel = normalizeOptionalModelString(parsed.defaultModel);
+        const advisorModelString = parseOptionalNonEmptyString(parsed.advisorModelString);
+        const advisorThinkingLevel = parseOptionalThinkingLevel(parsed.advisorThinkingLevel);
+        const advisorMaxUsesPerTurn =
+          parsed.advisorMaxUsesPerTurn === null
+            ? null
+            : parseOptionalPositiveInteger(parsed.advisorMaxUsesPerTurn);
         const hiddenModels = normalizeOptionalModelStringArray(parsed.hiddenModels);
         const legacySubagentAiDefaults = normalizeSubagentAiDefaults(parsed.subagentAiDefaults);
 
@@ -726,6 +749,9 @@ export class Config {
           routePriority,
           routeOverrides,
           defaultModel,
+          advisorModelString,
+          advisorThinkingLevel,
+          advisorMaxUsesPerTurn,
           hiddenModels,
           agentAiDefaults,
           // Legacy fields are still parsed and returned for downgrade compatibility.
@@ -808,6 +834,25 @@ export class Config {
       const defaultModel = normalizeOptionalModelString(config.defaultModel);
       if (defaultModel !== undefined) {
         data.defaultModel = defaultModel;
+      }
+
+      const advisorModelString = parseOptionalNonEmptyString(config.advisorModelString);
+      if (advisorModelString !== undefined) {
+        data.advisorModelString = advisorModelString;
+      }
+
+      const advisorThinkingLevel = parseOptionalThinkingLevel(config.advisorThinkingLevel);
+      if (advisorThinkingLevel !== undefined) {
+        data.advisorThinkingLevel = advisorThinkingLevel;
+      }
+
+      if (config.advisorMaxUsesPerTurn === null) {
+        data.advisorMaxUsesPerTurn = null;
+      } else {
+        const advisorMaxUsesPerTurn = parseOptionalPositiveInteger(config.advisorMaxUsesPerTurn);
+        if (advisorMaxUsesPerTurn !== undefined) {
+          data.advisorMaxUsesPerTurn = advisorMaxUsesPerTurn;
+        }
       }
 
       const hiddenModels = normalizeOptionalModelStringArray(config.hiddenModels);

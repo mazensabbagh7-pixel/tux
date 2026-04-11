@@ -12,9 +12,10 @@ import type { WorkspaceMetadata } from "@/common/types/workspace";
 import type { SendMessageOptions, ProvidersConfigMap } from "@/common/orpc/types";
 
 import type { DebugLlmRequestSnapshot } from "@/common/types/debugLlmRequest";
+import { ADVISOR_DEFAULT_MAX_USES_PER_TURN } from "@/common/constants/advisor";
 import { EXPERIMENT_IDS } from "@/common/constants/experiments";
 
-import type { MuxMessage } from "@/common/types/message";
+import type { ModelMessage, MuxMessage } from "@/common/types/message";
 import { createMuxMessage } from "@/common/types/message";
 import type { Config } from "@/node/config";
 import { StreamManager } from "./streamManager";
@@ -78,6 +79,7 @@ import { isWorkspaceTrustedForSharedExecution } from "@/node/services/utils/work
 
 import { MULTI_PROJECT_CONFIG_KEY } from "@/common/constants/multiProject";
 import { THINKING_LEVEL_OFF, type ThinkingLevel } from "@/common/types/thinking";
+import { enforceThinkingPolicy } from "@/common/utils/thinking/policy";
 
 import type {
   ErrorEvent,
@@ -1062,6 +1064,10 @@ export class AIService extends EventEmitter {
 
       // Resolve agent definition, compute effective mode & tool policy.
       const cfg = this.config.loadConfigOrDefault();
+      const advisorToolConfig = cfg;
+      const advisorExperimentEnabled =
+        experiments?.advisorTool ??
+        this.experimentsService?.isExperimentEnabled(EXPERIMENT_IDS.ADVISOR_TOOL) === true;
       emitStartupBreadcrumb("loading_workspace_context");
       const resolveAgentForStreamStartedAt = Date.now();
       const agentResult = await resolveAgentForStream({
@@ -1074,6 +1080,7 @@ export class AIService extends EventEmitter {
         callerToolPolicy: toolPolicy,
         cfg,
         emitError: (event) => this.emit("error", event),
+        isAdvisorExperimentEnabled: advisorExperimentEnabled,
       });
       recordStartupPhaseTiming("resolveAgentForStreamMs", resolveAgentForStreamStartedAt);
       if (!agentResult.success) {
@@ -1093,6 +1100,10 @@ export class AIService extends EventEmitter {
       } = agentResult.data;
       const projectTrusted = isProjectTrusted(this.config, metadata.projectPath);
       const sharedExecutionTrusted = isWorkspaceTrustedForSharedExecution(metadata, cfg.projects);
+      const agentAdvisorEnabled = cfg.agentAiDefaults?.[effectiveAgentId]?.advisorEnabled === true;
+      const advisorModelString = advisorToolConfig.advisorModelString?.trim() ?? "";
+      const advisorToolEligible =
+        advisorExperimentEnabled && agentAdvisorEnabled && advisorModelString.length > 0;
 
       // Fetch workspace MCP overrides (for filtering servers and tools)
       // NOTE: Stored in <workspace>/.mux/mcp.local.jsonc (not ~/.mux/config.json).
@@ -1157,30 +1168,37 @@ export class AIService extends EventEmitter {
               return desktopCapabilityPromise;
             };
 
-      // Build agent system prompt, system message, and discover agents/skills.
+      const buildStreamSystemContextForAdvisor = (advisorToolAvailable: boolean) =>
+        buildStreamSystemContext({
+          runtime,
+          metadata,
+          workspacePath,
+          workspaceId,
+          agentDefinition,
+          agentDiscoveryPath,
+          isSubagentWorkspace,
+          effectiveAdditionalInstructions,
+          planFilePath,
+          modelString,
+          cfg,
+          providersConfig: this.providerService.getConfig(),
+          mcpServers,
+          muxScope,
+          loadDesktopCapability,
+          advisorToolAvailable,
+        });
+
+      // Build provisional agent context before tool policy finalizes the toolset.
+      // The final system prompt is rebuilt after policy application so advisor guidance cannot
+      // survive when the resolved toolset strips the advisor tool.
       const buildStreamSystemContextStartedAt = Date.now();
-      const streamSystemContext = await buildStreamSystemContext({
-        runtime,
-        metadata,
-        workspacePath,
-        workspaceId,
-        agentDefinition,
-        agentDiscoveryPath,
-        isSubagentWorkspace,
-        effectiveAdditionalInstructions,
-        planFilePath,
-        modelString,
-        cfg,
-        providersConfig: this.providerService.getConfig(),
-        mcpServers,
-        muxScope,
-        loadDesktopCapability,
-      });
+      const prePolicyStreamSystemContext =
+        await buildStreamSystemContextForAdvisor(advisorToolEligible);
       recordStartupPhaseTiming("buildStreamSystemContextMs", buildStreamSystemContextStartedAt);
       const { agentSystemPrompt, agentDefinitions, availableSkills, ancestorPlanFilePaths } =
-        streamSystemContext;
-      let systemMessageTokens = streamSystemContext.systemMessageTokens;
-      let systemMessage = streamSystemContext.systemMessage;
+        prePolicyStreamSystemContext;
+      let systemMessageTokens = prePolicyStreamSystemContext.systemMessageTokens;
+      let systemMessage = prePolicyStreamSystemContext.systemMessage;
 
       // Load project secrets for local tool execution and MCP server startup.
       const projectSecrets = isMultiProject(metadata)
@@ -1217,20 +1235,6 @@ export class AIService extends EventEmitter {
         }
       }
 
-      if (mcpStats && mcpStats.failedServerCount > 0) {
-        const failedNames = mcpStats.failedServerNames.join(", ");
-        workspaceLog.warn("MCP servers failed to start", { failedNames });
-        // Prepend warning so the model can inform the user about unavailable tools.
-        systemMessage = `[Warning: ${mcpStats.failedServerCount} MCP server(s) failed to start: ${failedNames}. Tools from these servers are unavailable. Check MCP server configuration in Settings.]\n\n${systemMessage}`;
-        // Keep context-size estimation accurate after mutating the system prompt.
-        const metadataModel = resolveModelForMetadata(
-          modelString,
-          this.providerService.getConfig()
-        );
-        const tokenizer = await getTokenizerForModel(modelString, metadataModel);
-        systemMessageTokens = await tokenizer.countTokens(systemMessage);
-      }
-
       const createTempDirForStreamStartedAt = Date.now();
       const runtimeTempDir = await this.streamManager.createTempDirForStream(streamToken, runtime);
       recordStartupPhaseTiming("createTempDirForStreamMs", createTempDirForStreamStartedAt);
@@ -1265,6 +1269,35 @@ export class AIService extends EventEmitter {
         workspaceId.trim().length > 0,
         "AIService.streamMessage requires a non-empty workspaceId"
       );
+      if (advisorExperimentEnabled && agentAdvisorEnabled && advisorModelString.length === 0) {
+        workspaceLog.warn(
+          "Advisor tool enabled for agent without advisorModelString; suppressing",
+          {
+            effectiveAgentId,
+          }
+        );
+      }
+      const advisorEligible = advisorToolEligible;
+      if (advisorEligible) {
+        assert(
+          advisorModelString.length > 0,
+          "AIService advisorModelString must be non-empty when advisor is eligible"
+        );
+      }
+      // Mutable ref updated by StreamManager.prepareStep so the advisor tool reads the live
+      // transcript lazily at execute time instead of capturing a stale snapshot here.
+      const advisorTranscriptRef: { messages?: ModelMessage[] } = {};
+      // Normalize: undefined -> default, null -> unlimited, positive int -> exact cap.
+      const advisorMaxUses =
+        advisorToolConfig.advisorMaxUsesPerTurn === null
+          ? null
+          : (advisorToolConfig.advisorMaxUsesPerTurn ?? ADVISOR_DEFAULT_MAX_USES_PER_TURN);
+      // Clamp the persisted advisor thinking level so the tool metadata matches the
+      // providerOptions actually sent to generateText().
+      const advisorReasoningLevel = enforceThinkingPolicy(
+        advisorModelString,
+        advisorToolConfig.advisorThinkingLevel ?? THINKING_LEVEL_OFF
+      );
       const muxEnv = getMuxEnv(
         metadata.projectPath,
         getRuntimeType(metadata.runtimeConfig),
@@ -1285,6 +1318,33 @@ export class AIService extends EventEmitter {
           secrets: await secretsToRecord(projectSecrets, this.opResolver),
           muxEnv,
           runtimeTempDir,
+          ...(advisorEligible
+            ? {
+                advisorRuntime: {
+                  advisorModelString,
+                  reasoningLevel: advisorReasoningLevel,
+                  maxUsesPerTurn: advisorMaxUses,
+                  getTranscriptSnapshot: () => {
+                    const messages = advisorTranscriptRef.messages;
+                    assert(
+                      messages != null,
+                      "AIService advisor transcript ref must be populated before advisor execution"
+                    );
+                    return messages;
+                  },
+                  createModel: async (ms: string) => {
+                    const advisorModel = await this.createModel(ms, undefined, { workspaceId });
+                    if (!advisorModel.success) {
+                      throw new Error(
+                        `Failed to create advisor model: ${getErrorMessage(advisorModel.error)}`
+                      );
+                    }
+                    return advisorModel.data;
+                  },
+                  abortSignal: combinedAbortSignal,
+                },
+              }
+            : {}),
           openaiWireFormat: effectiveMuxProviderOptions?.openai?.wireFormat,
           backgroundProcessManager: this.backgroundProcessManager,
           // Plan agent configuration for plan file access.
@@ -1354,6 +1414,26 @@ export class AIService extends EventEmitter {
         "applyToolPolicyAndExperimentsMs",
         applyToolPolicyAndExperimentsStartedAt
       );
+
+      const advisorToolAvailable = tools.advisor !== undefined;
+      const finalStreamSystemContext =
+        await buildStreamSystemContextForAdvisor(advisorToolAvailable);
+      systemMessageTokens = finalStreamSystemContext.systemMessageTokens;
+      systemMessage = finalStreamSystemContext.systemMessage;
+
+      if (mcpStats && mcpStats.failedServerCount > 0) {
+        const failedNames = mcpStats.failedServerNames.join(", ");
+        workspaceLog.warn("MCP servers failed to start", { failedNames });
+        // Reapply the MCP startup warning after rebuilding the final system prompt.
+        systemMessage = `[Warning: ${mcpStats.failedServerCount} MCP server(s) failed to start: ${failedNames}. Tools from these servers are unavailable. Check MCP server configuration in Settings.]\n\n${systemMessage}`;
+        // Keep context-size estimation accurate after mutating the system prompt.
+        const metadataModel = resolveModelForMetadata(
+          modelString,
+          this.providerService.getConfig()
+        );
+        const tokenizer = await getTokenizerForModel(modelString, metadataModel);
+        systemMessageTokens = await tokenizer.countTokens(systemMessage);
+      }
 
       const toolNamesForSentinel = Object.keys(tools).sort();
 
@@ -1670,7 +1750,12 @@ export class AIService extends EventEmitter {
         requestHeaders,
         effectiveMuxProviderOptions.anthropic?.cacheTtl ?? undefined,
         forceToolChoice,
-        resolvedOverrides.standard
+        resolvedOverrides.standard,
+        advisorEligible
+          ? (stepMessages) => {
+              advisorTranscriptRef.messages = stepMessages;
+            }
+          : undefined
       );
       recordStartupPhaseTiming("startStreamMs", startStreamStartedAt);
 
