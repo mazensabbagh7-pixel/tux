@@ -7,10 +7,14 @@ import { installDom } from "../../../../tests/ui/dom";
 interface MockWorkspaceState {
   loading?: boolean;
   isHydratingTranscript?: boolean;
+  isStreamStarting?: boolean;
+  messages?: Array<{ id: string }>;
+  queuedMessage?: { id: string } | null;
 }
 
 let cleanupDom: (() => void) | null = null;
 let workspaceState: MockWorkspaceState | undefined;
+let originalWindowApi: WindowApi | undefined;
 
 const openTerminalMock = mock(() => Promise.resolve());
 const addReviewMock = mock(() => undefined);
@@ -22,7 +26,24 @@ void mock.module("lottie-react", () => ({
 }));
 
 void mock.module("@/browser/stores/WorkspaceStore", () => ({
-  useWorkspaceState: () => workspaceState,
+  useWorkspaceState: () =>
+    workspaceState
+      ? {
+          messages: [],
+          queuedMessage: null,
+          ...workspaceState,
+        }
+      : workspaceState,
+}));
+
+void mock.module("../ChatPane/ChatPane", () => ({
+  ChatPane: (props: { workspaceId: string }) => (
+    <div data-testid="chat-pane">Chat pane for {props.workspaceId}</div>
+  ),
+}));
+
+void mock.module("@/browser/features/RightSidebar/RightSidebar", () => ({
+  RightSidebar: () => <div data-testid="right-sidebar" />,
 }));
 
 void mock.module("@/browser/contexts/ThemeContext", () => ({
@@ -112,6 +133,8 @@ describe("estimateWorkspaceShellFallbackWidthPx", () => {
 describe("WorkspaceShell loading placeholders", () => {
   beforeEach(() => {
     cleanupDom = installDom();
+    originalWindowApi = window.api;
+    delete window.api;
     workspaceState = undefined;
   });
 
@@ -120,12 +143,18 @@ describe("WorkspaceShell loading placeholders", () => {
     mock.restore();
     cleanupDom?.();
     cleanupDom = null;
+    if (originalWindowApi === undefined) {
+      delete window.api;
+    } else {
+      window.api = originalWindowApi;
+    }
+    originalWindowApi = undefined;
     workspaceState = undefined;
     openTerminalMock.mockClear();
     addReviewMock.mockClear();
   });
 
-  it("renders loading animation during hydration in web mode", () => {
+  it("keeps the chat pane mounted during hydration in web mode", () => {
     workspaceState = {
       isHydratingTranscript: true,
       loading: false,
@@ -133,11 +162,79 @@ describe("WorkspaceShell loading placeholders", () => {
 
     const view = render(<WorkspaceShell {...defaultProps} />);
 
-    expect(view.getByText("Catching up with the agent...")).toBeTruthy();
-    expect(view.getByTestId("lottie-animation")).toBeTruthy();
+    expect(view.queryByText("Catching up with the agent...")).toBeNull();
+    expect(view.getByTestId("chat-pane")).toBeTruthy();
   });
 
-  it("renders loading animation during workspace loading", () => {
+  it("keeps the chat pane mounted during initial web workspace loading", () => {
+    workspaceState = {
+      loading: true,
+      isHydratingTranscript: true,
+      isStreamStarting: false,
+    };
+
+    const view = render(<WorkspaceShell {...defaultProps} />);
+
+    expect(view.queryByText("Loading workspace...")).toBeNull();
+    expect(view.getByTestId("chat-pane")).toBeTruthy();
+  });
+
+  it("keeps the chat pane mounted during initial Electron workspace loading", () => {
+    window.api = { platform: "linux", versions: {} };
+    workspaceState = {
+      loading: true,
+      isHydratingTranscript: true,
+      isStreamStarting: false,
+    };
+
+    const view = render(<WorkspaceShell {...defaultProps} />);
+
+    expect(view.queryByText("Loading workspace...")).toBeNull();
+    expect(view.getByTestId("chat-pane")).toBeTruthy();
+  });
+
+  it("keeps cached transcript content visible during web hydration", () => {
+    workspaceState = {
+      isHydratingTranscript: true,
+      isStreamStarting: false,
+      loading: false,
+      messages: [{ id: "message-1" }],
+      queuedMessage: null,
+    };
+
+    const view = render(<WorkspaceShell {...defaultProps} />);
+
+    expect(view.queryByText("Catching up with the agent...")).toBeNull();
+    expect(view.getByTestId("chat-pane")).toBeTruthy();
+  });
+
+  it("keeps the same chat pane DOM node across workspace switches", () => {
+    workspaceState = {
+      isHydratingTranscript: false,
+      isStreamStarting: false,
+      loading: false,
+      messages: [{ id: "message-1" }],
+      queuedMessage: null,
+    };
+
+    const view = render(<WorkspaceShell {...defaultProps} />);
+    const firstChatPane = view.getByTestId("chat-pane");
+
+    view.rerender(
+      <WorkspaceShell
+        {...defaultProps}
+        workspaceId="workspace-2"
+        workspaceName="feature-two"
+        namedWorkspacePath="/projects/demo/workspaces/feature-two"
+      />
+    );
+
+    const secondChatPane = view.getByTestId("chat-pane");
+    expect(secondChatPane).toBe(firstChatPane);
+    expect(secondChatPane.textContent).toContain("workspace-2");
+  });
+
+  it("renders loading animation during non-hydrating workspace loading", () => {
     workspaceState = {
       loading: true,
       isHydratingTranscript: false,

@@ -19,6 +19,7 @@ import { EditCutoffBarrier } from "@/browser/features/Messages/ChatBarrier/EditC
 import { StreamingBarrier } from "@/browser/features/Messages/ChatBarrier/StreamingBarrier";
 import { RetryBarrier } from "@/browser/features/Messages/ChatBarrier/RetryBarrier";
 import { PinnedTodoList } from "../PinnedTodoList/PinnedTodoList";
+import { HydrationStablePane } from "./HydrationStablePane";
 import { VIM_ENABLED_KEY } from "@/common/constants/storage";
 import { ChatInput, type ChatInputAPI } from "@/browser/features/ChatInput/index";
 import type { QueueDispatchMode } from "@/browser/features/ChatInput/types";
@@ -300,17 +301,29 @@ export const ChatPane: React.FC<ChatPaneProps> = (props) => {
   // during rapid updates (streaming), keeping the UI responsive.
   // Must be defined before any early returns to satisfy React Hooks rules.
   const transformedMessages = useMemo(() => mergeConsecutiveStreamErrors(messages), [messages]);
-  const deferredTransformedMessages = useDeferredValue(transformedMessages);
+  const immediateMessageSnapshot = useMemo(
+    () => ({ workspaceId, messages: transformedMessages }),
+    [workspaceId, transformedMessages]
+  );
+  const deferredMessageSnapshot = useDeferredValue(immediateMessageSnapshot);
 
   // CRITICAL: Show immediate messages when streaming or when message count changes.
   // useDeferredValue can defer indefinitely if React keeps getting new work (rapid deltas).
   // During active streaming (reasoning, text), we MUST show immediate updates or the UI
   // appears frozen while only the token counter updates (reads aggregator directly).
+  // Also bypass the deferred snapshot when it still belongs to the previous workspace so
+  // chat switches cannot briefly render stale transcript rows from the old workspace.
   const shouldBypassDeferral = shouldBypassDeferredMessages(
-    transformedMessages,
-    deferredTransformedMessages
+    immediateMessageSnapshot.messages,
+    deferredMessageSnapshot.messages,
+    {
+      immediateWorkspaceId: workspaceId,
+      deferredWorkspaceId: deferredMessageSnapshot.workspaceId,
+    }
   );
-  const deferredMessages = shouldBypassDeferral ? transformedMessages : deferredTransformedMessages;
+  const deferredMessages = shouldBypassDeferral
+    ? immediateMessageSnapshot.messages
+    : deferredMessageSnapshot.messages;
 
   const latestMessageId = getLastNonDecorativeMessage(deferredMessages)?.id ?? null;
   const messageListContextValue = useMemo(
@@ -424,11 +437,15 @@ export const ChatPane: React.FC<ChatPaneProps> = (props) => {
     hasInputTarget: !transcriptOnly,
   });
 
-  // ChatPane is keyed by workspaceId (WorkspaceShell), so per-workspace UI state naturally
-  // resets on workspace switches. Clear background errors so they don't leak across workspaces.
+  // Workspace switches should not leak background bash errors into the newly selected chat.
   useEffect(() => {
     clearBackgroundBashError();
-  }, [clearBackgroundBashError]);
+  }, [clearBackgroundBashError, workspaceId]);
+
+  useEffect(() => {
+    setEditingState({ workspaceId, message: undefined });
+    setExpandedBashGroups(new Set());
+  }, [workspaceId]);
 
   const handleChatInputReady = useCallback((api: ChatInputAPI) => {
     chatInputAPI.current = api;
@@ -607,15 +624,19 @@ export const ChatPane: React.FC<ChatPaneProps> = (props) => {
     }
   }, [workspaceState?.messages, workspaceState?.todos, autoScroll, performAutoScroll]);
 
-  // Scroll to bottom when workspace loads or changes
-  // useLayoutEffect ensures scroll happens synchronously after DOM mutations
-  // but before browser paint - critical for Chromatic snapshot consistency
+  const hasLoadedTranscriptRows = !workspaceState.loading && workspaceState.messages.length > 0;
+
+  // Reset transcript scroll ownership when switching workspaces. If the target workspace already
+  // has cached rows, pin to the bottom before paint; otherwise just re-arm auto-scroll so the
+  // next hydrated/streaming updates own the tail instead of showing the prior workspace's state.
   useLayoutEffect(() => {
-    if (workspaceState && !workspaceState.loading && workspaceState.messages.length > 0) {
+    if (hasLoadedTranscriptRows) {
       jumpToBottom();
+      return;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workspaceId, workspaceState?.loading]);
+
+    setAutoScroll(true);
+  }, [hasLoadedTranscriptRows, jumpToBottom, setAutoScroll, workspaceId]);
 
   // Compute showRetryBarrier once for both keybinds and UI.
   // Track if last message was interrupted or errored (for RetryBarrier).
@@ -630,8 +651,14 @@ export const ChatPane: React.FC<ChatPaneProps> = (props) => {
 
   const hasInterruptedStream = interruption?.hasInterruptedStream ?? false;
   // Keep rendering cached transcript rows during incremental catch-up so workspace switches
-  // feel stable; only show the full placeholder when there's no transcript content yet.
-  const showTranscriptHydrationPlaceholder = isHydratingTranscript && deferredMessages.length === 0;
+  // feel stable, but a brand-new chat should keep its starting barrier visible instead of
+  // flashing transcript placeholders before the first send reaches the workspace history.
+  const showTranscriptHydrationPlaceholder =
+    isHydratingTranscript && deferredMessages.length === 0 && !workspaceState.isStreamStarting;
+  const showEmptyTranscriptPlaceholder =
+    deferredMessages.length === 0 &&
+    !showTranscriptHydrationPlaceholder &&
+    !workspaceState.isStreamStarting;
   const showRetryBarrier =
     !isHydratingTranscript &&
     !workspaceState.canInterrupt &&
@@ -805,7 +832,7 @@ export const ChatPane: React.FC<ChatPaneProps> = (props) => {
                 ref={innerRef}
                 className={cn(
                   "max-w-4xl mx-auto",
-                  (showTranscriptHydrationPlaceholder || deferredMessages.length === 0) && "h-full"
+                  (showTranscriptHydrationPlaceholder || showEmptyTranscriptPlaceholder) && "h-full"
                 )}
               >
                 {showTranscriptHydrationPlaceholder ? (
@@ -816,7 +843,7 @@ export const ChatPane: React.FC<ChatPaneProps> = (props) => {
                     <h3>Loading transcript...</h3>
                     <p>Syncing recent messages for this workspace</p>
                   </div>
-                ) : deferredMessages.length === 0 ? (
+                ) : showEmptyTranscriptPlaceholder ? (
                   <div className="text-placeholder flex h-full flex-1 flex-col items-center justify-center text-center [&_h3]:m-0 [&_h3]:mb-2.5 [&_h3]:text-base [&_h3]:font-medium [&_p]:m-0 [&_p]:text-[13px]">
                     <h3>No Messages Yet</h3>
                     <p>Send a message below to begin</p>
@@ -992,6 +1019,7 @@ export const ChatPane: React.FC<ChatPaneProps> = (props) => {
               projectName={projectName}
               workspaceName={workspaceName}
               isStreamStarting={isStreamStarting}
+              isHydratingTranscript={isHydratingTranscript}
               runtimeConfig={runtimeConfig}
               isQueuedAgentTask={isQueuedAgentTask}
               isCompacting={isCompacting}
@@ -1043,6 +1071,7 @@ interface ChatInputPaneProps {
   isQueuedAgentTask: boolean;
   isCompacting: boolean;
   isStreamStarting: boolean;
+  isHydratingTranscript: boolean;
   canInterrupt: boolean;
   autoCompactionResult: ReturnType<typeof checkAutoCompaction>;
   shouldShowCompactionWarning: boolean;
@@ -1067,7 +1096,12 @@ const ChatInputPane: React.FC<ChatInputPaneProps> = (props) => {
   const { reviews } = props;
 
   return (
-    <div className="flex flex-col">
+    <HydrationStablePane
+      workspaceId={props.workspaceId}
+      isHydrating={props.isHydratingTranscript}
+      className="flex flex-col"
+      dataComponent="ChatInputPane"
+    >
       {/*
         Keep optional banners/warnings on one shared stack so spacing above the chat input
         stays consistent as background bash, review, queued-send, and TODO UI appear or disappear.
@@ -1130,6 +1164,6 @@ const ChatInputPane: React.FC<ChatInputPaneProps> = (props) => {
         onDeleteReview={reviews.removeReview}
         onUpdateReviewNote={reviews.updateReviewNote}
       />
-    </div>
+    </HydrationStablePane>
   );
 };

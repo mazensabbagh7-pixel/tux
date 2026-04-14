@@ -1580,23 +1580,21 @@ export class WorkspaceStore {
         : (activity?.lastThinkingLevel ?? aggregator.getCurrentThinkingLevel() ?? null);
       const hasAuthoritativeStreamLifecycle =
         streamLifecycle !== null && streamLifecycle.phase !== "idle";
-      const hasReplayPreparingLifecycle =
-        isActiveWorkspace && !transient.caughtUp && streamLifecycle?.phase === "preparing";
+      const activePendingStreamStartTime = isActiveWorkspace ? pendingStreamStartTime : null;
       const aggregatorRecency = aggregator.getRecencyTimestamp();
       const recencyTimestamp =
         aggregatorRecency === null
           ? (activity?.recency ?? null)
           : Math.max(aggregatorRecency, activity?.recency ?? aggregatorRecency);
-      // Treat the backend lifecycle as authoritative, but keep any optimistic
-      // pre-stream "starting" state scoped to the active, caught-up workspace.
-      // Reconnect replay is the one exception: if the backend has already re-emitted
-      // a PREPARING lifecycle snapshot, keep showing startup instead of briefly
-      // hiding the barrier until caught-up lands.
+      // User rationale: a brand-new chat should show its startup barrier immediately instead of
+      // flashing "Catching up"/"No Messages Yet" while the very first send is still in flight.
+      // The aggregator owns both normal user-message startup and the optimistic new-chat handoff,
+      // so the workspace only needs to ask whether the active transcript still has a pending start.
       const isStreamStarting =
-        (useAggregatorState || hasReplayPreparingLifecycle) &&
+        isActiveWorkspace &&
+        !canInterrupt &&
         (streamLifecycle?.phase === "preparing" ||
-          (!hasAuthoritativeStreamLifecycle && pendingStreamStartTime !== null)) &&
-        !canInterrupt;
+          (!hasAuthoritativeStreamLifecycle && activePendingStreamStartTime !== null));
       // Only actively running init output should bypass transcript hydration. Completed init
       // rows are still replayed, but they should not suppress the normal catch-up placeholder
       // for stale cached transcript content on reconnect.
@@ -2837,7 +2835,7 @@ export class WorkspaceStore {
       this.preReplayUsageSnapshot.delete(workspaceId);
     }
 
-    aggregator.clear();
+    aggregator.resetForReplay();
 
     // Reset per-workspace transient state so the next replay rebuilds from the backend source of truth.
     const previousTransient = this.chatTransientState.get(workspaceId);
@@ -3210,6 +3208,26 @@ export class WorkspaceStore {
     }
   }
 
+  markPendingInitialSend(workspaceId: string, pendingStreamModel: string | null): void {
+    const aggregator = this.aggregators.get(workspaceId);
+    if (!aggregator) {
+      return;
+    }
+
+    aggregator.markOptimisticPendingStreamStart(pendingStreamModel);
+    this.states.bump(workspaceId);
+  }
+
+  clearPendingInitialSendState(workspaceId: string): void {
+    const aggregator = this.aggregators.get(workspaceId);
+    if (aggregator?.getPendingStreamStartTime() == null) {
+      return;
+    }
+
+    aggregator.clearPendingStreamStart();
+    this.states.bump(workspaceId);
+  }
+
   /**
    * Remove a workspace and clean up subscriptions.
    */
@@ -3492,10 +3510,12 @@ export class WorkspaceStore {
       ) {
         aggregator.clearActiveStreams();
       }
-      // When server confirms no active stream, clear optimistic pending-start state
-      // so the UI doesn't remain stuck in "starting..." after reconnect.
+      // When server confirms no active stream, a normal pending-start is stale and should end.
+      // Preserve exactly one optimistic new-chat catch-up cycle: the first authoritative idle
+      // caught-up can arrive before the delayed first send is replayed, but if a later catch-up
+      // still reports no active stream then the optimistic barrier was stale and must clear.
       if (serverActiveStreamMessageId === undefined) {
-        aggregator.clearPendingStreamStart();
+        aggregator.clearPendingStreamStartIfNotOptimistic();
       }
 
       if (replay === "full") {
@@ -3815,6 +3835,14 @@ export const workspaceStore = {
    * before setting it as active.
    */
   addWorkspace: (metadata: FrontendWorkspaceMetadata) => getStoreInstance().addWorkspace(metadata),
+  /**
+   * Mark a newly-created workspace as having its first send in flight.
+   * Used by creation mode so the transcript can show the starting barrier immediately.
+   */
+  markPendingInitialSend: (workspaceId: string, pendingStreamModel: string | null) =>
+    getStoreInstance().markPendingInitialSend(workspaceId, pendingStreamModel),
+  clearPendingInitialSendState: (workspaceId: string) =>
+    getStoreInstance().clearPendingInitialSendState(workspaceId),
   /**
    * Set the active workspace for onChat subscription management.
    * Exposed for test helpers that bypass React routing effects.

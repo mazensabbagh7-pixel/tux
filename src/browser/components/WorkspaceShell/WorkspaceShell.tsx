@@ -182,7 +182,7 @@ export const WorkspaceShell: React.FC<WorkspaceShellProps> = (props) => {
   });
   const backgroundBashError = useBackgroundBashError();
 
-  if (!workspaceState || workspaceState.loading) {
+  if (!workspaceState) {
     return (
       <WorkspacePlaceholder
         title="Loading workspace..."
@@ -192,13 +192,23 @@ export const WorkspaceShell: React.FC<WorkspaceShellProps> = (props) => {
     );
   }
 
-  // Web-only: during workspace switches, the WebSocket subscription needs time to
-  // catch up. Show a splash instead of flashing stale cached messages.
-  // Electron's MessageChannel is near-instant so this gate is unnecessary there.
-  if (workspaceState.isHydratingTranscript && !window.api) {
+  const shouldKeepChatPaneMountedDuringHydration =
+    workspaceState.isHydratingTranscript && !workspaceState.isStreamStarting;
+
+  // User rationale: a just-created chat should keep showing its startup barrier instead of
+  // flashing generic loading/catch-up placeholders before the first send reaches onChat.
+  // Keep the chat pane mounted during transcript hydration so the composer does not disappear
+  // while a workspace is opening. ChatPane already owns the transcript-level loading placeholder,
+  // so swapping the whole shell here causes the vertical tear reproduced in both browser and
+  // Electron repros when an unseen workspace is opened.
+  if (
+    workspaceState.loading &&
+    !workspaceState.isStreamStarting &&
+    !shouldKeepChatPaneMountedDuringHydration
+  ) {
     return (
       <WorkspacePlaceholder
-        title="Catching up with the agent..."
+        title="Loading workspace..."
         showAnimation
         className={props.className}
       />
@@ -224,9 +234,10 @@ export const WorkspaceShell: React.FC<WorkspaceShellProps> = (props) => {
       )}
       style={{ containerType: "inline-size" }}
     >
-      {/* Keyed by workspaceId to prevent cross-workspace message-list flashes. */}
+      {/* Keep the transcript viewport mounted across workspace switches so the browser doesn't
+          visually tear the pane while the new workspace content hydrates. ChatPane resets its
+          per-workspace local UI state internally, and the composer remains keyed by workspaceId. */}
       <ChatPane
-        key={`chat-${props.workspaceId}`}
         workspaceId={props.workspaceId}
         workspaceState={workspaceState}
         projectPath={props.projectPath}
