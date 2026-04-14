@@ -36,90 +36,100 @@ interface StreamingBarrierProps {
   onCancelCompaction?: () => void;
 }
 
-const STREAMING_STATUS_TRANSITION_DEBOUNCE_MS = 2000;
-const DEBOUNCED_STREAMING_PHASES: ReadonlySet<StreamingPhase> = new Set([
+// Debounce delay for transient startup/streaming/compacting label churn.
+// Only text that survives this long gets promoted to the display.
+const STATUS_DISPLAY_DELAY_MS = 1000;
+
+// Phases whose status text is debounced (transient startup breadcrumbs, etc).
+// "interrupting" and "awaiting-input" are high-signal control-flow states that
+// should reflect immediately so cancel/input handoff feels responsive.
+const DEBOUNCED_PHASES: ReadonlySet<StreamingPhase> = new Set([
   "starting",
   "streaming",
   "compacting",
 ]);
 
-function shouldDebounceStreamingStatusTransition(
-  previousPhase: StreamingPhase | null,
-  nextPhase: StreamingPhase | null
-): boolean {
-  return (
-    previousPhase !== null &&
-    nextPhase !== null &&
-    previousPhase !== nextPhase &&
-    DEBOUNCED_STREAMING_PHASES.has(previousPhase) &&
-    DEBOUNCED_STREAMING_PHASES.has(nextPhase)
-  );
-}
-
+/**
+ * Trailing-edge debounce for streaming status text.
+ *
+ * - Debounced phases (starting/streaming/compacting): text changes restart a
+ *   timer; only the value that survives STATUS_DISPLAY_DELAY_MS is shown.
+ *   The first appearance and workspace switches show text immediately.
+ * - Non-debounced phases (interrupting/awaiting-input): always immediate.
+ * - Disappearance: always immediate so the barrier hides promptly.
+ */
 function useStabilizedStreamingStatusText(
+  workspaceId: string,
   phase: StreamingPhase | null,
   rawStatusText: string | null
 ): string | null {
-  const [displayStatusText, setDisplayStatusText] = React.useState(rawStatusText);
-  const previousPhaseRef = React.useRef<StreamingPhase | null>(null);
-  const activeDebounceRef = React.useRef<{
-    phase: StreamingPhase;
-    timer: ReturnType<typeof setTimeout>;
-  } | null>(null);
-  const latestRawStatusTextRef = React.useRef(rawStatusText);
-  latestRawStatusTextRef.current = rawStatusText;
+  // Seed with the raw text so the very first render has content when a stream
+  // phase is already active — avoids a single null-frame that would drop the
+  // barrier/stop control before the effect fires.
+  const [debouncedText, setDebouncedText] = React.useState<string | null>(rawStatusText);
+  const pendingTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const prevWorkspaceRef = React.useRef(workspaceId);
+  const prevPhaseRef = React.useRef(phase);
+  const latestRawRef = React.useRef(rawStatusText);
+  latestRawRef.current = rawStatusText;
 
-  const shouldStartDebounceTransition = shouldDebounceStreamingStatusTransition(
-    previousPhaseRef.current,
-    phase
-  );
-  const isHoldingDebouncedTransition =
-    shouldStartDebounceTransition || activeDebounceRef.current?.phase === phase;
+  // Detect context changes at render time so the returned value is correct
+  // on the same render frame — no post-paint flash of stale text.
+  // Refs are updated in a post-commit effect (not render) to stay stable
+  // across React StrictMode double-renders and concurrent replays.
+  const isWorkspaceSwitch = prevWorkspaceRef.current !== workspaceId;
+  const isPhaseChange = prevPhaseRef.current !== phase;
+  // Only debounce within-phase text churn; cross-phase transitions should
+  // show the new label immediately.
+  const shouldDebounce =
+    phase != null && DEBOUNCED_PHASES.has(phase) && !isWorkspaceSwitch && !isPhaseChange;
+
+  // Commit refs after render so detection is stable across double-renders.
+  React.useEffect(() => {
+    prevWorkspaceRef.current = workspaceId;
+    prevPhaseRef.current = phase;
+  });
 
   React.useEffect(() => {
+    if (pendingTimerRef.current) {
+      clearTimeout(pendingTimerRef.current);
+      pendingTimerRef.current = null;
+    }
+
+    // Disappearance is always immediate.
+    if (phase == null || rawStatusText == null) {
+      setDebouncedText(null);
+      return;
+    }
+
+    // Immediate sync: workspace switches, phase transitions, non-debounced
+    // phases, or first appearance (prev null).
+    if (!shouldDebounce) {
+      setDebouncedText(rawStatusText);
+      return;
+    }
+
+    // Within-phase text churn: keep the previous label and start the timer.
+    // Only text that survives the full delay is promoted to the display,
+    // so rapid status label cycling (breadcrumbs) is coalesced.
+    pendingTimerRef.current = setTimeout(() => {
+      pendingTimerRef.current = null;
+      setDebouncedText(latestRawRef.current);
+    }, STATUS_DISPLAY_DELAY_MS);
+
     return () => {
-      if (activeDebounceRef.current) {
-        clearTimeout(activeDebounceRef.current.timer);
+      if (pendingTimerRef.current) {
+        clearTimeout(pendingTimerRef.current);
+        pendingTimerRef.current = null;
       }
     };
-  }, []);
+  }, [workspaceId, phase, rawStatusText, shouldDebounce]);
 
-  React.useEffect(() => {
-    previousPhaseRef.current = phase;
+  // Bypass debouncedText for transitions that should be reflected immediately.
+  if (phase == null || rawStatusText == null) return null;
+  if (!shouldDebounce) return rawStatusText;
 
-    if (shouldStartDebounceTransition && phase !== null) {
-      if (activeDebounceRef.current) {
-        clearTimeout(activeDebounceRef.current.timer);
-      }
-
-      const timer = setTimeout(() => {
-        activeDebounceRef.current = null;
-        // Debounce transient stage-label churn so the transcript tail does not flash
-        // through short-lived startup breadcrumbs when the runtime advances quickly.
-        setDisplayStatusText(latestRawStatusTextRef.current);
-      }, STREAMING_STATUS_TRANSITION_DEBOUNCE_MS);
-      activeDebounceRef.current = { phase, timer };
-      return;
-    }
-
-    const activeDebounce = activeDebounceRef.current;
-    if (activeDebounce?.phase === phase) {
-      // Keep the previous label pinned across same-phase rerenders (like token/tps updates)
-      // until the cross-phase debounce window completes.
-      return;
-    }
-
-    if (activeDebounce) {
-      clearTimeout(activeDebounce.timer);
-      activeDebounceRef.current = null;
-    }
-
-    setDisplayStatusText(rawStatusText);
-  }, [phase, rawStatusText, shouldStartDebounceTransition]);
-
-  // Render newly-visible phases synchronously so the barrier and stop control appear
-  // immediately; only hold onto the prior label during quick intra-stream handoffs.
-  return isHoldingDebouncedTransition ? displayStatusText : rawStatusText;
+  return debouncedText;
 }
 
 /**
@@ -208,7 +218,7 @@ export const StreamingBarrier: React.FC<StreamingBarrierProps> = ({
         return modelName ? `${modelName} streaming...` : "streaming...";
     }
   })();
-  const statusText = useStabilizedStreamingStatusText(phase, rawStatusText);
+  const statusText = useStabilizedStreamingStatusText(workspaceId, phase, rawStatusText);
 
   if (!phase || statusText == null) {
     return null;

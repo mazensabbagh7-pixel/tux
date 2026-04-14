@@ -37,7 +37,7 @@ function createWorkspaceState(overrides: Partial<MockWorkspaceState> = {}): Mock
   return state;
 }
 
-const STREAMING_STATUS_TRANSITION_DEBOUNCE_MS = 2000;
+const STATUS_DISPLAY_DELAY_MS = 1000;
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 let currentWorkspaceState = createWorkspaceState();
@@ -132,6 +132,7 @@ describe("StreamingBarrier", () => {
       awaitingUserQuestion: false,
     });
 
+    // First appearance is immediate — stop button available right away.
     const view = render(<StreamingBarrier workspaceId="ws-1" />);
 
     fireEvent.click(view.getByRole("button", { name: "Stop streaming" }));
@@ -161,7 +162,7 @@ describe("StreamingBarrier", () => {
     expect(interruptStream).toHaveBeenCalledWith({ workspaceId: "ws-1" });
   });
 
-  test("shows the barrier immediately when streaming phase first becomes active", () => {
+  test("shows the barrier immediately on first appearance", () => {
     currentWorkspaceState = createWorkspaceState({
       canInterrupt: false,
       pendingStreamStartTime: null,
@@ -171,6 +172,8 @@ describe("StreamingBarrier", () => {
     const view = render(<StreamingBarrier workspaceId="ws-1" />);
     expect(view.queryByRole("button", { name: "Stop streaming" })).toBeNull();
 
+    // Activate streaming phase — barrier appears immediately on first
+    // appearance so the empty-transcript placeholder doesn't flash through.
     currentWorkspaceState = createWorkspaceState({
       canInterrupt: false,
       pendingStreamStartTime: Date.now(),
@@ -195,7 +198,7 @@ describe("StreamingBarrier", () => {
     expect(view.getByRole("button", { name: "Stop streaming" })).toBeTruthy();
   });
 
-  test("shows backend startup breadcrumb text while the stream is starting", () => {
+  test("shows initial backend startup breadcrumb immediately", () => {
     currentWorkspaceState = createWorkspaceState({
       canInterrupt: false,
       pendingStreamStartTime: Date.now(),
@@ -205,10 +208,11 @@ describe("StreamingBarrier", () => {
 
     const view = render(<StreamingBarrier workspaceId="ws-1" />);
 
+    // First appearance is immediate — text visible right away.
     expect(view.getByText("Loading tools...")).toBeTruthy();
   });
 
-  test("keeps same-phase startup breadcrumb updates immediate", () => {
+  test("debounces subsequent within-phase breadcrumb changes", async () => {
     currentWorkspaceState = createWorkspaceState({
       canInterrupt: false,
       pendingStreamStartTime: Date.now(),
@@ -217,8 +221,11 @@ describe("StreamingBarrier", () => {
     });
 
     const view = render(<StreamingBarrier workspaceId="ws-1" />);
+
+    // First appearance shows immediately.
     expect(view.getByText("Starting workspace...")).toBeTruthy();
 
+    // Rapid breadcrumb change — holds the first text until the timer fires.
     currentWorkspaceState = createWorkspaceState({
       canInterrupt: false,
       pendingStreamStartTime: Date.now(),
@@ -227,11 +234,18 @@ describe("StreamingBarrier", () => {
     });
     view.rerender(<StreamingBarrier workspaceId="ws-1" />);
 
+    // Previous text is held; new text not promoted yet.
+    expect(view.getByText("Starting workspace...")).toBeTruthy();
+    expect(view.queryByText("Loading tools...")).toBeNull();
+
+    // After the delay, the settled text replaces the first.
+    await sleep(STATUS_DISPLAY_DELAY_MS + 50);
     expect(view.getByText("Loading tools...")).toBeTruthy();
     expect(view.queryByText("Starting workspace...")).toBeNull();
   });
 
-  test("debounces fast status-label transitions between startup and streaming", async () => {
+  test("shows new label immediately on cross-phase transition", () => {
+    // Start in "starting" phase — first appearance is immediate.
     currentWorkspaceState = createWorkspaceState({
       canInterrupt: false,
       pendingStreamStartTime: Date.now(),
@@ -240,40 +254,30 @@ describe("StreamingBarrier", () => {
     });
 
     const view = render(<StreamingBarrier workspaceId="ws-1" />);
-
     expect(view.getByText("Loading tools...")).toBeTruthy();
 
+    // Transition to streaming — cross-phase, so immediate.
     currentWorkspaceState = createWorkspaceState({
       canInterrupt: true,
       currentModel: "anthropic:claude-opus-4-6",
     });
     view.rerender(<StreamingBarrier workspaceId="ws-1" />);
-
-    expect(view.getByText("Loading tools...")).toBeTruthy();
-    expect(view.queryByText("claude-opus-4-6 streaming...")).toBeNull();
-
-    await sleep(STREAMING_STATUS_TRANSITION_DEBOUNCE_MS + 60);
 
     expect(view.getByText("claude-opus-4-6 streaming...")).toBeTruthy();
+    expect(view.queryByText("Loading tools...")).toBeNull();
   });
 
-  test("keeps the prior label during same-phase rerenders inside the debounce window", async () => {
-    currentWorkspaceState = createWorkspaceState({
-      canInterrupt: false,
-      pendingStreamStartTime: Date.now(),
-      pendingStreamModel: "anthropic:claude-opus-4-6",
-      runtimeStatus: { phase: "starting", detail: "Loading tools..." },
-    });
-
-    const view = render(<StreamingBarrier workspaceId="ws-1" />);
-    expect(view.getByText("Loading tools...")).toBeTruthy();
-
+  test("token/tps rerenders do not change displayed status text", () => {
     currentWorkspaceState = createWorkspaceState({
       canInterrupt: true,
       currentModel: "anthropic:claude-opus-4-6",
     });
-    view.rerender(<StreamingBarrier workspaceId="ws-1" />);
 
+    // First appearance is immediate.
+    const view = render(<StreamingBarrier workspaceId="ws-1" />);
+    expect(view.getByText("claude-opus-4-6 streaming...")).toBeTruthy();
+
+    // Token count updates don't change statusText, so the displayed text stays.
     currentWorkspaceState = createWorkspaceState({
       canInterrupt: true,
       currentModel: "anthropic:claude-opus-4-6",
@@ -281,11 +285,6 @@ describe("StreamingBarrier", () => {
       streamingTPS: 18,
     });
     view.rerender(<StreamingBarrier workspaceId="ws-1" />);
-
-    expect(view.getByText("Loading tools...")).toBeTruthy();
-    expect(view.queryByText("claude-opus-4-6 streaming...")).toBeNull();
-
-    await sleep(STREAMING_STATUS_TRANSITION_DEBOUNCE_MS + 60);
 
     expect(view.getByText("claude-opus-4-6 streaming...")).toBeTruthy();
   });
@@ -344,6 +343,27 @@ describe("StreamingBarrier", () => {
       workspaceId: "ws-1",
       options: { abandonPartial: true },
     });
+  });
+
+  test("resets to new workspace text immediately on workspace switch", () => {
+    currentWorkspaceState = createWorkspaceState({
+      canInterrupt: true,
+      currentModel: "anthropic:claude-opus-4-6",
+    });
+
+    const view = render(<StreamingBarrier workspaceId="ws-1" />);
+    expect(view.getByText("claude-opus-4-6 streaming...")).toBeTruthy();
+
+    // Switch workspace — immediately shows the new workspace's text.
+    currentWorkspaceState = createWorkspaceState({
+      canInterrupt: true,
+      currentModel: "openai:gpt-4o-mini",
+    });
+    view.rerender(<StreamingBarrier workspaceId="ws-2" />);
+
+    // Old workspace text gone; new workspace text shown immediately.
+    expect(view.queryByText("claude-opus-4-6 streaming...")).toBeNull();
+    expect(view.getByText("gpt-4o-mini streaming...")).toBeTruthy();
   });
 
   test("awaiting-input phase keeps cancel hint non-interactive", () => {
