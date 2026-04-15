@@ -1,24 +1,31 @@
 import React, { useLayoutEffect, useRef } from "react";
 import {
   clearLayoutStackHeight,
+  getLayoutStackSignature,
   getReservedLayoutStackHeightPx,
   measureLayoutStackHeightPx,
   rememberLayoutStackHeight,
+  scrollElementToBottom,
   type LayoutStackItem,
 } from "./layoutStack";
 
-interface ChatInputDecorationStackProps {
+interface TranscriptTailStackProps {
   workspaceId: string;
   isHydrating: boolean;
+  autoScroll: boolean;
+  transcriptViewportRef: React.RefObject<HTMLDivElement | null>;
   items: readonly LayoutStackItem[];
   dataComponent?: string;
 }
 
-export const ChatInputDecorationStack: React.FC<ChatInputDecorationStackProps> = (props) => {
+export const TranscriptTailStack: React.FC<TranscriptTailStackProps> = (props) => {
   const contentRef = useRef<HTMLDivElement>(null);
   const stackHeightByWorkspaceIdRef = useRef(new Map<string, number>());
   const lastMeasuredStackHeightRef = useRef(0);
+  const observedHeightRef = useRef<number | null>(null);
+  const previousLayoutSignatureRef = useRef<string | null>(null);
   const hasItems = props.items.length > 0;
+  const layoutSignature = `${props.workspaceId}:${getLayoutStackSignature(props.items)}`;
   const reservedStackHeightPx = getReservedLayoutStackHeightPx({
     workspaceId: props.workspaceId,
     isHydrating: props.isHydrating,
@@ -27,13 +34,30 @@ export const ChatInputDecorationStack: React.FC<ChatInputDecorationStackProps> =
   });
 
   useLayoutEffect(() => {
+    if (previousLayoutSignatureRef.current === layoutSignature) {
+      return;
+    }
+    previousLayoutSignatureRef.current = layoutSignature;
+
+    if (!props.autoScroll) {
+      return;
+    }
+
+    scrollElementToBottom(props.transcriptViewportRef.current);
+  }, [layoutSignature, props.autoScroll, props.transcriptViewportRef]);
+
+  useLayoutEffect(() => {
     const content = contentRef.current;
-    if (!content || !hasItems) {
+    if (!content) {
+      observedHeightRef.current = null;
       return;
     }
 
     const observer = new ResizeObserver((entries) => {
       const nextHeight = measureLayoutStackHeightPx(content, entries[0]?.contentRect.height);
+      const previousObservedHeight = observedHeightRef.current;
+      observedHeightRef.current = nextHeight;
+
       if (nextHeight === 0) {
         if (!props.isHydrating) {
           clearLayoutStackHeight(
@@ -42,26 +66,31 @@ export const ChatInputDecorationStack: React.FC<ChatInputDecorationStackProps> =
             lastMeasuredStackHeightRef
           );
         }
+      } else {
+        rememberLayoutStackHeight(
+          props.workspaceId,
+          nextHeight,
+          stackHeightByWorkspaceIdRef.current,
+          lastMeasuredStackHeightRef
+        );
+      }
+
+      if (
+        !props.autoScroll ||
+        previousObservedHeight === null ||
+        previousObservedHeight === nextHeight
+      ) {
         return;
       }
 
-      // Some decoration owners stay mounted while temporarily rendering nothing (for example,
-      // background process dialogs). Ignore zero-height observations during hydration so a
-      // transient empty lane cannot overwrite the last real measurement and drop the temporary
-      // reservation early, but still remember settled zero-height states after hydration ends.
-      rememberLayoutStackHeight(
-        props.workspaceId,
-        nextHeight,
-        stackHeightByWorkspaceIdRef.current,
-        lastMeasuredStackHeightRef
-      );
+      scrollElementToBottom(props.transcriptViewportRef.current);
     });
 
     observer.observe(content);
     return () => {
       observer.disconnect();
     };
-  }, [hasItems, props.isHydrating, props.workspaceId]);
+  }, [props.autoScroll, props.isHydrating, props.transcriptViewportRef, props.workspaceId]);
 
   useLayoutEffect(() => {
     if (props.isHydrating) {
@@ -69,6 +98,7 @@ export const ChatInputDecorationStack: React.FC<ChatInputDecorationStackProps> =
     }
 
     if (!hasItems) {
+      observedHeightRef.current = 0;
       clearLayoutStackHeight(
         props.workspaceId,
         stackHeightByWorkspaceIdRef.current,
@@ -83,6 +113,7 @@ export const ChatInputDecorationStack: React.FC<ChatInputDecorationStackProps> =
     }
 
     const settledHeightPx = measureLayoutStackHeightPx(content);
+    observedHeightRef.current = settledHeightPx;
     if (settledHeightPx === 0) {
       clearLayoutStackHeight(
         props.workspaceId,
@@ -92,20 +123,21 @@ export const ChatInputDecorationStack: React.FC<ChatInputDecorationStackProps> =
     }
   }, [hasItems, props.isHydrating, props.workspaceId]);
 
-  // Keep the workspace-specific decoration lane steady while hydration catches up. Reserving the
-  // whole composer pane let the textarea float inside a tall wrapper, which still looked like a
-  // vertical tear. Scope the reservation to the lane above the input and keep the lane bottom-
-  // aligned so the textarea seam stays put while TODO/review/queued banners repopulate.
+  // Keep all volatile transcript-tail chrome on one seam owner. The message list sits above this
+  // lane, so top-align the contents inside any reserved hydration space to keep the seam under the
+  // last transcript row stationary while retry/streaming/warning rows repopulate.
   if (!hasItems && reservedStackHeightPx === null) {
     return null;
   }
 
   return (
     <div
-      className="flex flex-col justify-end"
+      className="flex flex-col justify-start"
       data-component={props.dataComponent}
       style={
-        reservedStackHeightPx !== null ? { minHeight: `${reservedStackHeightPx}px` } : undefined
+        reservedStackHeightPx !== null
+          ? { minHeight: `${reservedStackHeightPx}px`, overflowAnchor: "none" }
+          : { overflowAnchor: "none" }
       }
     >
       <div ref={contentRef}>

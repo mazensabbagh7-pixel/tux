@@ -1720,6 +1720,221 @@ describe("WorkspaceStore", () => {
       releaseCaughtUp();
     });
 
+    it("surfaces buffered stream-start state before caught-up during hydration", async () => {
+      const workspaceId = "buffered-stream-start-before-caught-up";
+      const streamModel = "anthropic:claude-opus-4-6";
+      const thinkingLevel = "high";
+      let releaseCaughtUp!: () => void;
+      const caughtUpReady = new Promise<void>((resolve) => {
+        releaseCaughtUp = resolve;
+      });
+
+      mockOnChat.mockImplementation(async function* (
+        input?: { workspaceId: string; mode?: unknown },
+        options?: { signal?: AbortSignal }
+      ): AsyncGenerator<WorkspaceChatMessage, void, unknown> {
+        if (input?.workspaceId !== workspaceId) {
+          await waitForAbortSignal(options?.signal);
+          return;
+        }
+
+        yield {
+          type: "stream-start",
+          workspaceId,
+          messageId: "buffered-stream-start-message",
+          model: streamModel,
+          thinkingLevel,
+          historySequence: 1,
+          startTime: 1_000,
+        };
+        await caughtUpReady;
+        yield { type: "caught-up", replay: "full" };
+        await waitForAbortSignal(options?.signal);
+      });
+
+      createAndAddWorkspace(store, workspaceId);
+
+      const showedStreamingStateDuringHydration = await waitUntil(() => {
+        const state = store.getWorkspaceState(workspaceId);
+        return (
+          state.loading === true &&
+          state.isHydratingTranscript === true &&
+          state.canInterrupt === true &&
+          state.currentModel === streamModel &&
+          state.currentThinkingLevel === thinkingLevel
+        );
+      });
+      expect(showedStreamingStateDuringHydration).toBe(true);
+      expect(store.getWorkspaceState(workspaceId).messages).toHaveLength(0);
+
+      releaseCaughtUp();
+    });
+
+    it("refreshes cached state when buffered stream-start arrives during hydration", async () => {
+      const workspaceId = "buffered-stream-start-cache-bump";
+      const streamModel = "anthropic:claude-opus-4-6";
+      let releaseStreamStart!: () => void;
+      const streamStartReady = new Promise<void>((resolve) => {
+        releaseStreamStart = resolve;
+      });
+      let releaseCaughtUp!: () => void;
+      const caughtUpReady = new Promise<void>((resolve) => {
+        releaseCaughtUp = resolve;
+      });
+
+      mockOnChat.mockImplementation(async function* (
+        input?: { workspaceId: string; mode?: unknown },
+        options?: { signal?: AbortSignal }
+      ): AsyncGenerator<WorkspaceChatMessage, void, unknown> {
+        if (input?.workspaceId !== workspaceId) {
+          await waitForAbortSignal(options?.signal);
+          return;
+        }
+
+        await streamStartReady;
+        yield {
+          type: "stream-start",
+          workspaceId,
+          messageId: "buffered-stream-start-cache-bump-message",
+          model: streamModel,
+          historySequence: 1,
+          startTime: 1_000,
+        };
+        await caughtUpReady;
+        yield { type: "caught-up", replay: "full" };
+        await waitForAbortSignal(options?.signal);
+      });
+
+      createAndAddWorkspace(store, workspaceId);
+
+      const initialState = store.getWorkspaceState(workspaceId);
+      expect(initialState.loading).toBe(true);
+      expect(initialState.canInterrupt).toBe(false);
+      expect(initialState.currentModel).toBeNull();
+
+      releaseStreamStart();
+
+      const updatedStreamingState = await waitUntil(() => {
+        const state = store.getWorkspaceState(workspaceId);
+        return (
+          state.loading === true &&
+          state.isHydratingTranscript === true &&
+          state.canInterrupt === true &&
+          state.currentModel === streamModel
+        );
+      });
+      expect(updatedStreamingState).toBe(true);
+
+      releaseCaughtUp();
+    });
+
+    it("refreshes cached state when replayed stream-error clears buffered stream-start during hydration", async () => {
+      const workspaceId = "buffered-stream-error-clears-stream-start";
+      const streamModel = "anthropic:claude-opus-4-6";
+
+      mockOnChat.mockImplementation(async function* (
+        _input?: { workspaceId: string; mode?: unknown },
+        options?: { signal?: AbortSignal }
+      ): AsyncGenerator<WorkspaceChatMessage, void, unknown> {
+        if (options?.signal?.aborted) {
+          yield { type: "caught-up" };
+        }
+        await waitForAbortSignal(options?.signal);
+      });
+
+      recreateStore();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      createAndAddWorkspace(store, workspaceId);
+
+      const rawStore = store as unknown as {
+        handleChatMessage: (workspaceId: string, data: WorkspaceChatMessage) => void;
+      };
+
+      rawStore.handleChatMessage(workspaceId, {
+        type: "stream-start",
+        workspaceId,
+        messageId: "buffered-stream-error-message",
+        model: streamModel,
+        historySequence: 1,
+        startTime: 1_000,
+      });
+
+      const initialState = store.getWorkspaceState(workspaceId);
+      expect(initialState.canInterrupt).toBe(true);
+      expect(initialState.currentModel).toBe(streamModel);
+
+      rawStore.handleChatMessage(workspaceId, {
+        type: "stream-error",
+        messageId: "buffered-stream-error-message",
+        error: "Mock replayed failure",
+        errorType: "unknown",
+        replay: true,
+      });
+
+      const clearedState = store.getWorkspaceState(workspaceId);
+      expect(clearedState.canInterrupt).toBe(false);
+    });
+
+    it("prefers buffered stream-start state over stale non-streaming activity during hydration", async () => {
+      const workspaceId = "buffered-stream-start-over-activity";
+      const staleActivityModel = "openai:gpt-4o-mini";
+      const streamModel = "anthropic:claude-opus-4-6";
+      const thinkingLevel = "high";
+      let releaseCaughtUp!: () => void;
+      const caughtUpReady = new Promise<void>((resolve) => {
+        releaseCaughtUp = resolve;
+      });
+
+      mockActivityList.mockResolvedValue({
+        [workspaceId]: {
+          recency: 3_000,
+          streaming: false,
+          lastModel: staleActivityModel,
+          lastThinkingLevel: null,
+        },
+      });
+      recreateStore();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      mockOnChat.mockImplementation(async function* (
+        input?: { workspaceId: string; mode?: unknown },
+        options?: { signal?: AbortSignal }
+      ): AsyncGenerator<WorkspaceChatMessage, void, unknown> {
+        if (input?.workspaceId !== workspaceId) {
+          await waitForAbortSignal(options?.signal);
+          return;
+        }
+
+        yield {
+          type: "stream-start",
+          workspaceId,
+          messageId: "buffered-stream-start-over-activity-message",
+          model: streamModel,
+          thinkingLevel,
+          historySequence: 1,
+          startTime: 1_000,
+        };
+        await caughtUpReady;
+        yield { type: "caught-up", replay: "full" };
+        await waitForAbortSignal(options?.signal);
+      });
+
+      createAndAddWorkspace(store, workspaceId);
+
+      const preferredBufferedStreamState = await waitUntil(() => {
+        const state = store.getWorkspaceState(workspaceId);
+        return (
+          state.loading === true &&
+          state.canInterrupt === true &&
+          state.currentModel === streamModel &&
+          state.currentThinkingLevel === thinkingLevel
+        );
+      });
+      expect(preferredBufferedStreamState).toBe(true);
+
+      releaseCaughtUp();
+    });
+
     it("replays runtime-status before caught-up when switching back to a preparing workspace", async () => {
       const workspaceId = "stream-starting-runtime-status-replay";
       const otherWorkspaceId = "stream-starting-runtime-status-other";
@@ -2297,6 +2512,36 @@ describe("WorkspaceStore", () => {
       expect(state.currentThinkingLevel).toBe(activitySnapshot.lastThinkingLevel);
       expect(state.agentStatus).toEqual(activitySnapshot.todoStatus ?? undefined);
       expect(state.recencyTimestamp).toBe(activitySnapshot.recency);
+    });
+
+    it("keeps activity snapshots authoritative for non-active stream state", async () => {
+      const workspaceId = "activity-false-over-stale-aggregator";
+      const activitySnapshot: WorkspaceActivitySnapshot = {
+        recency: new Date("2024-01-04T08:00:00.000Z").getTime(),
+        streaming: false,
+        lastModel: "claude-sonnet-4",
+        lastThinkingLevel: null,
+      };
+
+      recreateStore();
+      mockActivityList.mockResolvedValue({ [workspaceId]: activitySnapshot });
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      createAndAddWorkspace(store, workspaceId, { createdAt: "2020-01-01T00:00:00.000Z" }, false);
+
+      const aggregator = store.getAggregator(workspaceId);
+      expect(aggregator).toBeDefined();
+      aggregator?.handleStreamStart({
+        type: "stream-start",
+        workspaceId,
+        messageId: "stale-active-stream",
+        model: "claude-sonnet-4",
+        historySequence: 1,
+        startTime: 1_000,
+      });
+
+      const state = store.getWorkspaceState(workspaceId);
+      expect(state.canInterrupt).toBe(false);
     });
 
     it("falls back to persisted activity todoStatus for active workspaces when replayed todos are absent", async () => {
