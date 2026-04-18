@@ -352,7 +352,9 @@ describe("McpOauthService.startDesktopFlow", () => {
 
       const authorizeUrl = new URL(startResult.data.authorizeUrl);
       expect(authorizeUrl.searchParams.get("code_challenge_method")).toBe("S256");
-      expect(authorizeUrl.searchParams.get("resource")).toBe(baseUrl);
+      // @ai-sdk/mcp@1.0.32+ strips trailing slashes from the RFC 8707 resource
+      // parameter, so compare against the normalized baseUrl.
+      expect(authorizeUrl.searchParams.get("resource")).toBe(baseUrl.replace(/\/$/, ""));
 
       // Clean up the loopback listener (no callback will occur during this test).
       await service.cancelDesktopFlow(startResult.data.flowId);
