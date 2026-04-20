@@ -389,6 +389,62 @@ describe("createOrpcServer", () => {
     }
   });
 
+  test("SPA shell emits a slashless-root redirect script only when the request URL is '/'", async () => {
+    // When a reverse proxy mounts mux at a slashless path (e.g.
+    // `https://proxy.example.com/apps/mux`) and strips the prefix to `/`, the
+    // browser resolves `<base href="./">` against the document URL and drops
+    // the `mux` segment, breaking asset loading. A blocking inline script in
+    // `<head>` redirects to the trailing-slash form before the parser reaches
+    // `<base>`, so the corrected document URL produces the right base href on
+    // retry. The script must only fire at the app root: any deeper request
+    // path already resolves correctly, and redirecting would bounce legitimate
+    // SPA deep links.
+    const stubContext: Partial<ORPCContext> = {};
+
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "mux-slashless-redirect-"));
+    const indexHtml =
+      "<!doctype html><html><head><title>mux</title></head><body><div>ok</div></body></html>";
+
+    let server: Awaited<ReturnType<typeof createOrpcServer>> | null = null;
+    try {
+      await fs.writeFile(path.join(tempDir, "index.html"), indexHtml, "utf-8");
+
+      server = await createOrpcServer({
+        host: "127.0.0.1",
+        port: 0,
+        context: stubContext as ORPCContext,
+        authToken: "test-token",
+        serveStatic: true,
+        staticDir: tempDir,
+      });
+
+      // Marker string unique to the redirect script. Chosen so we don't match
+      // incidental occurrences of `location.replace` in user HTML.
+      const scriptMarker = 'if(!location.pathname.endsWith("/"))';
+
+      // Root request: script must be present, and it must precede `<base>` in
+      // the document so it executes before the browser resolves asset URLs.
+      const rootRes = await fetch(`${server.baseUrl}/`);
+      expect(rootRes.status).toBe(200);
+      const rootHtml = await rootRes.text();
+      expect(rootHtml).toContain(scriptMarker);
+      expect(rootHtml.indexOf(scriptMarker)).toBeLessThan(rootHtml.indexOf("<base"));
+
+      // Deeper request paths must NOT carry the redirect: `<base href="./…/">`
+      // already lands at the SPA root for these cases, and a redirect would
+      // rewrite the URL the user asked for.
+      for (const url of ["/settings", "/a/b", "/a/b/c"]) {
+        const res = await fetch(`${server.baseUrl}${url}`);
+        expect(res.status).toBe(200);
+        const html = await res.text();
+        expect(html).not.toContain(scriptMarker);
+      }
+    } finally {
+      await server?.close();
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
   test("does not apply origin validation to static and SPA fallback routes", async () => {
     // Static app shell must remain reachable even if proxy/header rewriting makes
     // request Origin values unexpected. API/WS/auth routes are validated separately.

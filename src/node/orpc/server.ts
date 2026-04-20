@@ -117,6 +117,18 @@ function extractBearerToken(header: string | undefined): string | null {
 // request URL. Precomputed once at startup; replaced per SPA shell response.
 const BASE_HREF_PLACEHOLDER = "__MUX_BASE_HREF__";
 
+// Placeholder substituted per-request with an inline redirect script (or an
+// empty string). See `renderSpaShellForRequest` below for the full rationale.
+const SLASHLESS_ROOT_REDIRECT_PLACEHOLDER = "__MUX_SLASHLESS_ROOT_REDIRECT__";
+
+// Blocking inline script that upgrades a slashless app-root URL (e.g.
+// `https://proxy.example.com/apps/mux`) to its trailing-slash form before the
+// HTML parser reaches the `<base>` tag. Without this, the browser resolves
+// `<base href="./">` against the document URL and drops the final path
+// segment, so asset URLs like `main.js` load from the wrong directory and 404.
+const SLASHLESS_ROOT_REDIRECT_SCRIPT =
+  '<script>if(!location.pathname.endsWith("/"))location.replace(location.pathname+"/"+location.search+location.hash);</script>';
+
 function injectBaseHrefPlaceholder(indexHtml: string): string {
   // Avoid double-injecting if the HTML already has a base tag.
   if (/<base\b/i.test(indexHtml)) {
@@ -124,9 +136,12 @@ function injectBaseHrefPlaceholder(indexHtml: string): string {
   }
 
   // Insert immediately after the opening <head> tag (supports <head> and <head ...attrs>).
+  // The redirect placeholder must precede `<base>` so the script runs before
+  // the parser encounters the tag it's compensating for.
   return indexHtml.replace(
     /<head[^>]*>/i,
-    (match) => `${match}\n    <base href="${BASE_HREF_PLACEHOLDER}" />`
+    (match) =>
+      `${match}\n    ${SLASHLESS_ROOT_REDIRECT_PLACEHOLDER}\n    <base href="${BASE_HREF_PLACEHOLDER}" />`
   );
 }
 
@@ -161,11 +176,20 @@ export function computeBaseHrefForRequestUrl(requestUrl: string): string {
 
 function renderSpaShellForRequest(template: string, requestUrl: string): string {
   const baseHref = computeBaseHrefForRequestUrl(requestUrl);
+  const pathOnly = requestUrl.split("?", 1)[0] ?? "/";
+  // Only emit the slashless-root redirect at the SPA root. For any deeper
+  // request path (`/settings`, `/a/b`, …) the browser will correctly strip
+  // the final "file" segment when resolving `<base href="./…/">`, landing at
+  // the SPA root — which is what we want. Redirecting every slashless URL
+  // would bounce legitimate SPA deep links to a parent directory.
+  const redirectScript = pathOnly === "/" ? SLASHLESS_ROOT_REDIRECT_SCRIPT : "";
   // Scope the substitution to the `href="…"` attribute we injected above.
   // Using `replaceAll(PLACEHOLDER, …)` would also rewrite any stray occurrence
   // of the token elsewhere in the shell (e.g. in an inline comment or code
   // sample), which would silently corrupt user content.
-  return template.replace(`href="${BASE_HREF_PLACEHOLDER}"`, `href="${baseHref}"`);
+  return template
+    .replace(`href="${BASE_HREF_PLACEHOLDER}"`, `href="${baseHref}"`)
+    .replace(SLASHLESS_ROOT_REDIRECT_PLACEHOLDER, redirectScript);
 }
 
 function escapeJsonForHtmlScript(value: unknown): string {
