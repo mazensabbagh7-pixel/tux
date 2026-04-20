@@ -67,8 +67,8 @@ const THEME_COLORS: Record<ThemeMode, string> = {
 };
 
 const FAVICON_BY_SCHEME: Record<"light" | "dark", string> = {
-  light: "/favicon.ico",
-  dark: "/favicon-dark.ico",
+  light: "favicon.ico",
+  dark: "favicon-dark.ico",
 };
 
 /** Map theme mode to CSS color-scheme value */

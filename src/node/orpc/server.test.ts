@@ -175,7 +175,10 @@ describe("createOrpcServer", () => {
       expect(uiRes.status).toBe(200);
       const uiText = await uiRes.text();
       expect(uiText).toContain("mux");
-      expect(uiText).toContain('<base href="/"');
+      // `<base href>` is a relative climb from the document URL's directory
+      // back to the SPA root. `/some/spa/route` resolves against `.../some/spa/`,
+      // so needs two `../` hops.
+      expect(uiText).toContain('<base href="./../../"');
 
       const apiRes = await fetch(`${server.baseUrl}/api/not-a-real-route`);
       expect(apiRes.status).toBe(404);
@@ -215,8 +218,11 @@ describe("createOrpcServer", () => {
           expect(uiRes.status).toBe(200);
           const uiText = await uiRes.text();
 
+          // Both responses share the proxy URI template but have different
+          // relative base hrefs computed per-request.
+          expect(rootHtml).toContain('<base href="./"');
+          expect(uiText).toContain('<base href="./../../"');
           for (const html of [rootHtml, uiText]) {
-            expect(html).toContain('<base href="/"');
             expect(html).toContain("window.__MUX_PROXY_URI_TEMPLATE__ =");
             expect(html).toContain(
               'window.__MUX_PROXY_URI_TEMPLATE__ = "https://proxy-{{port}}.example.test/path\\u003c/script>";'
@@ -268,6 +274,60 @@ describe("createOrpcServer", () => {
         }
       });
     } finally {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test("SPA shell uses a per-request relative <base href> that works under any path-stripping proxy", async () => {
+    // <base href> is computed as a relative climb from the request URL back to
+    // the SPA root. This is proxy-agnostic: it works for direct access, for
+    // prefix-preserving proxies (the relative climb resolves correctly in the
+    // browser), and for prefix-stripping proxies (the backend only ever sees
+    // the stripped path, and the browser resolves <base> against the public
+    // document URL).
+    const stubContext: Partial<ORPCContext> = {};
+
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "mux-static-base-href-"));
+    const indexHtml =
+      "<!doctype html><html><head><title>mux</title></head><body><div>ok</div></body></html>";
+
+    let server: Awaited<ReturnType<typeof createOrpcServer>> | null = null;
+    try {
+      await fs.writeFile(path.join(tempDir, "index.html"), indexHtml, "utf-8");
+
+      server = await createOrpcServer({
+        host: "127.0.0.1",
+        port: 0,
+        context: stubContext as ORPCContext,
+        authToken: "test-token",
+        serveStatic: true,
+        staticDir: tempDir,
+      });
+
+      const cases: Array<{ url: string; expectedBaseHref: string }> = [
+        // Root request: no climb needed.
+        { url: "/", expectedBaseHref: "./" },
+        // Single-segment SPA routes: browser document URL directory == root, no climb.
+        { url: "/settings", expectedBaseHref: "./" },
+        // Trailing slash adds an empty segment, raising the depth by one.
+        { url: "/settings/", expectedBaseHref: "./../" },
+        // Nested SPA routes climb one level per intermediate directory segment.
+        { url: "/a/b", expectedBaseHref: "./../" },
+        { url: "/a/b/c", expectedBaseHref: "./../../" },
+        // Query strings are ignored for depth computation.
+        { url: "/a/b?x=1", expectedBaseHref: "./../" },
+      ];
+
+      for (const { url, expectedBaseHref } of cases) {
+        const res = await fetch(`${server.baseUrl}${url}`);
+        expect(res.status).toBe(200);
+        const html = await res.text();
+        const match = /<base href="([^"]+)"/.exec(html);
+        expect(match).not.toBeNull();
+        expect(match?.[1]).toBe(expectedBaseHref);
+      }
+    } finally {
+      await server?.close();
       await fs.rm(tempDir, { recursive: true, force: true });
     }
   });

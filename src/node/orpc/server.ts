@@ -113,14 +113,56 @@ function extractBearerToken(header: string | undefined): string | null {
   const token = header.slice(7).trim();
   return token.length ? token : null;
 }
-function injectBaseHref(indexHtml: string, baseHref: string): string {
+// Placeholder substituted per-request with the relative root for the current
+// request URL. Using a placeholder keeps the parse/serialize work out of the
+// hot path: we precompute the HTML with a placeholder once at startup and do a
+// single string replace per SPA shell response.
+const BASE_HREF_PLACEHOLDER = "__MUX_BASE_HREF__";
+
+function injectBaseHrefPlaceholder(indexHtml: string): string {
   // Avoid double-injecting if the HTML already has a base tag.
   if (/<base\b/i.test(indexHtml)) {
     return indexHtml;
   }
 
   // Insert immediately after the opening <head> tag (supports <head> and <head ...attrs>).
-  return indexHtml.replace(/<head[^>]*>/i, (match) => `${match}\n    <base href="${baseHref}" />`);
+  return indexHtml.replace(
+    /<head[^>]*>/i,
+    (match) => `${match}\n    <base href="${BASE_HREF_PLACEHOLDER}" />`
+  );
+}
+
+/**
+ * Compute the relative path that climbs from the current request URL back to
+ * the SPA root. This mirrors code-server's `relativeRoot` helper and makes mux
+ * work behind any path-rewriting reverse proxy without requiring the backend
+ * to know the public prefix. Because the browser resolves `<base href>`
+ * against the document URL, a relative climb of the right depth always lands
+ * at the SPA root regardless of whether the proxy preserves or strips a prefix.
+ *
+ * Examples (request URL → base href):
+ *   "/"                 -> "./"
+ *   "/settings"         -> "./"
+ *   "/settings/"        -> "./../"
+ *   "/a/b"              -> "./../"
+ *   "/a/b/"             -> "./../../"
+ */
+function computeBaseHrefForRequestUrl(requestUrl: string): string {
+  const pathOnly = requestUrl.split("?", 1)[0] ?? "/";
+  // Count path segments excluding the leading "/". A trailing slash counts as
+  // an empty final segment, which correctly raises the depth for directory-style
+  // URLs (e.g. `/a/b/` is at depth 2 from the root, not depth 1).
+  const segments = pathOnly.split("/").slice(1);
+  const depth = Math.max(0, segments.length - 1);
+  if (depth === 0) {
+    return "./";
+  }
+  return "./" + "../".repeat(depth);
+}
+
+function renderSpaShellForRequest(template: string, requestUrl: string): string {
+  const baseHref = computeBaseHrefForRequestUrl(requestUrl);
+  return template.replaceAll(BASE_HREF_PLACEHOLDER, baseHref);
 }
 
 function escapeJsonForHtmlScript(value: unknown): string {
@@ -560,15 +602,24 @@ export async function createOrpcServer({
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ extended: false }));
 
-  let spaIndexHtml: string | null = null;
+  // Template for the SPA shell with a `__MUX_BASE_HREF__` placeholder in the
+  // injected `<base href>`. The placeholder is replaced per-request with a
+  // relative climb to the SPA root so mux works behind any path-rewriting
+  // reverse proxy (Coder path apps, nginx `proxy_pass http://backend/`, Traefik
+  // StripPrefix, k8s ingress rewrites, etc.) without requiring the backend to
+  // know the public prefix.
+  let spaIndexHtmlTemplate: string | null = null;
 
   // Static file serving (optional)
   if (serveStatic) {
     try {
       const indexHtmlPath = path.join(staticDir, "index.html");
       const indexHtml = await fs.readFile(indexHtmlPath, "utf8");
-      const indexHtmlWithBaseHref = injectBaseHref(indexHtml, "/");
-      spaIndexHtml = injectProxyUriTemplate(indexHtmlWithBaseHref, getBrowserProxyUriTemplate());
+      const indexHtmlWithBaseHref = injectBaseHrefPlaceholder(indexHtml);
+      spaIndexHtmlTemplate = injectProxyUriTemplate(
+        indexHtmlWithBaseHref,
+        getBrowserProxyUriTemplate()
+      );
     } catch (error) {
       log.error("Failed to read index.html for SPA fallback:", error);
     }
@@ -1350,9 +1401,14 @@ export async function createOrpcServer({
         return next();
       }
 
-      if (spaIndexHtml !== null) {
+      if (spaIndexHtmlTemplate !== null) {
+        // `req.url` is the path mux actually handles (after any upstream
+        // prefix-stripping reverse proxy). Using it here means the relative
+        // `<base href>` always points at mux's SPA root relative to the
+        // document URL the browser is currently rendering, regardless of the
+        // public prefix.
         res.setHeader("Content-Type", "text/html");
-        res.send(spaIndexHtml);
+        res.send(renderSpaShellForRequest(spaIndexHtmlTemplate, req.url));
         return;
       }
 

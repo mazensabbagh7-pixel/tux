@@ -55,8 +55,14 @@ if ("serviceWorker" in navigator) {
     window.location.protocol === "http:" || window.location.protocol === "https:";
   if (isHttpProtocol) {
     window.addEventListener("load", () => {
+      // Resolve the SW URL and scope relative to the document's base URL so mux
+      // works when served under a path-rewriting reverse proxy. `document.baseURI`
+      // honors the `<base href>` the server emits, so a single absolute URL here
+      // covers every proxy configuration.
+      const serviceWorkerUrl = new URL("service-worker.js", document.baseURI).toString();
+      const serviceWorkerScope = new URL(".", document.baseURI).toString();
       navigator.serviceWorker
-        .register("/service-worker.js")
+        .register(serviceWorkerUrl, { scope: serviceWorkerScope })
         .then((registration) => {
           console.log("Service Worker registered:", registration);
         })
