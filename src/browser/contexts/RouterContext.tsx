@@ -270,8 +270,7 @@ function useUrlSync(): void {
     // their URL argument against the document URL (not `<base href>`), so an
     // unprefixed router-internal path would strip the prefix on refresh.
     const publicUrl = joinAppBasePath(url);
-    const currentUrl =
-      window.location.pathname + window.location.search + window.location.hash;
+    const currentUrl = window.location.pathname + window.location.search + window.location.hash;
     if (publicUrl !== currentUrl) {
       window.history.replaceState(null, "", publicUrl);
     }

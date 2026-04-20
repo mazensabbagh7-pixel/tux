@@ -165,10 +165,7 @@ function renderSpaShellForRequest(template: string, requestUrl: string): string 
   // Using `replaceAll(PLACEHOLDER, …)` would also rewrite any stray occurrence
   // of the token elsewhere in the shell (e.g. in an inline comment or code
   // sample), which would silently corrupt user content.
-  return template.replace(
-    `href="${BASE_HREF_PLACEHOLDER}"`,
-    `href="${baseHref}"`
-  );
+  return template.replace(`href="${BASE_HREF_PLACEHOLDER}"`, `href="${baseHref}"`);
 }
 
 function escapeJsonForHtmlScript(value: unknown): string {

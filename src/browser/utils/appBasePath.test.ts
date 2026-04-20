@@ -55,9 +55,7 @@ describe("appBasePath", () => {
     // Router internal → URL bar.
     expect(joinAppBasePath("/settings")).toBe("/@user/ws.main/apps/mux/settings");
     expect(joinAppBasePath("/")).toBe("/@user/ws.main/apps/mux/");
-    expect(joinAppBasePath("/workspace/abc?x=1")).toBe(
-      "/@user/ws.main/apps/mux/workspace/abc?x=1"
-    );
+    expect(joinAppBasePath("/workspace/abc?x=1")).toBe("/@user/ws.main/apps/mux/workspace/abc?x=1");
   });
 
   test("nested request URL with relative-climb <base href>: recovers the public prefix", () => {
