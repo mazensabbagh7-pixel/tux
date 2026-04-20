@@ -114,9 +114,7 @@ function extractBearerToken(header: string | undefined): string | null {
   return token.length ? token : null;
 }
 // Placeholder substituted per-request with the relative root for the current
-// request URL. Using a placeholder keeps the parse/serialize work out of the
-// hot path: we precompute the HTML with a placeholder once at startup and do a
-// single string replace per SPA shell response.
+// request URL. Precomputed once at startup; replaced per SPA shell response.
 const BASE_HREF_PLACEHOLDER = "__MUX_BASE_HREF__";
 
 function injectBaseHrefPlaceholder(indexHtml: string): string {
@@ -146,8 +144,9 @@ function injectBaseHrefPlaceholder(indexHtml: string): string {
  *   "/settings/"        -> "./../"
  *   "/a/b"              -> "./../"
  *   "/a/b/"             -> "./../../"
+ *   "" / nullish        -> "./" (via fallback)
  */
-function computeBaseHrefForRequestUrl(requestUrl: string): string {
+export function computeBaseHrefForRequestUrl(requestUrl: string): string {
   const pathOnly = requestUrl.split("?", 1)[0] ?? "/";
   // Count path segments excluding the leading "/". A trailing slash counts as
   // an empty final segment, which correctly raises the depth for directory-style
@@ -162,7 +161,14 @@ function computeBaseHrefForRequestUrl(requestUrl: string): string {
 
 function renderSpaShellForRequest(template: string, requestUrl: string): string {
   const baseHref = computeBaseHrefForRequestUrl(requestUrl);
-  return template.replaceAll(BASE_HREF_PLACEHOLDER, baseHref);
+  // Scope the substitution to the `href="…"` attribute we injected above.
+  // Using `replaceAll(PLACEHOLDER, …)` would also rewrite any stray occurrence
+  // of the token elsewhere in the shell (e.g. in an inline comment or code
+  // sample), which would silently corrupt user content.
+  return template.replace(
+    `href="${BASE_HREF_PLACEHOLDER}"`,
+    `href="${baseHref}"`
+  );
 }
 
 function escapeJsonForHtmlScript(value: unknown): string {
@@ -603,11 +609,9 @@ export async function createOrpcServer({
   app.use(express.urlencoded({ extended: false }));
 
   // Template for the SPA shell with a `__MUX_BASE_HREF__` placeholder in the
-  // injected `<base href>`. The placeholder is replaced per-request with a
-  // relative climb to the SPA root so mux works behind any path-rewriting
-  // reverse proxy (Coder path apps, nginx `proxy_pass http://backend/`, Traefik
-  // StripPrefix, k8s ingress rewrites, etc.) without requiring the backend to
-  // know the public prefix.
+  // injected `<base href>`, replaced per-request with a relative climb to the
+  // SPA root so mux works behind any path-rewriting reverse proxy without
+  // needing to know the public prefix.
   let spaIndexHtmlTemplate: string | null = null;
 
   // Static file serving (optional)

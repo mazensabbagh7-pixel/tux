@@ -17,6 +17,7 @@ import {
 } from "@/common/constants/storage";
 import type { WorkspaceSelection } from "@/browser/components/ProjectSidebar/ProjectSidebar";
 import { getProjectRouteId } from "@/common/utils/projectRouteId";
+import { joinAppBasePath, stripAppBasePath } from "@/browser/utils/appBasePath";
 
 export interface RouterContext {
   navigateToWorkspace: (workspaceId: string) => void;
@@ -195,7 +196,11 @@ function getInitialRoute(): string {
   // routes are special: fresh launches may ignore them, but explicit restore-style navigations
   // such as hard reload/back-forward should reopen the same chat.
   if (window.location.protocol !== "file:" && !isStorybook) {
-    const url = window.location.pathname + window.location.search;
+    // Strip any path-app proxy prefix so MemoryRouter sees the route the app
+    // knows about (e.g. `/settings`), not the full public URL
+    // (`/@user/ws.main/apps/mux/settings`). The prefix is re-applied later
+    // by `useUrlSync` when writing back to the URL bar.
+    const url = stripAppBasePath(window.location.pathname + window.location.search);
     // Only use URL if it's a valid route (starts with /, not just "/" or empty)
     if (url.startsWith("/") && url !== "/") {
       if (!url.startsWith("/workspace/")) {
@@ -259,8 +264,16 @@ function useUrlSync(): void {
     // Skip in Electron (file:// reloads always boot through index.html; we restore via localStorage above)
     if (window.location.protocol === "file:") return;
 
-    if (url !== window.location.pathname + window.location.search + window.location.hash) {
-      window.history.replaceState(null, "", url);
+    // Re-apply the app base path before writing back to the URL bar, so that
+    // `history.replaceState` preserves any path-app proxy prefix that the
+    // browser is actually served under. `pushState`/`replaceState` resolve
+    // their URL argument against the document URL (not `<base href>`), so an
+    // unprefixed router-internal path would strip the prefix on refresh.
+    const publicUrl = joinAppBasePath(url);
+    const currentUrl =
+      window.location.pathname + window.location.search + window.location.hash;
+    if (publicUrl !== currentUrl) {
+      window.history.replaceState(null, "", publicUrl);
     }
   }, [location.pathname, location.search, location.hash]);
 }

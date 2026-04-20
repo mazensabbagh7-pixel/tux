@@ -9,6 +9,7 @@ import {
   LAUNCH_BEHAVIOR_KEY,
   SELECTED_WORKSPACE_KEY,
 } from "@/common/constants/storage";
+import { refreshAppBasePath } from "@/browser/utils/appBasePath";
 import { RouterProvider, useRouter, type RouterContext } from "./RouterContext";
 
 function createMatchMedia(isStandalone = false): typeof window.matchMedia {
@@ -29,7 +30,7 @@ type NavigationType = "navigate" | "reload" | "back_forward" | "prerender";
 
 function installWindow(
   url: string,
-  options?: { isStandalone?: boolean; navigationType?: NavigationType }
+  options?: { isStandalone?: boolean; navigationType?: NavigationType; baseHref?: string }
 ) {
   // Happy DOM can default to an opaque origin ("null") which breaks URL-based
   // logic in RouterContext. Give it a stable origin.
@@ -39,6 +40,17 @@ function installWindow(
   globalThis.window.matchMedia = createMatchMedia(options?.isStandalone);
   globalThis.window.localStorage.clear();
   globalThis.window.sessionStorage.clear();
+
+  if (options?.baseHref) {
+    const baseEl = globalThis.document.createElement("base");
+    baseEl.setAttribute("href", options.baseHref);
+    const head = globalThis.document.head;
+    head.insertBefore(baseEl, head.firstChild);
+  }
+
+  // RouterContext imports appBasePath which caches `document.baseURI` at
+  // module load. Force a refresh so each test starts with the correct prefix.
+  refreshAppBasePath();
 
   const navigationEntries = [
     { type: options?.navigationType ?? "navigate" } as unknown as PerformanceNavigationTiming,
@@ -64,6 +76,7 @@ describe("navigateFromSettings", () => {
     cleanup();
     globalThis.window = undefined as unknown as Window & typeof globalThis;
     globalThis.document = undefined as unknown as Document;
+    refreshAppBasePath();
   });
 
   test("restores the previous location.state when leaving settings", async () => {
@@ -135,6 +148,7 @@ describe("browser startup launch behavior", () => {
     cleanup();
     globalThis.window = undefined as unknown as Window & typeof globalThis;
     globalThis.document = undefined as unknown as Document;
+    refreshAppBasePath();
   });
 
   test("dashboard mode ignores a stale /workspace/:id URL", async () => {
@@ -217,6 +231,7 @@ describe("desktop startup route restoration", () => {
     cleanup();
     globalThis.window = undefined as unknown as Window & typeof globalThis;
     globalThis.document = undefined as unknown as Document;
+    refreshAppBasePath();
   });
 
   test("restores the last visited route when Electron boots from file:///index.html", async () => {
@@ -398,6 +413,7 @@ describe("standalone PWA startup", () => {
     cleanup();
     globalThis.window = undefined as unknown as Window & typeof globalThis;
     globalThis.document = undefined as unknown as Document;
+    refreshAppBasePath();
   });
 
   test("shows the dashboard on cold launch even if the launch URL points at a workspace", async () => {
@@ -467,6 +483,98 @@ describe("standalone PWA startup", () => {
 
     await waitFor(() => {
       expect(view.getByTestId("pathname").textContent).toBe("/workspace/reload-me");
+    });
+  });
+});
+
+describe("path-app proxy prefix", () => {
+  afterEach(() => {
+    cleanup();
+    globalThis.window = undefined as unknown as Window & typeof globalThis;
+    globalThis.document = undefined as unknown as Document;
+    refreshAppBasePath();
+  });
+
+  test("MemoryRouter initial route strips the proxy prefix", async () => {
+    // Cold load at a Coder app-proxy URL: the server injected a relative
+    // `<base href>` that resolves to the SPA root, so `document.baseURI` is
+    // the public prefix. MemoryRouter should see only the router-internal
+    // path (`/settings/general`), not the full public URL.
+    installWindow("https://coder.example.com/@u/ws.main/apps/mux/settings/general", {
+      baseHref: "./../",
+    });
+
+    const view = render(
+      <RouterProvider>
+        <PathnameObserver />
+      </RouterProvider>
+    );
+
+    await waitFor(() => {
+      expect(view.getByTestId("pathname").textContent).toBe("/settings/general");
+    });
+  });
+
+  test("useUrlSync preserves the proxy prefix in window.location", async () => {
+    // After a client-side navigation, the URL bar must keep the public
+    // prefix so a refresh (or a bookmarked copy) hits the proxy, not the
+    // bare backend path.
+    installWindow("https://coder.example.com/@u/ws.main/apps/mux/", {
+      baseHref: "./",
+    });
+    let latestRouter: RouterContext | null = null;
+
+    function Observer() {
+      latestRouter = useRouter();
+      return <PathnameObserver />;
+    }
+
+    render(
+      <RouterProvider>
+        <Observer />
+      </RouterProvider>
+    );
+
+    await waitFor(() => {
+      expect(latestRouter).not.toBeNull();
+    });
+
+    act(() => {
+      latestRouter!.navigateToSettings("general");
+    });
+
+    await waitFor(() => {
+      expect(window.location.pathname).toBe("/@u/ws.main/apps/mux/settings/general");
+    });
+  });
+
+  test("direct origin access (no prefix): pathname stays unprefixed", async () => {
+    // Sanity check: without an app-proxy prefix (or `<base>` that climbs to
+    // one), URL sync should behave exactly as before this fix.
+    installWindow("https://mux.example.com/", { baseHref: "./" });
+    let latestRouter: RouterContext | null = null;
+
+    function Observer() {
+      latestRouter = useRouter();
+      return <PathnameObserver />;
+    }
+
+    render(
+      <RouterProvider>
+        <Observer />
+      </RouterProvider>
+    );
+
+    await waitFor(() => {
+      expect(latestRouter).not.toBeNull();
+    });
+
+    act(() => {
+      latestRouter!.navigateToSettings("general");
+    });
+
+    await waitFor(() => {
+      expect(window.location.pathname).toBe("/settings/general");
     });
   });
 });

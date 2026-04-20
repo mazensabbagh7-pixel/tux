@@ -6,7 +6,7 @@ import { WebSocket, WebSocketServer } from "ws";
 import { RPCLink as HTTPRPCLink } from "@orpc/client/fetch";
 import { createORPCClient } from "@orpc/client";
 import type { RouterClient } from "@orpc/server";
-import { createOrpcServer, DESKTOP_WS_PATH } from "./server";
+import { computeBaseHrefForRequestUrl, createOrpcServer, DESKTOP_WS_PATH } from "./server";
 import type { ORPCContext } from "./context";
 import type { AppRouter } from "./router";
 import { Config } from "@/node/config";
@@ -148,6 +148,23 @@ async function withProxyUriTemplateEnv<T>(
   }
 }
 
+describe("computeBaseHrefForRequestUrl", () => {
+  test("handles boundary request URLs", () => {
+    // Empty / nullish input falls through to `/` (defensive; callers always
+    // pass `req.url` which Express populates, but worth locking down).
+    expect(computeBaseHrefForRequestUrl("")).toBe("./");
+    // Hash fragments are not present in `req.url` per Node's HTTP parser,
+    // but if one ever shows up it should be tolerated (depth is counted
+    // from the path portion only).
+    expect(computeBaseHrefForRequestUrl("/a/b#anchor")).toBe("./../");
+    // Double slashes are a no-op in practice (Express normalizes them),
+    // but document the current behavior: an extra empty segment raises the
+    // depth by one. Not a correctness concern either way; pinning it here
+    // keeps the algorithm intentional rather than accidental.
+    expect(computeBaseHrefForRequestUrl("//a/b")).toBe("./../../");
+  });
+});
+
 describe("createOrpcServer", () => {
   test("serveStatic fallback does not swallow /api routes", async () => {
     // Minimal context stub - router won't be exercised by this test.
@@ -278,6 +295,44 @@ describe("createOrpcServer", () => {
     }
   });
 
+  test("SPA shell placeholder substitution is scoped to the injected <base href> attribute", async () => {
+    // Regression: an earlier revision used `replaceAll(PLACEHOLDER, …)`, which
+    // would rewrite any stray occurrence of the placeholder token elsewhere in
+    // the shell (e.g. in an inline comment, docs snippet, or code sample) and
+    // silently corrupt user content. The substitution must be scoped to the
+    // `href="…"` attribute we injected at startup.
+    const stubContext: Partial<ORPCContext> = {};
+
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "mux-placeholder-scope-"));
+    const sentinel = "sentinel:__MUX_BASE_HREF__";
+    const indexHtml = `<!doctype html><html><head><title>mux</title></head><body><!-- ${sentinel} --><div>ok</div></body></html>`;
+
+    let server: Awaited<ReturnType<typeof createOrpcServer>> | null = null;
+    try {
+      await fs.writeFile(path.join(tempDir, "index.html"), indexHtml, "utf-8");
+
+      server = await createOrpcServer({
+        host: "127.0.0.1",
+        port: 0,
+        context: stubContext as ORPCContext,
+        authToken: "test-token",
+        serveStatic: true,
+        staticDir: tempDir,
+      });
+
+      // Deep request path: the injected <base href> resolves to "./../../", but
+      // the sentinel embedded in the HTML body must survive untouched.
+      const res = await fetch(`${server.baseUrl}/a/b/c`);
+      expect(res.status).toBe(200);
+      const html = await res.text();
+      expect(html).toContain('<base href="./../../"');
+      expect(html).toContain(sentinel);
+    } finally {
+      await server?.close();
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
   test("SPA shell uses a per-request relative <base href> that works under any path-stripping proxy", async () => {
     // <base href> is computed as a relative climb from the request URL back to
     // the SPA root. This is proxy-agnostic: it works for direct access, for
@@ -314,6 +369,8 @@ describe("createOrpcServer", () => {
         // Nested SPA routes climb one level per intermediate directory segment.
         { url: "/a/b", expectedBaseHref: "./../" },
         { url: "/a/b/c", expectedBaseHref: "./../../" },
+        // Deeper nested routes with trailing slash climb one more level.
+        { url: "/a/b/c/", expectedBaseHref: "./../../../" },
         // Query strings are ignored for depth computation.
         { url: "/a/b?x=1", expectedBaseHref: "./../" },
       ];

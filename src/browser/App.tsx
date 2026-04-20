@@ -17,6 +17,7 @@ import {
 } from "./hooks/usePersistedState";
 import { useResizableSidebar } from "./hooks/useResizableSidebar";
 import { matchesKeybind, KEYBINDS } from "./utils/ui/keybinds";
+import { joinAppBasePath } from "./utils/appBasePath";
 import { handleLayoutSlotHotkeys } from "./utils/ui/layoutSlotHotkeys";
 import { buildSortedWorkspacesByProject } from "./utils/ui/workspaceFiltering";
 import { getVisibleWorkspaceIds } from "./utils/ui/workspaceDomNav";
@@ -869,9 +870,12 @@ function AppInner() {
     window.history.pushState({ mux: true }, "", window.location.href);
 
     const handlePopState = () => {
-      // Re-push the correct URL from MemoryRouter, not the popped browser URL
+      // Re-push the correct URL from MemoryRouter, not the popped browser URL.
+      // Re-apply the app base path so the URL bar keeps any path-app proxy
+      // prefix that mux is actually served under.
       const { pathname, search, hash } = locationRef.current;
-      const correctUrl = `${window.location.origin}${pathname}${search}${hash}`;
+      const publicPath = joinAppBasePath(pathname + search + hash);
+      const correctUrl = `${window.location.origin}${publicPath}`;
       window.history.pushState({ mux: true }, "", correctUrl);
     };
 
