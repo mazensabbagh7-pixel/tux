@@ -10,7 +10,7 @@ import { sumUsageHistory } from "@/common/utils/tokens/usageAggregator";
 import { createDisplayUsage } from "@/common/utils/tokens/displayUsage";
 import type { RolledUpChildEntry } from "@/common/orpc/schemas/chatStats";
 import type { TokenConsumer } from "@/common/types/chatStats";
-import type { MuxMessage } from "@/common/types/message";
+import type { MuxMessage, PersistedToolModelUsage } from "@/common/types/message";
 import { normalizeToCanonical } from "@/common/utils/ai/models";
 import { log } from "./log";
 
@@ -78,6 +78,14 @@ export interface SessionUsageFile {
  * per-model usage breakdowns. Usage is accumulated on stream-end, never
  * subtracted, making costs immune to message deletion.
  */
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isPersistedToolModelUsage(value: unknown): value is PersistedToolModelUsage {
+  return isPlainRecord(value) && typeof value.model === "string" && isPlainRecord(value.usage);
+}
+
 export class SessionUsageService {
   private readonly SESSION_USAGE_FILE = "session-usage.json";
   private readonly fileLocks = workspaceFileLocks;
@@ -405,6 +413,42 @@ export class SessionUsageService {
     const result: SessionUsageFile = this.createEmptyUsageFile();
     let lastAssistantUsage: { model: string; usage: ChatUsageDisplay } | undefined;
 
+    const mergeUsageForModel = (rawModel: string, usage: ChatUsageDisplay): void => {
+      const model = normalizeToCanonical(rawModel);
+      const existing = result.byModel[model];
+      result.byModel[model] = existing ? sumUsageHistory([existing, usage])! : usage;
+    };
+
+    const rebuildToolModelUsage = (toolModelUsage: unknown): void => {
+      // History on disk is not schema-validated, so skip malformed tool snapshots instead of
+      // letting one bad entry abort the entire rebuild.
+      if (!isPersistedToolModelUsage(toolModelUsage)) {
+        return;
+      }
+
+      const rawModel = toolModelUsage.model.trim();
+      if (!rawModel) {
+        return;
+      }
+
+      const providerMetadata = isPlainRecord(toolModelUsage.providerMetadata)
+        ? toolModelUsage.providerMetadata
+        : undefined;
+      const metadataModel =
+        typeof toolModelUsage.metadataModel === "string" ? toolModelUsage.metadataModel : undefined;
+      const usage = createDisplayUsage(
+        toolModelUsage.usage,
+        rawModel,
+        providerMetadata,
+        metadataModel
+      );
+      if (!usage) {
+        return;
+      }
+
+      mergeUsageForModel(rawModel, usage);
+    };
+
     for (const msg of messages) {
       if (msg.role === "assistant") {
         // Include historicalUsage from legacy compaction summaries.
@@ -422,17 +466,23 @@ export class SessionUsageService {
         // Extract current message's usage
         if (msg.metadata?.usage) {
           const rawModel = msg.metadata.model ?? "unknown";
-          const model = normalizeToCanonical(rawModel);
           const usage = createDisplayUsage(
             msg.metadata.usage,
             rawModel,
-            msg.metadata.providerMetadata
+            msg.metadata.providerMetadata,
+            msg.metadata.metadataModel
           );
 
           if (usage) {
-            const existing = result.byModel[model];
-            result.byModel[model] = existing ? sumUsageHistory([existing, usage])! : usage;
-            lastAssistantUsage = { model, usage };
+            mergeUsageForModel(rawModel, usage);
+            lastAssistantUsage = { model: normalizeToCanonical(rawModel), usage };
+          }
+        }
+
+        const toolModelUsages = msg.metadata?.toolModelUsages;
+        if (Array.isArray(toolModelUsages)) {
+          for (const toolModelUsage of toolModelUsages) {
+            rebuildToolModelUsage(toolModelUsage);
           }
         }
       }

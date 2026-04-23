@@ -26,7 +26,8 @@ CREATE TABLE IF NOT EXISTS events (
   tool_execution_ms DOUBLE,
   output_tps DOUBLE,
   response_index INTEGER,
-  is_sub_agent BOOLEAN DEFAULT false
+  is_sub_agent BOOLEAN DEFAULT false,
+  tool_name TEXT
 )
 `;
 

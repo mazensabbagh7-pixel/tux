@@ -33,6 +33,7 @@ INSERT INTO events (
   timestamp,
   date,
   model,
+  tool_name,
   thinking_level,
   input_tokens,
   output_tokens,
@@ -52,9 +53,9 @@ INSERT INTO events (
   response_index,
   is_sub_agent
 ) VALUES (
-  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-  ?, ?, ?, ?, ?, ?, ?
+  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+  ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+  ?, ?, ?, ?, ?, ?
 )
 `;
 
@@ -148,6 +149,7 @@ export async function appendEvents(conn: DuckDBConnection, events: IngestEvent[]
       appendDoubleOrNull(appender, row.output_tps);
       appendIntegerOrNull(appender, row.response_index);
       appender.appendBoolean(row.is_sub_agent);
+      appendVarcharOrNull(appender, row.tool_name);
       appender.endRow();
     }
 
@@ -184,6 +186,78 @@ interface IngestEvent {
   row: EventRow;
   sequence: number;
   date: string | null;
+}
+
+interface IngestEventContext {
+  workspaceId: string;
+  workspaceMeta: WorkspaceMeta;
+  agentId: string | null;
+  thinkingLevel: string | null;
+  responseIndex: number;
+  isSubAgent: boolean;
+}
+
+function buildIngestEventRow(params: {
+  inheritedContext: IngestEventContext;
+  model: string | null;
+  metadataModel?: string;
+  usage: LanguageModelV2Usage;
+  providerMetadata?: Record<string, unknown>;
+  toolName: string | null;
+  timestamp: number | null;
+  durationMs: number | null;
+  ttftMs: number | null;
+  outputTps: number | null;
+}): {
+  parsed: ReturnType<typeof EventRowSchema.safeParse>;
+  date: string | null;
+} {
+  const displayUsage = createDisplayUsage(
+    params.usage,
+    params.model ?? "unknown",
+    params.providerMetadata,
+    params.metadataModel
+  );
+  assert(displayUsage, "createDisplayUsage should return data for parsed usage payloads");
+
+  const cachedCostUsd =
+    (displayUsage.cached.cost_usd ?? 0) + (displayUsage.cacheCreate.cost_usd ?? 0);
+  return {
+    parsed: EventRowSchema.safeParse({
+      workspace_id: params.inheritedContext.workspaceId,
+      project_path: params.inheritedContext.workspaceMeta.projectPath ?? null,
+      project_name: params.inheritedContext.workspaceMeta.projectName ?? null,
+      workspace_name: params.inheritedContext.workspaceMeta.workspaceName ?? null,
+      parent_workspace_id: params.inheritedContext.workspaceMeta.parentWorkspaceId ?? null,
+      agent_id: params.inheritedContext.agentId,
+      timestamp: params.timestamp,
+      model: params.model,
+      tool_name: params.toolName,
+      thinking_level: params.inheritedContext.thinkingLevel,
+      input_tokens: displayUsage.input.tokens,
+      output_tokens: displayUsage.output.tokens,
+      reasoning_tokens: displayUsage.reasoning.tokens,
+      cached_tokens: displayUsage.cached.tokens,
+      cache_create_tokens: displayUsage.cacheCreate.tokens,
+      input_cost_usd: displayUsage.input.cost_usd ?? 0,
+      output_cost_usd: displayUsage.output.cost_usd ?? 0,
+      reasoning_cost_usd: displayUsage.reasoning.cost_usd ?? 0,
+      cached_cost_usd: cachedCostUsd,
+      total_cost_usd:
+        (displayUsage.input.cost_usd ?? 0) +
+        (displayUsage.output.cost_usd ?? 0) +
+        (displayUsage.reasoning.cost_usd ?? 0) +
+        cachedCostUsd,
+      duration_ms: params.durationMs,
+      ttft_ms: params.ttftMs,
+      streaming_ms: null,
+      tool_execution_ms: null,
+      output_tps: params.outputTps,
+      response_index: params.inheritedContext.responseIndex,
+      is_sub_agent: params.inheritedContext.isSubAgent,
+    }),
+    date: dateBucketFromTimestamp(params.timestamp),
+  };
 }
 
 interface DelegationRollupRaw {
@@ -468,108 +542,120 @@ function parsePersistedMessage(
   }
 }
 
-function extractIngestEvent(params: {
+function extractIngestEvents(params: {
   workspaceId: string;
   workspaceMeta: WorkspaceMeta;
   message: PersistedMessage;
   lineNumber: number;
   responseIndex: number;
-}): IngestEvent | null {
+}): IngestEvent[] {
   if (params.message.role !== "assistant") {
-    return null;
+    return [];
   }
 
   const metadata = isRecord(params.message.metadata) ? params.message.metadata : null;
   if (!metadata) {
-    return null;
+    return [];
   }
 
   const usage = parseUsage(metadata.usage);
-  if (!usage) {
-    return null;
-  }
-
   const sequence = toFiniteInteger(metadata.historySequence) ?? params.lineNumber;
-
-  const model = toOptionalString(metadata.model);
-  const metadataModel = toOptionalString(metadata.metadataModel);
-  const providerMetadata = isRecord(metadata.providerMetadata)
-    ? metadata.providerMetadata
-    : undefined;
-
-  const displayUsage = createDisplayUsage(
-    usage,
-    model ?? "unknown",
-    providerMetadata,
-    metadataModel
-  );
-  assert(displayUsage, "createDisplayUsage should return data for parsed usage payloads");
-
   const timestamp =
     toFiniteNumber(metadata.timestamp) ?? parseCreatedAtTimestamp(params.message.createdAt) ?? null;
-  const dateBucket = dateBucketFromTimestamp(timestamp);
-
-  const inputTokens = displayUsage.input.tokens;
-  const outputTokens = displayUsage.output.tokens;
-  const reasoningTokens = displayUsage.reasoning.tokens;
-  const cachedTokens = displayUsage.cached.tokens;
-  const cacheCreateTokens = displayUsage.cacheCreate.tokens;
-
-  const inputCostUsd = displayUsage.input.cost_usd ?? 0;
-  const outputCostUsd = displayUsage.output.cost_usd ?? 0;
-  const reasoningCostUsd = displayUsage.reasoning.cost_usd ?? 0;
-  const cachedCostUsd =
-    (displayUsage.cached.cost_usd ?? 0) + (displayUsage.cacheCreate.cost_usd ?? 0);
-
   const durationMs = toFiniteNumber(metadata.duration);
-  const ttftMs = extractTtftMs(metadata);
-  const outputTps =
-    durationMs !== null && durationMs > 0 ? outputTokens / (durationMs / 1000) : null;
-
-  const maybeEvent = {
-    workspace_id: params.workspaceId,
-    project_path: params.workspaceMeta.projectPath ?? null,
-    project_name: params.workspaceMeta.projectName ?? null,
-    workspace_name: params.workspaceMeta.workspaceName ?? null,
-    parent_workspace_id: params.workspaceMeta.parentWorkspaceId ?? null,
-    agent_id: toOptionalString(metadata.agentId) ?? null,
-    timestamp,
-    model: model ?? null,
-    thinking_level: toOptionalString(metadata.thinkingLevel) ?? null,
-    input_tokens: inputTokens,
-    output_tokens: outputTokens,
-    reasoning_tokens: reasoningTokens,
-    cached_tokens: cachedTokens,
-    cache_create_tokens: cacheCreateTokens,
-    input_cost_usd: inputCostUsd,
-    output_cost_usd: outputCostUsd,
-    reasoning_cost_usd: reasoningCostUsd,
-    cached_cost_usd: cachedCostUsd,
-    total_cost_usd: inputCostUsd + outputCostUsd + reasoningCostUsd + cachedCostUsd,
-    duration_ms: durationMs,
-    ttft_ms: ttftMs,
-    streaming_ms: null,
-    tool_execution_ms: null,
-    output_tps: outputTps,
-    response_index: params.responseIndex,
-    is_sub_agent: (params.workspaceMeta.parentWorkspaceId ?? "").length > 0,
+  const inheritedContext: IngestEventContext = {
+    workspaceId: params.workspaceId,
+    workspaceMeta: params.workspaceMeta,
+    agentId: toOptionalString(metadata.agentId) ?? null,
+    thinkingLevel: toOptionalString(metadata.thinkingLevel) ?? null,
+    responseIndex: params.responseIndex,
+    isSubAgent: (params.workspaceMeta.parentWorkspaceId ?? "").length > 0,
   };
+  const events: IngestEvent[] = [];
 
-  const parsedEvent = EventRowSchema.safeParse(maybeEvent);
-  if (!parsedEvent.success) {
-    log.warn("[analytics-etl] Skipping invalid analytics row", {
-      workspaceId: params.workspaceId,
-      lineNumber: params.lineNumber,
-      issues: parsedEvent.error.issues,
+  // Tool usage snapshots can survive even when the parent assistant usage payload is missing.
+  // Keep ingesting those rows so malformed or partial history does not drop tool costs.
+  if (usage) {
+    const parentRow = buildIngestEventRow({
+      inheritedContext,
+      model: toOptionalString(metadata.model) ?? null,
+      metadataModel: toOptionalString(metadata.metadataModel),
+      usage,
+      providerMetadata: isRecord(metadata.providerMetadata) ? metadata.providerMetadata : undefined,
+      toolName: null,
+      timestamp,
+      durationMs,
+      ttftMs: extractTtftMs(metadata),
+      outputTps: null,
     });
-    return null;
+    if (!parentRow.parsed.success) {
+      log.warn("[analytics-etl] Skipping invalid analytics row", {
+        workspaceId: params.workspaceId,
+        lineNumber: params.lineNumber,
+        issues: parentRow.parsed.error.issues,
+      });
+    } else {
+      if (durationMs !== null && durationMs > 0) {
+        parentRow.parsed.data.output_tps =
+          parentRow.parsed.data.output_tokens / (durationMs / 1000);
+      }
+
+      events.push({
+        row: parentRow.parsed.data,
+        sequence,
+        date: parentRow.date,
+      });
+    }
   }
 
-  return {
-    row: parsedEvent.data,
-    sequence,
-    date: dateBucket,
-  };
+  const toolModelUsages = metadata.toolModelUsages;
+  if (!Array.isArray(toolModelUsages)) {
+    return events;
+  }
+
+  for (const rawToolModelUsage of toolModelUsages) {
+    if (!isRecord(rawToolModelUsage)) {
+      continue;
+    }
+
+    const toolName = toOptionalString(rawToolModelUsage.toolName);
+    const toolModel = toOptionalString(rawToolModelUsage.model);
+    const toolUsage = parseUsage(rawToolModelUsage.usage);
+    if (!toolName || !toolModel || !toolUsage) {
+      continue;
+    }
+
+    const toolRow = buildIngestEventRow({
+      inheritedContext,
+      model: toolModel,
+      metadataModel: toOptionalString(rawToolModelUsage.metadataModel),
+      usage: toolUsage,
+      providerMetadata: isRecord(rawToolModelUsage.providerMetadata)
+        ? rawToolModelUsage.providerMetadata
+        : undefined,
+      toolName,
+      timestamp: toFiniteNumber(rawToolModelUsage.timestamp) ?? timestamp,
+      durationMs: null,
+      ttftMs: null,
+      outputTps: null,
+    });
+    if (!toolRow.parsed.success) {
+      log.warn("[analytics-etl] Skipping invalid tool analytics row", {
+        workspaceId: params.workspaceId,
+        lineNumber: params.lineNumber,
+        issues: toolRow.parsed.error.issues,
+      });
+      continue;
+    }
+
+    events.push({
+      row: toolRow.parsed.data,
+      sequence,
+      date: toolRow.date,
+    });
+  }
+
+  return events;
 }
 
 async function readWatermark(
@@ -663,7 +749,7 @@ function createEventHeadSignatureFromParsedEvent(event: IngestEvent): string {
   });
 }
 
-async function readPersistedWorkspaceHeadSignature(
+export async function readPersistedWorkspaceHeadSignature(
   conn: DuckDBConnection,
   workspaceId: string
 ): Promise<string | null> {
@@ -672,7 +758,10 @@ async function readPersistedWorkspaceHeadSignature(
     SELECT timestamp, model, total_cost_usd
     FROM events
     WHERE workspace_id = ?
-    ORDER BY response_index ASC NULLS LAST
+    ORDER BY
+      response_index ASC NULLS LAST,
+      CASE WHEN tool_name IS NULL THEN 0 ELSE 1 END ASC,
+      timestamp ASC
     LIMIT 1
     `,
     [workspaceId]
@@ -793,6 +882,7 @@ async function replaceEventsByResponseIndex(
         row.timestamp,
         event.date,
         row.model,
+        row.tool_name,
         row.thinking_level,
         row.input_tokens,
         row.output_tokens,
@@ -846,6 +936,7 @@ async function replaceWorkspaceEvents(
         row.timestamp,
         event.date,
         row.model,
+        row.tool_name,
         row.thinking_level,
         row.input_tokens,
         row.output_tokens,
@@ -957,24 +1048,26 @@ export async function ingestWorkspace(
       continue;
     }
 
-    const event = extractIngestEvent({
+    const events = extractIngestEvents({
       workspaceId,
       workspaceMeta,
       message,
       lineNumber,
       responseIndex,
     });
-    if (!event) {
+    if (events.length === 0) {
       continue;
     }
 
-    assert(
-      Number.isInteger(event.sequence),
-      "ingestWorkspace: expected assistant event sequence to be an integer"
-    );
+    for (const event of events) {
+      assert(
+        Number.isInteger(event.sequence),
+        "ingestWorkspace: expected assistant event sequence to be an integer"
+      );
+      parsedEvents.push(event);
+    }
 
     responseIndex += 1;
-    parsedEvents.push(event);
   }
 
   const parsedMaxSequence = getMaxSequence(parsedEvents);
@@ -1385,19 +1478,19 @@ export async function parseWorkspaceFromDisk(
       continue;
     }
 
-    const event = extractIngestEvent({
+    const extractedEvents = extractIngestEvents({
       workspaceId,
       workspaceMeta,
       message,
       lineNumber: i + 1,
       responseIndex,
     });
-    if (!event) {
+    if (extractedEvents.length === 0) {
       continue;
     }
 
     responseIndex += 1;
-    events.push(event);
+    events.push(...extractedEvents);
   }
 
   const delegationRollupRaw = await readDelegationRollupFilesFromDisk(sessionDir);
