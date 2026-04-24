@@ -52,23 +52,18 @@ const MODEL_DEFINITIONS = {
   // GPT alias tracks the latest stable GPT-5 tier.
   GPT: {
     provider: "openai",
-    providerModelId: "gpt-5.4",
-    aliases: ["gpt"],
-    warm: true,
-    tokenizerOverride: "openai/gpt-5",
-  },
-  GPT_55: {
-    provider: "openai",
     providerModelId: "gpt-5.5",
-    aliases: ["gpt-5.5"],
+    aliases: ["gpt", "gpt-5.5"],
     warm: true,
     tokenizerOverride: "openai/gpt-5",
   },
   // GPT Pro alias tracks the latest GPT-5 Pro tier.
   GPT_PRO: {
     provider: "openai",
-    providerModelId: "gpt-5.4-pro",
-    aliases: ["gpt-pro"],
+    providerModelId: "gpt-5.5-pro",
+    aliases: ["gpt-pro", "gpt-5.5-pro"],
+    warm: true,
+    tokenizerOverride: "openai/gpt-5",
   },
   // GPT Mini alias tracks the latest stable GPT-5 mini tier.
   GPT_54_MINI: {
