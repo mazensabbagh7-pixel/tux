@@ -133,16 +133,52 @@ export interface ResolvedCredentials {
   apiKey?: string; // anthropic, openai, etc.
   region?: string; // bedrock
   couponCode?: string; // mux-gateway
-  baseUrl?: string; // from config or env
+  baseUrl?: string; // runtime value from config or env when API-key auth is active
+  baseUrlResolved?: string; // display-only metadata, including when API key auth is missing
   organization?: string; // openai
   apiKeySource?: "config" | "file" | "env";
+  baseUrlSource?: "config" | "env";
 }
 
 /** Legacy alias for backward compatibility */
 export type ProviderConfigCheck = Pick<
   ResolvedCredentials,
-  "isConfigured" | "missingRequirement" | "apiKeySource"
+  | "isConfigured"
+  | "missingRequirement"
+  | "apiKeySource"
+  | "baseUrl"
+  | "baseUrlResolved"
+  | "baseUrlSource"
 >;
+
+/** Resolve a non-empty base URL saved in provider config. */
+export function resolveConfiguredBaseUrl(config: ProviderConfigRaw): string | undefined {
+  if (hasNonEmptyString(config.baseUrl)) {
+    // The settings UI writes the canonical `baseUrl` key. Prefer it over
+    // SDK-style `baseURL` so saved edits cannot be shadowed by stale aliases.
+    return config.baseUrl.trim();
+  }
+
+  if (hasNonEmptyString(config.baseURL)) {
+    return config.baseURL.trim();
+  }
+
+  return undefined;
+}
+
+function resolveBaseUrl(
+  provider: ProviderName,
+  config: ProviderConfigRaw,
+  env: Record<string, string | undefined>
+): Pick<ResolvedCredentials, "baseUrlResolved" | "baseUrlSource"> {
+  const configBaseUrl = resolveConfiguredBaseUrl(config);
+  if (configBaseUrl) {
+    return { baseUrlResolved: configBaseUrl, baseUrlSource: "config" };
+  }
+
+  const envBaseUrl = resolveEnv(PROVIDER_ENV_VARS[provider]?.baseUrl, env);
+  return envBaseUrl ? { baseUrlResolved: envBaseUrl, baseUrlSource: "env" } : {};
+}
 
 /**
  * Read an API key from a file path. Supports ~ for home directory.
@@ -199,10 +235,11 @@ export function resolveProviderCredentials(
       : { isConfigured: false, missingRequirement: "coupon_code" };
   }
 
-  // Keyless providers (e.g., ollama): require explicit opt-in via baseUrl or models
+  // Keyless providers (e.g., ollama): require explicit opt-in via baseUrl/baseURL or models
   const def = PROVIDER_DEFINITIONS[provider];
   if (!def.requiresApiKey) {
-    const hasExplicitConfig = Boolean(config.baseUrl ?? (config.models?.length ?? 0) > 0);
+    const hasConfiguredModels = (config.models?.length ?? 0) > 0;
+    const hasExplicitConfig = Boolean(resolveConfiguredBaseUrl(config) ?? hasConfiguredModels);
     return { isConfigured: hasExplicitConfig };
   }
 
@@ -211,12 +248,9 @@ export function resolveProviderCredentials(
   const configKey =
     typeof config.apiKey === "string" && config.apiKey.trim().length > 0 ? config.apiKey : null;
   const fileKey = configKey ? null : resolveApiKeyFile(config.apiKeyFile as string | undefined);
-  const apiKey = configKey ?? fileKey ?? resolveEnv(envMapping?.apiKey, env);
-  const configBaseUrl =
-    (typeof config.baseURL === "string" && config.baseURL) ||
-    (typeof config.baseUrl === "string" && config.baseUrl) ||
-    undefined;
-  const baseUrl = configBaseUrl ?? resolveEnv(envMapping?.baseUrl, env);
+  const envKey = configKey || fileKey ? undefined : resolveEnv(envMapping?.apiKey, env);
+  const apiKey = configKey ?? fileKey ?? envKey;
+  const baseUrlInfo = resolveBaseUrl(provider, config, env);
   // Config organization takes precedence over env var (user's explicit choice)
   const configOrganization =
     typeof config.organization === "string" && config.organization
@@ -226,10 +260,13 @@ export function resolveProviderCredentials(
 
   if (apiKey) {
     const apiKeySource: "config" | "file" | "env" = configKey ? "config" : fileKey ? "file" : "env";
-    return { isConfigured: true, apiKey, baseUrl, organization, apiKeySource };
+    const configuredBaseUrlInfo = baseUrlInfo.baseUrlResolved
+      ? { ...baseUrlInfo, baseUrl: baseUrlInfo.baseUrlResolved }
+      : baseUrlInfo;
+    return { isConfigured: true, apiKey, organization, apiKeySource, ...configuredBaseUrlInfo };
   }
 
-  return { isConfigured: false, missingRequirement: "api_key" };
+  return { isConfigured: false, missingRequirement: "api_key", ...baseUrlInfo };
 }
 
 /**
@@ -279,8 +316,22 @@ export function checkProviderConfigured(
   config: ProviderConfigRaw,
   env: Record<string, string | undefined> = process.env
 ): ProviderConfigCheck {
-  const { isConfigured, missingRequirement } = resolveProviderCredentials(provider, config, env);
-  return { isConfigured, missingRequirement };
+  const {
+    isConfigured,
+    missingRequirement,
+    apiKeySource,
+    baseUrl,
+    baseUrlResolved,
+    baseUrlSource,
+  } = resolveProviderCredentials(provider, config, env);
+  return {
+    isConfigured,
+    missingRequirement,
+    apiKeySource,
+    baseUrl,
+    baseUrlResolved,
+    baseUrlSource,
+  };
 }
 
 // ============================================================================

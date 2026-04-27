@@ -1,4 +1,4 @@
-import { lightweightMeta } from "@/browser/stories/meta.js";
+import { CHROMATIC_DISABLED, lightweightMeta } from "@/browser/stories/meta.js";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { userEvent, waitFor, within } from "@storybook/test";
 import { ProvidersSection } from "./ProvidersSection.js";
@@ -58,6 +58,45 @@ export const ProvidersConfigured: Story = {
     const canvas = within(canvasElement);
 
     await canvas.findAllByTitle(/^Configured$/i, {}, { timeout: 5000 });
+  },
+};
+
+export const ProvidersEnvSourced: Story = {
+  render: () => (
+    <SettingsSectionStory
+      setup={() =>
+        setupSettingsStory({
+          providersConfig: {
+            openai: {
+              apiKeySet: false,
+              apiKeySource: "env",
+              isEnabled: true,
+              isConfigured: true,
+              baseUrlSource: "env",
+              baseUrlResolved: "https://env.openai.test/v1",
+            },
+          },
+        })
+      }
+    >
+      <ProvidersSection />
+    </SettingsSectionStory>
+  ),
+  parameters: {
+    chromatic: CHROMATIC_DISABLED,
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    const openaiButton = await canvas.findByRole("button", { name: /openai/i });
+    await userEvent.click(openaiButton);
+
+    await canvas.findByText("https://env.openai.test/v1");
+    await waitFor(() => {
+      if (canvas.queryAllByText(/Set by env vars\./i).length < 2) {
+        throw new Error("Expected env source labels for OpenAI key and base URL");
+      }
+    });
   },
 };
 
