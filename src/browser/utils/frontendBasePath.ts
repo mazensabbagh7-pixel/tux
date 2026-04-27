@@ -1,7 +1,17 @@
 import { getAppProxyBasePathFromPathname, stripAppProxyBasePath } from "@/common/appProxyBasePath";
 
-export const INITIAL_APP_PROXY_BASE_PATH =
-  typeof window === "undefined" ? null : getAppProxyBasePathFromPathname(window.location.pathname);
+function getInitialAppProxyBasePath(): string | null {
+  // Startup-time module initialization must tolerate partial DOM shims in tests or
+  // unusual hosts. A defined-but-incomplete `window` should behave like no browser
+  // window rather than poisoning every route helper import.
+  if (typeof window === "undefined" || !window.location) {
+    return null;
+  }
+
+  return getAppProxyBasePathFromPathname(window.location.pathname);
+}
+
+export const INITIAL_APP_PROXY_BASE_PATH = getInitialAppProxyBasePath();
 
 function normalizeRootRelativePath(pathname: string): string {
   return pathname.startsWith("/") ? pathname : `/${pathname}`;
