@@ -81,7 +81,7 @@ describe("getSubcommand", () => {
 
   test("packaged: gets arg at index 1", () => {
     const env = detectCliEnvironment({ electron: "33.0.0" }, undefined);
-    expect(getSubcommand(["mux", "server", "-p", "3001"], env)).toBe("server");
+    expect(getSubcommand(["tux", "server", "-p", "3001"], env)).toBe("server");
   });
 
   test("returns undefined when no subcommand", () => {
@@ -111,8 +111,8 @@ describe("getArgsAfterSplice", () => {
 
   test("packaged electron: returns args after firstArgIndex", () => {
     const env = detectCliEnvironment({ electron: "33.0.0" }, undefined);
-    // Simulates: ./mux api --help -> after splice -> ./mux --help
-    const argvAfterSplice = ["./mux", "--help"];
+    // Simulates: ./tux api --help -> after splice -> ./tux --help
+    const argvAfterSplice = ["./tux", "--help"];
     expect(getArgsAfterSplice(argvAfterSplice, env)).toEqual(["--help"]);
   });
 
@@ -147,9 +147,9 @@ describe("isElectronLaunchArg", () => {
     expect(isElectronLaunchArg("--enable-logging", env)).toBe(true);
   });
 
-  test("returns true for mux:// deep links in packaged mode", () => {
+  test("returns true for tux:// deep links in packaged mode", () => {
     const env = detectCliEnvironment({ electron: "33.0.0" }, undefined);
-    expect(isElectronLaunchArg("mux://chat/new?foo=bar", env)).toBe(true);
+    expect(isElectronLaunchArg("tux://chat/new?foo=bar", env)).toBe(true);
   });
 
   test("returns false for CLI flags in packaged mode (--help, --version)", () => {

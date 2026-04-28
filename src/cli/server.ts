@@ -63,8 +63,8 @@ const mockWindow: BrowserWindow = {
 async function main(): Promise<void> {
   const program = new Command();
   program
-    .name("mux server")
-    .description("HTTP/WebSocket ORPC server for mux")
+    .name("tux server")
+    .description("HTTP/WebSocket ORPC server for Tux")
     .option("-h, --host <host>", "bind to specific host", "localhost")
     .option("-p, --port <port>", "bind to specific port", "3000")
     .option("--auth-token <token>", "bearer token for HTTP/WS auth (default: auto-generated)")
@@ -121,7 +121,7 @@ async function main(): Promise<void> {
   const existing = await earlyLockfile.read();
   if (existing) {
     console.error(`Error: mux API server is already running at ${existing.baseUrl}`);
-    console.error(`Use 'mux api' commands to interact with the running instance.`);
+    console.error(`Use 'tux api' commands to interact with the running instance.`);
     process.exit(1);
   }
 
@@ -160,7 +160,7 @@ async function main(): Promise<void> {
   clearInterval(startupKeepalive);
 
   // --- Startup output ---
-  console.log(`\nmux server v${VERSION.git_describe}`);
+  console.log(`\ntux server v${VERSION.git_describe}`);
   console.log(`  URL:  ${serverInfo.baseUrl}`);
   if (serverInfo.networkBaseUrls.length > 0) {
     for (const url of serverInfo.networkBaseUrls) {

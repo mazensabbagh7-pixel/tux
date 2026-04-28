@@ -3,21 +3,21 @@ import { homedir } from "os";
 import { join } from "path";
 
 const LEGACY_MUX_DIR_NAME = ".cmux";
-const MUX_DIR_NAME = ".mux";
+const MUX_DIR_NAME = ".tux";
 
 /**
- * Migrate from the legacy ~/.cmux directory into ~/.mux for rebranded installs.
+ * Migrate from the legacy ~/.cmux or ~/.mux directory into ~/.tux for rebranded installs.
  * Called on startup to preserve data created by earlier releases.
  *
- * If .mux exists, nothing happens (already migrated).
- * If .cmux exists but .mux doesn't, moves .cmux → .mux and creates symlink.
+ * If .tux exists, nothing happens (already migrated).
+ * If .cmux exists but .tux doesn't, moves .cmux → .tux and creates symlink.
  * This ensures old scripts/tools referencing ~/.cmux continue working.
  */
 export function migrateLegacyMuxHome(): void {
   const oldPath = join(homedir(), LEGACY_MUX_DIR_NAME);
   const newPath = join(homedir(), MUX_DIR_NAME);
 
-  // If .mux exists, we're done (already migrated or fresh install)
+  // If .tux exists, we're done (already migrated or fresh install)
   if (existsSync(newPath)) {
     return;
   }
@@ -63,8 +63,8 @@ export function cleanupObsoleteMuxBinArtifacts(rootDir?: string): void {
 }
 
 /**
- * Get the root directory for all mux configuration and data.
- * Can be overridden with MUX_ROOT environment variable.
+ * Get the root directory for all Tux configuration and data.
+ * Can be overridden with TUX_ROOT or legacy MUX_ROOT environment variables.
  * Appends '-dev' suffix when NODE_ENV=development (explicit dev mode).
  *
  * This is a getter function to support test mocking of os.homedir().
@@ -73,6 +73,12 @@ export function cleanupObsoleteMuxBinArtifacts(rootDir?: string): void {
  * for organizational purposes. The process.env access is safe.
  */
 export function getMuxHome(): string {
+  // eslint-disable-next-line no-restricted-syntax, no-restricted-globals
+  if (process.env.TUX_ROOT) {
+    // eslint-disable-next-line no-restricted-syntax, no-restricted-globals
+    return process.env.TUX_ROOT;
+  }
+
   // eslint-disable-next-line no-restricted-syntax, no-restricted-globals
   if (process.env.MUX_ROOT) {
     // eslint-disable-next-line no-restricted-syntax, no-restricted-globals
@@ -88,7 +94,7 @@ export function getMuxHome(): string {
 
 /**
  * Get the directory where workspace git worktrees are stored.
- * Example: ~/.mux/src/my-project/feature-branch
+ * Example: ~/.tux/src/my-project/feature-branch
  *
  * @param rootDir - Optional root directory (defaults to getMuxHome())
  */
@@ -99,7 +105,7 @@ export function getMuxSrcDir(rootDir?: string): string {
 
 /**
  * Get the directory where session chat histories are stored.
- * Example: ~/.mux/sessions/workspace-id/chat.jsonl
+ * Example: ~/.tux/sessions/workspace-id/chat.jsonl
  *
  * @param rootDir - Optional root directory (defaults to getMuxHome())
  */
@@ -109,8 +115,8 @@ export function getMuxSessionsDir(rootDir?: string): string {
 }
 
 /**
- * Get the directory where mux backend logs are stored.
- * Example: ~/.mux/logs/mux.log
+ * Get the directory where Tux backend logs are stored.
+ * Example: ~/.tux/logs/mux.log
  *
  * @param rootDir - Optional root directory (defaults to getMuxHome())
  */
@@ -121,7 +127,7 @@ export function getMuxLogsDir(rootDir?: string): string {
 
 /**
  * Get the default directory for new projects created with bare names.
- * Example: ~/.mux/projects/my-project
+ * Example: ~/.tux/projects/my-project
  *
  * @param rootDir - Optional root directory (defaults to getMuxHome())
  */

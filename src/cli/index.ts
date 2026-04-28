@@ -3,7 +3,7 @@
 process.umask(0o077);
 
 /**
- * Mux CLI entry point.
+ * Tux CLI entry point.
  *
  * LAZY LOADING REQUIREMENT:
  * We manually route subcommands before calling program.parse() to avoid
@@ -20,7 +20,7 @@ process.umask(0o077);
  *
  * ARGV OFFSET:
  * In development (`electron .`), argv = [electron, ".", ...args] so first arg is at index 2.
- * In packaged apps (`./mux.AppImage`), argv = [app, ...args] so first arg is at index 1.
+ * In packaged apps (`./Tux.AppImage`), argv = [app, ...args] so first arg is at index 1.
  * process.defaultApp is true in dev mode and undefined in packaged apps.
  */
 import { Command } from "commander";
@@ -46,7 +46,7 @@ function launchDesktop(): void {
 
 if (subcommand === "run") {
   if (!isCommandAvailable("run", env)) {
-    console.error("The 'run' command is only available via the CLI (bun mux run).");
+    console.error("The 'run' command is only available via the CLI (bun tux run).");
     console.error("It is not bundled in Electron.");
     process.exit(1);
   }
@@ -76,7 +76,7 @@ if (subcommand === "run") {
   if (!isCommandAvailable("desktop", env)) {
     console.error("The 'desktop' command requires Electron to be installed.");
     console.error("When installed via npm, use the packaged desktop app instead.");
-    console.error("Download from: https://github.com/coder/mux/releases");
+    console.error("Download from: https://github.com/mazensabbagh7-pixel/tux/releases");
     process.exit(1);
   }
   launchDesktop();
@@ -96,8 +96,8 @@ if (subcommand === "run") {
   // Global flags are defined in CLI_GLOBAL_FLAGS (argv.ts) for routing logic.
   // Commander auto-adds --help/-h. We define --version/-v below.
   program
-    .name("mux")
-    .description("Mux - AI agent orchestration")
+    .name("tux")
+    .description("Tux - AI agent orchestration")
     .version(`${gitDescribe} (${gitCommit})`, "-v, --version");
 
   // Sanity check: ensure version flags match CLI_GLOBAL_FLAGS

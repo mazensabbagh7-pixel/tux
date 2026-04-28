@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * `mux run` - First-class CLI for running agent sessions
+ * `tux run` - First-class CLI for running agent sessions
  *
  * Usage:
  *   mux run "Fix the failing tests"
@@ -85,7 +85,7 @@ type CLIMode = "plan" | "exec";
 
 function parseRuntimeConfig(value: string | undefined, srcBaseDir: string): RuntimeConfig {
   if (!value) {
-    // Default to local for `mux run` (no worktree isolation needed for one-off)
+    // Default to local for `tux run` (no worktree isolation needed for one-off)
     return { type: "local" };
   }
 
@@ -111,7 +111,7 @@ function parseRuntimeConfig(value: string | undefined, srcBaseDir: string): Runt
 }
 
 function parseThinkingLevel(value: string | undefined): ParsedThinkingInput {
-  if (!value) return DEFAULT_THINKING_LEVEL; // Default for mux run
+  if (!value) return DEFAULT_THINKING_LEVEL; // Default for tux run
 
   // Accepts named levels (off, low, med, high, max, xhigh) and numeric (0–N)
   const level = parseThinkingInput(value);
@@ -235,7 +235,7 @@ function collectMcpServers(value: string, previous: MCPServerEntry[]): MCPServer
 const program = new Command();
 
 program
-  .name("mux run")
+  .name("tux run")
   .description("Run an agent session in the current directory")
   .argument("[message...]", "instruction for the agent (can also be piped via stdin)")
   .option("-d, --dir <path>", "project directory", process.cwd())
@@ -270,15 +270,15 @@ program
     "after",
     `
 Examples:
-  $ mux run "Fix the failing tests"
-  $ mux run --dir /path/to/project "Add authentication"
-  $ mux run --runtime "ssh user@host" "Deploy changes"
-  $ mux run --mode plan "Refactor the auth module"
-  $ mux run --budget 1.50 "Quick code review"
-  $ echo "Add logging" | mux run
-  $ mux run --json "List all files" | jq '.type'
-  $ mux run --mcp "memory=npx -y @modelcontextprotocol/server-memory" "Remember this"
-  $ mux run --mcp "chrome=npx chrome-devtools-mcp" --mcp "fs=npx @anthropic/mcp-fs" "Take a screenshot"
+  $ tux run "Fix the failing tests"
+  $ tux run --dir /path/to/project "Add authentication"
+  $ tux run --runtime "ssh user@host" "Deploy changes"
+  $ tux run --mode plan "Refactor the auth module"
+  $ tux run --budget 1.50 "Quick code review"
+  $ echo "Add logging" | tux run
+  $ tux run --json "List all files" | jq '.type'
+  $ tux run --mcp "memory=npx -y @modelcontextprotocol/server-memory" "Remember this"
+  $ tux run --mcp "chrome=npx chrome-devtools-mcp" --mcp "fs=npx @anthropic/mcp-fs" "Take a screenshot"
 `
   );
 
@@ -330,7 +330,7 @@ async function main(): Promise<number> {
 
   if (!message) {
     console.error("Error: No message provided. Pass as argument or pipe via stdin.");
-    console.error('Usage: mux run "Your instruction here"');
+    console.error('Usage: tux run "Your instruction here"');
     process.exit(1);
   }
 
@@ -473,7 +473,7 @@ async function main(): Promise<number> {
     },
   });
 
-  // `mux run` uses createCoreServices directly (without ServiceContainer), so wire
+  // `tux run` uses createCoreServices directly (without ServiceContainer), so wire
   // Codex OAuth explicitly to ensure Codex-routed OpenAI requests can load/refresh
   // OAuth tokens from providers.jsonc.
   const codexOauthService = new CodexOauthService(config, providerService);
@@ -495,7 +495,7 @@ async function main(): Promise<number> {
       "Set the process exit code for this CLI session. " +
       "Use this in CI/automation to signal success (0) or failure (non-zero). " +
       "For example, exit 1 to block a PR merge when issues are found. " +
-      "Only available in `mux run` CLI mode.",
+      "Only available in `tux run` CLI mode.",
     inputSchema: setExitCodeSchema,
     execute: ({ exit_code }: z.infer<typeof setExitCodeSchema>) => {
       agentExitCode = exit_code;

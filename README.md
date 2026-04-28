@@ -3,18 +3,18 @@
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/img/white-mux.svg" />
   <source media="(prefers-color-scheme: light)" srcset="docs/img/black-mux.svg" />
-  <img src="docs/img/black-mux.svg" alt="mux logo" width="18%" />
+  <img src="docs/img/black-mux.svg" alt="Tux logo" width="18%" />
 </picture>
 
-# Mux - Coding Agent Multiplexer
+# Tux - Coding Agent Multiplexer
 
-[![Download](https://img.shields.io/badge/Download-Releases-purple)](https://github.com/coder/mux/releases)
+[![Download](https://img.shields.io/badge/Download-Releases-purple)](https://github.com/mazensabbagh7-pixel/tux/releases)
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL%203.0-blue.svg)](LICENSE)
 [![Discord](https://img.shields.io/discord/1446553342699507907?logo=discord&label=Discord)](https://discord.gg/thkEdtwm8c)
 
 </div>
 
-Mux is a desktop & browser application for parallel agentic development. It enables developers to plan and execute tasks with multiple AI agents on local or remote compute.
+Tux is a desktop & browser application for parallel agentic development. It enables developers to plan and execute tasks with multiple AI agents on local or remote compute.
 
 <p><img src="./docs/img/mux-demo.gif" alt="mux product demo" width="100%" /></p>
 
@@ -31,14 +31,14 @@ Mux is a desktop & browser application for parallel agentic development. It enab
 - Supporting UI and keybinds for efficiently managing a suite of agents
 - Rich markdown outputs (mermaid diagrams, LaTeX, etc.)
 
-Mux has a custom agent loop but much of the core UX is inspired by Claude Code. You'll find familiar features like Plan/Exec mode, vim inputs, `/compact` and new ones
+Tux has a custom agent loop but much of the core UX is inspired by Claude Code. You'll find familiar features like Plan/Exec mode, vim inputs, `/compact` and new ones
 like [opportunistic compaction](https://mux.coder.com/workspaces/compaction) and [mode prompts](https://mux.coder.com/agents/instruction-files#mode-prompts).
 
 **[Read the full documentation →](https://mux.coder.com)**
 
 ## Install
 
-Download pre-built binaries from [the releases page](https://github.com/coder/mux/releases) for
+Download pre-built binaries from this fork's releases page for
 macOS and Linux.
 
 [More on installation →](https://mux.coder.com/install)

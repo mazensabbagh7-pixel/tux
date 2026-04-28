@@ -1,5 +1,5 @@
 /**
- * Shared mux:// deep link payload types.
+ * Shared tux:// deep link payload types.
  *
  * This lives in common so desktop main/preload/renderer can agree on semantics
  * without importing any Electron-only code.
@@ -10,7 +10,7 @@ export interface MuxDeepLinkPayload {
 
   /**
    * Human-friendly project selector. Matches against the final path segment
-   * (e.g., /Users/me/repos/mux -> "mux").
+   * (e.g., /Users/me/repos/tux -> "tux").
    */
   project?: string;
 

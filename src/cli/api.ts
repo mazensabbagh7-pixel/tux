@@ -6,7 +6,7 @@
  *
  * Server discovery priority:
  * 1. MUX_SERVER_URL env var (explicit override)
- * 2. Lockfile at ~/.mux/server.lock (running Electron or mux server)
+ * 2. Lockfile at ~/.tux/server.lock (running Electron or Tux server)
  * 3. Fallback to http://localhost:3000
  */
 
@@ -66,8 +66,8 @@ async function discoverServer(): Promise<ServerDiscovery> {
   // run() sets exitOverride on root, uses parseAsync, and handles process exit properly
   const { run } = createCli({
     router: proxiedRouter,
-    name: "mux api",
-    description: "Interact with the mux API via a running server",
+    name: "tux api",
+    description: "Interact with the Tux API via a running server",
   });
 
   try {

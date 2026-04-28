@@ -7,10 +7,10 @@ function getNonEmptySearchParam(url: URL, key: string): string | undefined {
 }
 
 /**
- * Parse a mux:// deep link into a typed payload.
+ * Parse a tux:// deep link into a typed payload.
  *
  * Currently supported route:
- * - mux://chat/new
+ * - tux://chat/new
  */
 export function parseMuxDeepLink(raw: string): MuxDeepLinkPayload | null {
   let url: URL;
@@ -21,7 +21,7 @@ export function parseMuxDeepLink(raw: string): MuxDeepLinkPayload | null {
     return null;
   }
 
-  if (url.protocol !== "mux:") {
+  if (url.protocol !== "tux:") {
     return null;
   }
 
@@ -56,7 +56,7 @@ export function parseMuxDeepLink(raw: string): MuxDeepLinkPayload | null {
 export function normalizeProjectPathForComparison(projectPath: string, platform?: string): string {
   let normalized = projectPath.trim();
 
-  // Be forgiving: mux:// links may include trailing path separators.
+  // Be forgiving: tux:// links may include trailing path separators.
   normalized = normalized.replace(/[\\/]+$/, "");
 
   if (platform === "win32") {
@@ -76,7 +76,7 @@ function getLastPathSegment(projectPath: string): string {
  * Resolve a configured project path from a human-friendly deep-link `project` query.
  *
  * Matching rules:
- * - Compare against the final path segment (e.g. /Users/me/repos/mux -> "mux")
+ * - Compare against the final path segment (e.g. /Users/me/repos/tux -> "tux")
  * - Prefer exact matches (case-insensitive)
  * - Otherwise, prefer substring matches (case-insensitive), picking the shortest
  *   name as the "closest" match.

@@ -2,7 +2,7 @@
  * CLI environment detection for correct argv parsing across:
  * - bun/node direct invocation
  * - Electron dev mode (electron .)
- * - Packaged Electron app (./mux.AppImage)
+ * - Packaged Electron app (./Tux.AppImage)
  */
 
 export interface CliEnvironment {
@@ -93,7 +93,7 @@ export function isElectronLaunchArg(
 
   // In packaged Electron, Windows/Linux deep links are passed in argv.
   // Treat them as desktop launch args instead of unknown CLI subcommands.
-  if (subcommand?.startsWith("mux://") === true) return true;
+  if (subcommand?.startsWith("tux://") === true) return true;
 
   if (env.isPackagedElectron) {
     // In packaged: flags that aren't CLI flags should launch desktop

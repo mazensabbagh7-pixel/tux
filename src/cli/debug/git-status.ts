@@ -125,7 +125,7 @@ export function gitStatusCommand(workspaceId?: string) {
   console.log(`Found ${workspaces.length} workspaces\n`);
 
   if (workspaces.length === 0) {
-    console.log("No workspaces found! Check that ~/.mux/src/ contains workspace directories.");
+    console.log("No workspaces found! Check that ~/.tux/src/ contains workspace directories.");
     process.exit(1);
   }
 

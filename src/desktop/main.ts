@@ -26,13 +26,13 @@ if (process.platform === "darwin") {
   }
 }
 
-// Migrate ~/.cmux and clean obsolete mux-managed bin artifacts before startup uses mux home paths.
+// Migrate ~/.cmux and clean obsolete Tux-managed bin artifacts before startup uses Tux home paths.
 try {
   migrateLegacyMuxHome();
   cleanupObsoleteMuxBinArtifacts();
 } catch (error) {
   // Startup initialization must never crash the app.
-  console.debug("[mux-home] Failed mux home startup migrations:", error);
+  console.debug("[tux-home] Failed Tux home startup migrations:", error);
 }
 
 import { randomBytes } from "crypto";
@@ -135,7 +135,7 @@ const localhostProxyTemplate =
 const devServerPort = process.env.MUX_DEVSERVER_PORT ?? "5173";
 
 console.log(
-  `Mux starting - version: ${(VERSION as { git?: string; buildTime?: string }).git ?? "(dev)"} (built: ${(VERSION as { git?: string; buildTime?: string }).buildTime ?? "dev-mode"})`
+  `Tux starting - version: ${(VERSION as { git?: string; buildTime?: string }).git ?? "(dev)"} (built: ${(VERSION as { git?: string; buildTime?: string }).buildTime ?? "dev-mode"})`
 );
 console.log("Main process starting...");
 
@@ -197,7 +197,7 @@ if (!gotTheLock) {
     try {
       handleArgvMuxDeepLinks(argv);
     } catch (error) {
-      console.debug("[deep-link] Failed to parse second-instance argv for mux deep links:", error);
+      console.debug("[deep-link] Failed to parse second-instance argv for tux deep links:", error);
     }
 
     focusMainWindow();
@@ -211,7 +211,7 @@ let isQuitting = false;
 let latestUpdateStatus: UpdateStatus = { type: "idle" };
 let isUpdateClosePromptOpen = false;
 
-// mux:// deep links can arrive before the main window exists / finishes loading.
+// tux:// deep links can arrive before the main window exists / finishes loading.
 const bufferedMuxDeepLinks: MuxDeepLinkPayload[] = [];
 let mainWindowFinishedLoading = false;
 
@@ -229,7 +229,7 @@ function flushBufferedMuxDeepLinks() {
   while (bufferedMuxDeepLinks.length > 0) {
     const payload = bufferedMuxDeepLinks[0];
     try {
-      mainWindow.webContents.send("mux:deep-link", payload);
+      mainWindow.webContents.send("tux:deep-link", payload);
       bufferedMuxDeepLinks.shift();
     } catch (error) {
       // Best-effort: never crash startup if the renderer isn't ready.
@@ -250,7 +250,7 @@ function handleMuxDeepLink(raw: string) {
       return;
     }
 
-    mainWindow.webContents.send("mux:deep-link", payload);
+    mainWindow.webContents.send("tux:deep-link", payload);
   } catch (error) {
     // Best-effort: never crash startup if argv parsing/protocol handling is weird.
     console.debug(`[deep-link] Failed to handle mux deep link: ${raw}`, error);
@@ -276,7 +276,7 @@ if (process.platform === "darwin") {
 try {
   handleArgvMuxDeepLinks(process.argv);
 } catch (error) {
-  console.debug("[deep-link] Failed to parse initial argv for mux deep links:", error);
+  console.debug("[deep-link] Failed to parse initial argv for tux deep links:", error);
 }
 
 function registerMuxProtocolClient() {
@@ -290,14 +290,14 @@ function registerMuxProtocolClient() {
     });
 
     if (registration) {
-      app.setAsDefaultProtocolClient("mux", registration.executable, registration.args);
+      app.setAsDefaultProtocolClient("tux", registration.executable, registration.args);
       return;
     }
 
-    app.setAsDefaultProtocolClient("mux");
+    app.setAsDefaultProtocolClient("tux");
   } catch (error) {
     // Best-effort: never crash startup if protocol registration fails.
-    console.debug("[deep-link] Failed to register mux:// protocol handler:", error);
+    console.debug("[deep-link] Failed to register tux:// protocol handler:", error);
   }
 }
 
@@ -447,7 +447,7 @@ function openMuxFromTray() {
   // On macOS the app stays open after all windows are closed; recreate the window.
   if (process.platform === "darwin") {
     if (!services) {
-      console.warn(`[${timestamp()}] [tray] Cannot open mux (services not loaded yet)`);
+      console.warn(`[${timestamp()}] [tray] Cannot open Tux (services not loaded yet)`);
       return;
     }
 
@@ -485,7 +485,7 @@ function createTray() {
 
   const menu = Menu.buildFromTemplate([
     {
-      label: "Open mux",
+      label: "Open Tux",
       click: () => {
         openMuxFromTray();
       },
@@ -631,7 +631,7 @@ async function loadServices(): Promise<void> {
 
   const orpcContext = services.toORPCContext();
 
-  electronIpcMain.handle("mux:get-is-rosetta", async () => {
+  electronIpcMain.handle("tux:get-is-rosetta", async () => {
     if (process.platform !== "darwin") {
       return false;
     }
@@ -646,7 +646,7 @@ async function loadServices(): Promise<void> {
       return false;
     }
   });
-  electronIpcMain.handle("mux:get-is-windows-wsl-shell", async () => {
+  electronIpcMain.handle("tux:get-is-windows-wsl-shell", async () => {
     if (process.platform !== "win32") return false;
 
     const normalize = (p: string) => p.replace(/\//g, "\\").toLowerCase();
@@ -868,7 +868,7 @@ function createWindow() {
       contextIsolation: true,
       preload: path.join(__dirname, "../preload.js"),
     },
-    title: "mux - coder multiplexer",
+    title: "Tux - coding agent multiplexer",
     // Hide menu bar on Linux by default (like VS Code)
     // User can press Alt to toggle it
     autoHideMenuBar: process.platform === "linux",
@@ -1106,7 +1106,7 @@ if (gotTheLock) {
 
       registerMuxProtocolClient();
 
-      // Safe to retry after ready: mux home migrations are idempotent.
+      // Safe to retry after ready: Tux home migrations are idempotent.
       migrateLegacyMuxHome();
       cleanupObsoleteMuxBinArtifacts();
 

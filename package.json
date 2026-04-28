@@ -1,16 +1,16 @@
 {
-  "name": "mux",
+  "name": "tux",
   "version": "0.23.2",
-  "description": "mux - coder multiplexer",
+  "description": "Tux - fork of the Coder multiplexer",
   "author": "Coder",
   "main": "dist/cli/index.js",
   "bin": {
-    "mux": "dist/cli/index.js"
+    "tux": "dist/cli/index.js"
   },
   "license": "AGPL-3.0-only",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/coder/mux.git"
+    "url": "git+https://github.com/mazensabbagh7-pixel/tux.git"
   },
   "publishConfig": {
     "access": "public"
@@ -256,18 +256,20 @@
     "LICENSE"
   ],
   "build": {
-    "appId": "com.mux.app",
-    "productName": "mux",
+    "appId": "com.tux.app",
+    "productName": "Tux",
     "protocols": [
       {
-        "name": "Mux",
+        "name": "Tux",
         "schemes": [
-          "mux"
+          "tux"
         ]
       }
     ],
     "publish": {
       "provider": "github",
+      "owner": "mazensabbagh7-pixel",
+      "repo": "tux",
       "releaseType": "release"
     },
     "directories": {
