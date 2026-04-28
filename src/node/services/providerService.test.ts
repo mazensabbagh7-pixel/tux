@@ -1,9 +1,12 @@
 import { describe, expect, it, spyOn } from "bun:test";
 import * as fs from "fs";
+import { writeFile } from "node:fs/promises";
 import * as os from "os";
 import * as path from "path";
 import type { ProviderModelEntry } from "@/common/orpc/types";
+import { WORKSPACE_DEFAULTS } from "@/constants/workspaceDefaults";
 import { Config } from "@/node/config";
+import { log } from "@/node/services/log";
 import { PolicyService } from "@/node/services/policyService";
 import { ProviderService } from "./providerService";
 
@@ -66,6 +69,39 @@ function withProviderEnv(
         process.env[key] = previousValue;
       }
     }
+  }
+}
+
+async function withTempPolicyProviderService(
+  policy: unknown,
+  run: (
+    config: Config,
+    service: ProviderService,
+    policyService: PolicyService
+  ) => Promise<void> | void
+): Promise<void> {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "mux-provider-service-"));
+  const policyPath = path.join(tmpDir, "policy.json");
+  const prevPolicyFileEnv = process.env.MUX_POLICY_FILE;
+  let policyService: PolicyService | null = null;
+
+  try {
+    const config = new Config(tmpDir);
+    await writeFile(policyPath, JSON.stringify(policy), "utf-8");
+    process.env.MUX_POLICY_FILE = policyPath;
+
+    policyService = new PolicyService(config);
+    await policyService.initialize();
+    const service = new ProviderService(config, policyService);
+    await run(config, service, policyService);
+  } finally {
+    policyService?.dispose();
+    if (prevPolicyFileEnv === undefined) {
+      delete process.env.MUX_POLICY_FILE;
+    } else {
+      process.env.MUX_POLICY_FILE = prevPolicyFileEnv;
+    }
+    fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 }
 
@@ -371,6 +407,181 @@ describe("ProviderService.getConfig", () => {
       }
     );
   });
+
+  it("surfaces keyless custom OpenAI-compatible providers", () => {
+    withTempConfig((config, service) => {
+      config.saveProvidersConfig({
+        "local-vllm": {
+          providerType: "openai-compatible",
+          displayName: "Local vLLM",
+          baseUrl: "http://localhost:8000/v1",
+        },
+      });
+
+      const cfg = service.getConfig();
+
+      expect(cfg["local-vllm"]).toEqual({
+        apiKeySet: false,
+        apiKeyIsOpRef: undefined,
+        apiKeyOpRef: undefined,
+        apiKeyOpLabel: undefined,
+        apiKeyFile: undefined,
+        apiKeySource: "keyless",
+        baseUrl: "http://localhost:8000/v1",
+        models: [],
+        displayName: "Local vLLM",
+        providerType: "openai-compatible",
+        isCustom: true,
+        isEnabled: true,
+        isConfigured: true,
+      });
+    });
+  });
+
+  it("surfaces disabled custom providers as unconfigured", () => {
+    withTempConfig((config, service) => {
+      config.saveProvidersConfig({
+        "local-vllm": {
+          providerType: "openai-compatible",
+          baseUrl: "http://localhost:8000/v1",
+          enabled: false,
+        },
+      });
+
+      const cfg = service.getConfig();
+
+      expect(cfg["local-vllm"].isCustom).toBe(true);
+      expect(cfg["local-vllm"].isEnabled).toBe(false);
+      expect(cfg["local-vllm"].isConfigured).toBe(false);
+    });
+  });
+
+  it("omits unknown provider keys without a custom providerType", () => {
+    withTempConfig((config, service) => {
+      config.saveProvidersConfig({
+        "future-provider": {
+          apiKey: "sk-future",
+          baseUrl: "https://future.example/v1",
+        },
+      });
+
+      const cfg = service.getConfig();
+
+      expect(Object.prototype.hasOwnProperty.call(cfg, "future-provider")).toBe(false);
+    });
+  });
+
+  it("keeps built-in providers alongside custom providers", () => {
+    withTempConfig((config, service) => {
+      config.saveProvidersConfig({
+        openai: {
+          apiKey: "sk-test",
+        },
+        "local-vllm": {
+          providerType: "openai-compatible",
+          baseURL: "http://localhost:8000/v1",
+        },
+      });
+
+      const cfg = service.getConfig();
+
+      expect(cfg.openai.apiKeySet).toBe(true);
+      expect(cfg.openai.isConfigured).toBe(true);
+      expect(cfg["local-vllm"].baseUrl).toBe("http://localhost:8000/v1");
+      expect(cfg["local-vllm"].isConfigured).toBe(true);
+      expect(service.list()).toContain("local-vllm");
+    });
+  });
+
+  it("prefers shadowed custom provider config over a built-in provider id", () => {
+    withTempConfig((config, service) => {
+      config.saveProvidersConfig({
+        openai: {
+          providerType: "openai-compatible",
+          displayName: "Shadowed OpenAI",
+          baseUrl: "http://localhost:8000/v1",
+        },
+      });
+
+      const cfg = service.getConfig();
+
+      expect(cfg.openai.isCustom).toBe(true);
+      expect(cfg.openai.displayName).toBe("Shadowed OpenAI");
+      expect(cfg.openai.apiKeySource).toBe("keyless");
+      expect(service.list().filter((provider) => provider === "openai")).toHaveLength(1);
+    });
+  });
+
+  it("logs shadowed custom provider ids once per detected set", () => {
+    withTempConfig((config, service) => {
+      config.saveProvidersConfig({
+        openai: {
+          providerType: "openai-compatible",
+          displayName: "Shadowed OpenAI",
+          baseUrl: "http://localhost:8000/v1",
+        },
+      });
+      const warnSpy = spyOn(log, "warn").mockImplementation(() => undefined);
+
+      try {
+        service.list();
+        service.getConfig();
+        service.getConfig();
+        expect(warnSpy).toHaveBeenCalledTimes(1);
+
+        service.notifyConfigChanged();
+        service.getConfig();
+        service.list();
+        expect(warnSpy).toHaveBeenCalledTimes(2);
+      } finally {
+        warnSpy.mockRestore();
+      }
+    });
+  });
+
+  it("filters custom providers by enforced provider policy", async () => {
+    await withTempPolicyProviderService(
+      {
+        policy_format_version: "0.1",
+        provider_access: [
+          { id: "openai" },
+          {
+            id: "local-vllm",
+            base_url: "http://policy.local/v1",
+            model_access: ["llama-3"],
+          },
+        ],
+      },
+      (config, service) => {
+        config.saveProvidersConfig({
+          "local-vllm": {
+            providerType: "openai-compatible",
+            baseUrl: "http://localhost:8000/v1",
+            models: ["llama-3", "mistral"],
+          },
+          "another-custom": {
+            providerType: "openai-compatible",
+            baseUrl: "http://localhost:8001/v1",
+            models: ["other-model"],
+          },
+        });
+
+        const cfg = service.getConfig();
+        expect(cfg.openai).toBeDefined();
+        expect(cfg["local-vllm"].baseUrl).toBe("http://policy.local/v1");
+        expect(cfg["local-vllm"].models).toEqual(["llama-3"]);
+        expect(cfg["another-custom"]).toBeUndefined();
+        expect(service.list()).toContain("local-vllm");
+        expect(service.list()).not.toContain("another-custom");
+
+        const result = service.setModels("another-custom", ["other-model"]);
+        expect(result.success).toBe(false);
+        if (!result.success) {
+          expect(result.error).toContain("not allowed by policy");
+        }
+      }
+    );
+  });
 });
 
 describe("ProviderService model normalization", () => {
@@ -417,6 +628,552 @@ describe("ProviderService model normalization", () => {
         { id: "custom-model", contextWindowTokens: 100_000 },
         "no-context",
       ]);
+    });
+  });
+});
+
+describe("ProviderService custom provider mutations", () => {
+  it("rejects adding a built-in provider id", () => {
+    withTempConfig((config, service) => {
+      const result = service.addCustomOpenAICompatibleProvider({
+        provider: "openai",
+        baseUrl: "https://api.example.com/v1",
+      });
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.code).toBe("built_in_provider");
+      }
+      expect(config.loadProvidersConfig()).toBeNull();
+    });
+  });
+
+  it("rejects invalid custom provider ids with the validation reason", () => {
+    withTempConfig((config, service) => {
+      const result = service.addCustomOpenAICompatibleProvider({
+        provider: "Bad Provider",
+        baseUrl: "https://api.example.com/v1",
+      });
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.code).toBe("invalid_provider_id");
+        expect(result.error.reason).toContain("whitespace");
+      }
+      expect(config.loadProvidersConfig()).toBeNull();
+    });
+  });
+
+  it("rejects duplicate custom provider ids", () => {
+    withTempConfig((config, service) => {
+      config.saveProvidersConfig({
+        "local-vllm": {
+          providerType: "openai-compatible",
+          baseUrl: "http://localhost:8000/v1",
+        },
+      });
+
+      const result = service.addCustomOpenAICompatibleProvider({
+        provider: "local-vllm",
+        baseUrl: "https://api.example.com/v1",
+      });
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.code).toBe("duplicate_provider");
+      }
+    });
+  });
+
+  for (const baseUrl of ["", "   ", "not a url", "ftp://api.example.com/v1"] as const) {
+    it(`rejects invalid base URL ${JSON.stringify(baseUrl)}`, () => {
+      withTempConfig((config, service) => {
+        const result = service.addCustomOpenAICompatibleProvider({
+          provider: "local-vllm",
+          baseUrl,
+        });
+
+        expect(result.success).toBe(false);
+        if (!result.success) {
+          expect(result.error.code).toBe("invalid_base_url");
+        }
+        expect(config.loadProvidersConfig()).toBeNull();
+      });
+    });
+  }
+
+  it("adds a custom OpenAI-compatible provider and returns provider info", () => {
+    withTempConfig((config, service) => {
+      const result = service.addCustomOpenAICompatibleProvider({
+        provider: " local-vllm ",
+        displayName: " Local vLLM ",
+        baseUrl: " http://localhost:8000/v1 ",
+        apiKey: " sk-local ",
+        apiKeyFile: " /tmp/local-vllm-key ",
+        models: [
+          " llama-3 ",
+          { id: " mixtral ", contextWindowTokens: 32_768, mappedToModel: " openai/gpt-4o " },
+          { id: " mixtral ", contextWindowTokens: 16_384 },
+          { id: " " },
+        ] as unknown as ProviderModelEntry[],
+      });
+
+      expect(result.success).toBe(true);
+      if (!result.success) {
+        throw new Error(result.error.message);
+      }
+
+      expect(result.data).toMatchObject({
+        apiKeySet: true,
+        isCustom: true,
+        displayName: "Local vLLM",
+        providerType: "openai-compatible",
+        isEnabled: true,
+        isConfigured: true,
+        baseUrl: "http://localhost:8000/v1",
+      });
+      expect(result.data.models).toEqual([
+        "llama-3",
+        { id: "mixtral", contextWindowTokens: 32_768, mappedToModel: "openai/gpt-4o" },
+      ]);
+
+      expect(config.loadProvidersConfig()?.["local-vllm"]).toEqual({
+        providerType: "openai-compatible",
+        baseUrl: "http://localhost:8000/v1",
+        enabled: true,
+        displayName: "Local vLLM",
+        apiKey: "sk-local",
+        apiKeyFile: "/tmp/local-vllm-key",
+        models: [
+          "llama-3",
+          { id: "mixtral", contextWindowTokens: 32_768, mappedToModel: "openai/gpt-4o" },
+        ],
+      });
+    });
+  });
+
+  it("rejects provider ids denied by enforced policy", async () => {
+    await withTempPolicyProviderService(
+      {
+        policy_format_version: "0.1",
+        provider_access: [{ id: "openai" }],
+      },
+      (config, service) => {
+        const result = service.addCustomOpenAICompatibleProvider({
+          provider: "local-vllm",
+          baseUrl: "http://localhost:8000/v1",
+        });
+
+        expect(result.success).toBe(false);
+        if (!result.success) {
+          expect(result.error.code).toBe("policy_denied");
+        }
+        expect(config.loadProvidersConfig()).toBeNull();
+      }
+    );
+  });
+
+  it("rejects forced base URL mismatches from enforced policy", async () => {
+    await withTempPolicyProviderService(
+      {
+        policy_format_version: "0.1",
+        provider_access: [{ id: "local-vllm", base_url: "http://policy.local/v1" }],
+      },
+      (config, service) => {
+        const result = service.addCustomOpenAICompatibleProvider({
+          provider: "local-vllm",
+          baseUrl: "http://localhost:8000/v1",
+        });
+
+        expect(result.success).toBe(false);
+        if (!result.success) {
+          expect(result.error.code).toBe("policy_denied");
+        }
+        expect(config.loadProvidersConfig()).toBeNull();
+      }
+    );
+  });
+
+  it("rejects initial models denied by enforced policy", async () => {
+    await withTempPolicyProviderService(
+      {
+        policy_format_version: "0.1",
+        provider_access: [{ id: "local-vllm", model_access: ["llama-3"] }],
+      },
+      (config, service) => {
+        const result = service.addCustomOpenAICompatibleProvider({
+          provider: "local-vllm",
+          baseUrl: "http://localhost:8000/v1",
+          models: ["llama-3", "mixtral"],
+        });
+
+        expect(result.success).toBe(false);
+        if (!result.success) {
+          expect(result.error.code).toBe("policy_denied");
+        }
+        expect(config.loadProvidersConfig()).toBeNull();
+      }
+    );
+  });
+
+  it("rejects removing a built-in provider id", async () => {
+    await withTempConfigAsync(async (config, service) => {
+      const result = await service.removeCustomProvider("openai");
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.code).toBe("built_in_provider");
+      }
+      expect(config.loadProvidersConfig()).toBeNull();
+    });
+  });
+
+  it("rejects removing a built-in providers config entry without a custom discriminator", async () => {
+    await withTempConfigAsync(async (config, service) => {
+      config.saveProvidersConfig({
+        openai: { apiKey: "sk-test" },
+      });
+
+      const result = await service.removeCustomProvider("openai");
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.code).toBe("built_in_provider");
+      }
+      expect(config.loadProvidersConfig()?.openai?.apiKey).toBe("sk-test");
+    });
+  });
+
+  it("removes a shadowed built-in custom provider from providers config", async () => {
+    await withTempConfigAsync(async (config, service) => {
+      config.saveProvidersConfig({
+        openai: {
+          providerType: "openai-compatible",
+          baseUrl: "http://localhost:8000/v1",
+        },
+      });
+      await config.saveConfig({
+        ...config.loadConfigOrDefault(),
+        defaultModel: "openai:gpt-4.1",
+      });
+
+      const result = await service.removeCustomProvider("openai");
+
+      expect(result.success).toBe(true);
+      expect(config.loadProvidersConfig()?.openai).toBeUndefined();
+      expect(config.loadConfigOrDefault().defaultModel).toBeUndefined();
+    });
+  });
+
+  it("rejects removing unknown providers", async () => {
+    await withTempConfigAsync(async (config, service) => {
+      const result = await service.removeCustomProvider("local-vllm");
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.code).toBe("unknown_provider");
+      }
+      expect(config.loadProvidersConfig()).toBeNull();
+    });
+  });
+
+  it("rejects removing non-custom provider entries", async () => {
+    await withTempConfigAsync(async (config, service) => {
+      config.saveProvidersConfig({
+        "future-provider": {
+          baseUrl: "https://future.example/v1",
+        },
+      });
+
+      const result = await service.removeCustomProvider("future-provider");
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.code).toBe("not_custom_provider");
+      }
+      expect(config.loadProvidersConfig()?.["future-provider"]).toEqual({
+        baseUrl: "https://future.example/v1",
+      });
+    });
+  });
+
+  it("removes a valid custom provider from providers config", async () => {
+    await withTempConfigAsync(async (config, service) => {
+      config.saveProvidersConfig({
+        openai: { apiKey: "sk-test" },
+        "local-vllm": {
+          providerType: "openai-compatible",
+          baseUrl: "http://localhost:8000/v1",
+        },
+        "other-custom": {
+          providerType: "openai-compatible",
+          baseUrl: "http://localhost:8001/v1",
+        },
+      });
+
+      const result = await service.removeCustomProvider("local-vllm");
+
+      expect(result.success).toBe(true);
+      const providersConfig = config.loadProvidersConfig();
+      expect(providersConfig?.["local-vllm"]).toBeUndefined();
+      expect(providersConfig?.openai?.apiKey).toBe("sk-test");
+      expect(providersConfig?.["other-custom"]?.baseUrl).toBe("http://localhost:8001/v1");
+    });
+  });
+
+  it("does not repair app config if provider deletion fails", async () => {
+    await withTempConfigAsync(async (config, service) => {
+      config.saveProvidersConfig({
+        "local-vllm": {
+          providerType: "openai-compatible",
+          baseUrl: "http://localhost:8000/v1",
+        },
+      });
+      await config.saveConfig({
+        ...config.loadConfigOrDefault(),
+        defaultModel: "local-vllm:qwen3-coder",
+      });
+      const saveProvidersConfigSpy = spyOn(config, "saveProvidersConfig");
+      saveProvidersConfigSpy.mockImplementationOnce(() => {
+        throw new Error("disk is read-only");
+      });
+
+      try {
+        const result = await service.removeCustomProvider("local-vllm");
+
+        expect(result.success).toBe(false);
+        expect(config.loadConfigOrDefault().defaultModel).toBe("local-vllm:qwen3-coder");
+        expect(config.loadProvidersConfig()?.["local-vllm"]).toBeDefined();
+      } finally {
+        saveProvidersConfigSpy.mockRestore();
+      }
+    });
+  });
+
+  it("reports partial success and notifies when config repair fails after deletion", async () => {
+    await withTempConfigAsync(async (config, service) => {
+      config.saveProvidersConfig({
+        "local-vllm": {
+          providerType: "openai-compatible",
+          baseUrl: "http://localhost:8000/v1",
+        },
+      });
+      await config.saveConfig({
+        ...config.loadConfigOrDefault(),
+        defaultModel: "local-vllm:qwen3-coder",
+      });
+      let configChangedCount = 0;
+      const unsubscribe = service.onConfigChanged(() => {
+        configChangedCount += 1;
+      });
+      const editConfigSpy = spyOn(config, "editConfig");
+      editConfigSpy.mockImplementationOnce(() => {
+        throw new Error("config write failed");
+      });
+
+      try {
+        const result = await service.removeCustomProvider("local-vllm");
+
+        expect(result.success).toBe(false);
+        if (!result.success) {
+          expect(result.error.code).toBe("config_repair_failed");
+        }
+        expect(config.loadProvidersConfig()?.["local-vllm"]).toBeUndefined();
+        expect(config.loadConfigOrDefault().defaultModel).toBe("local-vllm:qwen3-coder");
+        expect(configChangedCount).toBe(1);
+      } finally {
+        editConfigSpy.mockRestore();
+        unsubscribe();
+      }
+    });
+  });
+
+  it("repairs durable app config references when removing a custom provider", async () => {
+    await withTempConfigAsync(async (config, service) => {
+      const provider = "local-vllm";
+      config.saveProvidersConfig({
+        openai: { apiKey: "sk-test" },
+        [provider]: {
+          providerType: "openai-compatible",
+          baseUrl: "http://localhost:8000/v1",
+        },
+        "other-custom": {
+          providerType: "openai-compatible",
+          baseUrl: "http://localhost:8001/v1",
+        },
+      });
+      await writeFile(
+        path.join(config.rootDir, "config.json"),
+        JSON.stringify(
+          {
+            projects: [
+              [
+                "/tmp/project",
+                {
+                  workspaces: [
+                    {
+                      path: "/tmp/project/workspace-a",
+                      id: "workspace-a",
+                      aiSettings: {
+                        model: `${provider}:workspace-model`,
+                        thinkingLevel: "high",
+                      },
+                      aiSettingsByAgent: {
+                        exec: { model: `${provider}:workspace-agent`, thinkingLevel: "medium" },
+                        plan: { model: "openai:gpt-5", thinkingLevel: "low" },
+                      },
+                    },
+                    {
+                      path: "/tmp/project/workspace-b",
+                      id: "workspace-b",
+                      aiSettings: {
+                        model: "openai:gpt-5",
+                        thinkingLevel: "low",
+                      },
+                      aiSettingsByAgent: {
+                        exec: { model: `${provider}:only-agent`, thinkingLevel: "medium" },
+                      },
+                    },
+                    {
+                      path: "/tmp/project/workspace-c",
+                      id: "workspace-c",
+                      aiSettingsByAgent: {
+                        exec: { model: "other-custom:model", thinkingLevel: "medium" },
+                      },
+                    },
+                  ],
+                },
+              ],
+            ],
+            defaultModel: `${provider}:llama-3`,
+            hiddenModels: [`${provider}:hidden`, "openai:gpt-5", "other-custom:model"],
+            routeOverrides: {
+              [`${provider}:llama-3`]: "direct",
+              "openai:gpt-5": provider,
+              "openai:gpt-4": "openai",
+              "other-custom:model": "other-custom",
+            },
+            agentAiDefaults: {
+              exec: {
+                modelString: `${provider}:agent-model`,
+                thinkingLevel: "high",
+                enabled: false,
+                advisorEnabled: true,
+              },
+              plan: { modelString: "openai:gpt-5", thinkingLevel: "medium" },
+              review: { modelString: `${provider}:review-agent`, thinkingLevel: "low" },
+              explore: { modelString: "other-custom:model", thinkingLevel: "medium" },
+            },
+            subagentAiDefaults: {
+              review: { modelString: `${provider}:review-agent`, thinkingLevel: "low" },
+              explore: { modelString: "other-custom:model", thinkingLevel: "medium" },
+            },
+          },
+          null,
+          2
+        ),
+        "utf-8"
+      );
+
+      const result = await service.removeCustomProvider(provider);
+
+      expect(result.success).toBe(true);
+
+      const freshConfig = new Config(config.rootDir);
+      const providersConfig = freshConfig.loadProvidersConfig();
+      expect(providersConfig?.[provider]).toBeUndefined();
+      expect(providersConfig?.openai?.apiKey).toBe("sk-test");
+      expect(providersConfig?.["other-custom"]?.baseUrl).toBe("http://localhost:8001/v1");
+
+      const appConfig = freshConfig.loadConfigOrDefault();
+      expect(appConfig.defaultModel).toBeUndefined();
+      expect(appConfig.hiddenModels).toEqual(["openai:gpt-5", "other-custom:model"]);
+      expect(appConfig.routeOverrides).toEqual({
+        "openai:gpt-4": "openai",
+        "other-custom:model": "other-custom",
+      });
+      expect(appConfig.agentAiDefaults?.exec).toEqual({
+        thinkingLevel: "high",
+        enabled: false,
+        advisorEnabled: true,
+      });
+      expect(appConfig.agentAiDefaults?.plan).toEqual({
+        modelString: "openai:gpt-5",
+        thinkingLevel: "medium",
+      });
+      expect(appConfig.subagentAiDefaults?.review).toEqual({ thinkingLevel: "low" });
+      expect(appConfig.subagentAiDefaults?.explore).toEqual({
+        modelString: "other-custom:model",
+        thinkingLevel: "medium",
+      });
+
+      const project = appConfig.projects.get("/tmp/project");
+      expect(project).toBeDefined();
+      if (!project) {
+        throw new Error("Expected seeded project to reload");
+      }
+      expect(project.workspaces[0].aiSettings).toEqual({
+        model: WORKSPACE_DEFAULTS.model,
+        thinkingLevel: "high",
+      });
+      expect(project.workspaces[0].aiSettingsByAgent).toEqual({
+        exec: { model: WORKSPACE_DEFAULTS.model, thinkingLevel: "medium" },
+        plan: { model: "openai:gpt-5", thinkingLevel: "low" },
+      });
+      expect(project.workspaces[1].aiSettings).toEqual({
+        model: "openai:gpt-5",
+        thinkingLevel: "low",
+      });
+      expect(project.workspaces[1].aiSettingsByAgent).toEqual({
+        exec: { model: WORKSPACE_DEFAULTS.model, thinkingLevel: "medium" },
+      });
+      expect(project.workspaces[2].aiSettingsByAgent).toEqual({
+        exec: { model: "other-custom:model", thinkingLevel: "medium" },
+      });
+    });
+  });
+
+  it("preserves workspace thinking level when repairing a removed provider model", async () => {
+    await withTempConfigAsync(async (config, service) => {
+      const provider = "local-vllm";
+      config.saveProvidersConfig({
+        [provider]: {
+          providerType: "openai-compatible",
+          baseUrl: "http://localhost:8000/v1",
+        },
+      });
+      await writeFile(
+        path.join(config.rootDir, "config.json"),
+        JSON.stringify({
+          projects: [
+            [
+              "/tmp/project",
+              {
+                workspaces: [
+                  {
+                    path: "/tmp/project/workspace-a",
+                    id: "workspace-a",
+                    aiSettings: {
+                      model: `${provider}:workspace-model`,
+                      thinkingLevel: "high",
+                    },
+                  },
+                ],
+              },
+            ],
+          ],
+        })
+      );
+
+      const result = await service.removeCustomProvider(provider);
+
+      expect(result.success).toBe(true);
+      const freshConfig = new Config(config.rootDir).loadConfigOrDefault();
+      const workspace = freshConfig.projects.get("/tmp/project")?.workspaces[0];
+      expect(workspace?.aiSettings).toEqual({
+        model: WORKSPACE_DEFAULTS.model,
+        thinkingLevel: "high",
+      });
     });
   });
 });
@@ -493,6 +1250,54 @@ describe("ProviderService.setConfig", () => {
       expect(afterEnable?.openai?.apiKey).toBe("sk-test");
       expect(afterEnable?.openai?.baseUrl).toBe("https://api.openai.com/v1");
       expect(afterEnable?.openai?.enabled).toBeUndefined();
+    });
+  });
+
+  it("rejects baseURL edits when policy forces a base URL", async () => {
+    await withTempPolicyProviderService(
+      {
+        policy_format_version: "0.1",
+        provider_access: [{ id: "openai", base_url: "https://forced.openai.test" }],
+      },
+      async (_config, service) => {
+        const result = await service.setConfig("openai", ["baseURL"], "https://other.openai.test");
+
+        expect(result.success).toBe(false);
+        if (!result.success) {
+          expect(result.error).toContain("base URL is locked by policy");
+        }
+      }
+    );
+  });
+
+  it("rejects invalid ids when setConfig creates an OpenAI-compatible provider", async () => {
+    await withTempConfigAsync(async (config, service) => {
+      const result = await service.setConfig("bad provider", ["providerType"], "openai-compatible");
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error).toContain("Invalid custom provider id");
+      }
+      expect(config.loadProvidersConfig()?.["bad provider"]).toBeUndefined();
+    });
+  });
+
+  it("rejects custom providers as route override targets", () => {
+    withTempConfig((config, service) => {
+      config.saveProvidersConfig({
+        "local-vllm": {
+          providerType: "openai-compatible",
+          baseUrl: "http://localhost:8000/v1",
+        },
+      });
+
+      const result = service.validateRouteOverrides({ "openai:gpt-5": "local-vllm" });
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error).toContain("Custom providers are direct-only");
+        expect(result.error).toContain("local-vllm");
+      }
     });
   });
 

@@ -190,13 +190,16 @@ export const ProviderConfigInfoSchema = z.object({
   /** Whether this provider is configured and ready to use */
   isConfigured: z.boolean(),
   apiKeyFile: z.string().optional(),
-  /** Where the API key was actually resolved from (config, file, or env) */
-  apiKeySource: z.enum(["config", "file", "env"]).optional(),
+  /** Where the API key was actually resolved from (config, file, env, or keyless) */
+  apiKeySource: z.enum(["config", "file", "env", "keyless"]).optional(),
   baseUrl: z.string().optional(),
   /** Where the active base URL was resolved from (config or env) */
   baseUrlSource: z.enum(["config", "env"]).nullish(),
   /** Active base URL for display only. Env values must not be persisted from this field. */
   baseUrlResolved: z.string().nullish(),
+  providerType: z.literal("openai-compatible").optional(),
+  displayName: z.string().optional(),
+  isCustom: z.boolean().optional(),
   models: z.array(ProviderModelEntrySchema).optional(),
   /** OpenAI-specific fields */
   serviceTier: ServiceTierSchema.optional(),
@@ -222,7 +225,72 @@ export const ProviderConfigInfoSchema = z.object({
 
 export const ProvidersConfigMapSchema = z.record(z.string(), ProviderConfigInfoSchema);
 
+export const CustomProviderMutationErrorSchema = z.discriminatedUnion("code", [
+  z.object({
+    code: z.literal("invalid_provider_id"),
+    message: z.string(),
+    reason: z.string().optional(),
+  }),
+  z.object({
+    code: z.literal("built_in_provider"),
+    message: z.string(),
+    reason: z.string().optional(),
+  }),
+  z.object({
+    code: z.literal("duplicate_provider"),
+    message: z.string(),
+    reason: z.string().optional(),
+  }),
+  z.object({
+    code: z.literal("invalid_base_url"),
+    message: z.string(),
+    reason: z.string().optional(),
+  }),
+  z.object({
+    code: z.literal("unknown_provider"),
+    message: z.string(),
+    reason: z.string().optional(),
+  }),
+  z.object({
+    code: z.literal("not_custom_provider"),
+    message: z.string(),
+    reason: z.string().optional(),
+  }),
+  z.object({
+    code: z.literal("policy_denied"),
+    message: z.string(),
+    reason: z.string().optional(),
+  }),
+  z.object({
+    code: z.literal("config_repair_failed"),
+    message: z.string(),
+    reason: z.string().optional(),
+  }),
+  z.object({
+    code: z.literal("persistence_failed"),
+    message: z.string(),
+    reason: z.string().optional(),
+  }),
+]);
+
 export const providers = {
+  addCustomOpenAICompatibleProvider: {
+    input: z.object({
+      provider: z.string(),
+      displayName: z.string().optional(),
+      baseUrl: z.string(),
+      apiKey: z.string().optional(),
+      apiKeyFile: z.string().optional(),
+      models: z.array(ProviderModelEntrySchema).optional(),
+    }),
+    output: ResultSchema(ProviderConfigInfoSchema, CustomProviderMutationErrorSchema),
+  },
+  removeCustomProvider: {
+    input: z.object({
+      provider: z.string(),
+    }),
+    output: ResultSchema(z.void(), CustomProviderMutationErrorSchema),
+  },
   setProviderConfig: {
     input: z.object({
       provider: z.string(),

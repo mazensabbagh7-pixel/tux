@@ -3,8 +3,10 @@ import "../../../../tests/ui/dom";
 import { type ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import { installDom } from "../../../../tests/ui/dom";
 import * as APIModule from "@/browser/contexts/API";
 import type { APIClient } from "@/browser/contexts/API";
+import type * as WorkspaceStoreModule from "@/browser/stores/WorkspaceStore";
 import * as WorkspaceContextModule from "@/browser/contexts/WorkspaceContext";
 import * as TooltipModule from "@/browser/components/Tooltip/Tooltip";
 import * as ForceDeleteModalModule from "@/browser/components/ForceDeleteModal/ForceDeleteModal";
@@ -14,6 +16,18 @@ import * as OptimisticBatchLRUModule from "@/browser/hooks/useOptimisticBatchLRU
 import type { FrontendWorkspaceMetadata } from "@/common/types/workspace";
 
 import { ArchivedWorkspaces } from "./ArchivedWorkspaces";
+
+function installTestDoubles() {
+  // Re-register the full WorkspaceStore mock before each test to avoid Bun's global mock leakage.
+  /* eslint-disable @typescript-eslint/no-require-imports */
+  const actualWorkspaceStore =
+    require("@/browser/stores/WorkspaceStore?real=1") as typeof WorkspaceStoreModule;
+  /* eslint-enable @typescript-eslint/no-require-imports */
+
+  void mock.module("@/browser/stores/WorkspaceStore", () => ({
+    ...actualWorkspaceStore,
+  }));
+}
 
 function createWorkspace(overrides: Partial<FrontendWorkspaceMetadata>): FrontendWorkspaceMetadata {
   return {
@@ -29,6 +43,8 @@ function createWorkspace(overrides: Partial<FrontendWorkspaceMetadata>): Fronten
   };
 }
 
+let cleanupDom: (() => void) | null = null;
+
 describe("ArchivedWorkspaces", () => {
   const deleteWorktreeMock = mock(() => Promise.resolve({ success: true }));
   const getSessionUsageBatchMock = mock(() => Promise.resolve({}));
@@ -38,6 +54,8 @@ describe("ArchivedWorkspaces", () => {
   const onWorkspacesChangedMock = mock(() => undefined);
 
   beforeEach(() => {
+    installTestDoubles();
+    cleanupDom = installDom();
     deleteWorktreeMock.mockClear();
     getSessionUsageBatchMock.mockClear();
     unarchiveWorkspaceMock.mockClear();
@@ -95,6 +113,8 @@ describe("ArchivedWorkspaces", () => {
   afterEach(() => {
     cleanup();
     mock.restore();
+    cleanupDom?.();
+    cleanupDom = null;
   });
 
   test("shows an error when restoring an archived workspace fails", async () => {

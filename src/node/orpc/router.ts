@@ -750,10 +750,17 @@ export const router = (authToken?: string) => {
         .input(schemas.config.updateRoutePreferences.input)
         .output(schemas.config.updateRoutePreferences.output)
         .handler(async ({ context, input }) => {
+          const routeOverrides =
+            input.routeOverrides ?? context.config.loadConfigOrDefault().routeOverrides ?? {};
+          const validation = context.providerService.validateRouteOverrides(routeOverrides);
+          if (!validation.success) {
+            throw new Error(validation.error);
+          }
+
           await context.config.editConfig((config) => ({
             ...config,
             routePriority: input.routePriority,
-            routeOverrides: input.routeOverrides ?? config.routeOverrides,
+            routeOverrides,
           }));
         }),
       updateModelPreferences: t
@@ -1474,6 +1481,18 @@ export const router = (authToken?: string) => {
         .input(schemas.providers.getConfig.input)
         .output(schemas.providers.getConfig.output)
         .handler(({ context }) => context.providerService.getConfig()),
+      addCustomOpenAICompatibleProvider: t
+        .input(schemas.providers.addCustomOpenAICompatibleProvider.input)
+        .output(schemas.providers.addCustomOpenAICompatibleProvider.output)
+        .handler(({ context, input }) =>
+          context.providerService.addCustomOpenAICompatibleProvider(input)
+        ),
+      removeCustomProvider: t
+        .input(schemas.providers.removeCustomProvider.input)
+        .output(schemas.providers.removeCustomProvider.output)
+        .handler(({ context, input }) =>
+          context.providerService.removeCustomProvider(input.provider)
+        ),
       setProviderConfig: t
         .input(schemas.providers.setProviderConfig.input)
         .output(schemas.providers.setProviderConfig.output)

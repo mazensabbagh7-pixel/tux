@@ -3,6 +3,7 @@ import "../../../../tests/ui/dom";
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import { cleanup, render } from "@testing-library/react";
 import { installDom } from "../../../../tests/ui/dom";
+import type * as WorkspaceStoreModule from "@/browser/stores/WorkspaceStore";
 
 interface MockWorkspaceState {
   loading?: boolean;
@@ -25,16 +26,25 @@ void mock.module("lottie-react", () => ({
   default: () => <div data-testid="lottie-animation" />,
 }));
 
-void mock.module("@/browser/stores/WorkspaceStore", () => ({
-  useWorkspaceState: () =>
-    workspaceState
-      ? {
-          messages: [],
-          queuedMessage: null,
-          ...workspaceState,
-        }
-      : workspaceState,
-}));
+function installTestDoubles() {
+  // Preserve the remaining WorkspaceStore exports because Bun mock.module state is global across test files.
+  /* eslint-disable @typescript-eslint/no-require-imports */
+  const actualWorkspaceStore =
+    require("@/browser/stores/WorkspaceStore?real=1") as typeof WorkspaceStoreModule;
+  /* eslint-enable @typescript-eslint/no-require-imports */
+
+  void mock.module("@/browser/stores/WorkspaceStore", () => ({
+    ...actualWorkspaceStore,
+    useWorkspaceState: () =>
+      workspaceState
+        ? {
+            messages: [],
+            queuedMessage: null,
+            ...workspaceState,
+          }
+        : workspaceState,
+  }));
+}
 
 void mock.module("../ChatPane/ChatPane", () => ({
   ChatPane: (props: { workspaceId: string }) => (
@@ -133,6 +143,7 @@ describe("estimateWorkspaceShellFallbackWidthPx", () => {
 describe("WorkspaceShell loading placeholders", () => {
   beforeEach(() => {
     cleanupDom = installDom();
+    installTestDoubles();
     originalWindowApi = window.api;
     delete window.api;
     workspaceState = undefined;
@@ -141,14 +152,16 @@ describe("WorkspaceShell loading placeholders", () => {
   afterEach(() => {
     cleanup();
     mock.restore();
-    cleanupDom?.();
-    cleanupDom = null;
+    // Restore window.api first while window is still installed.
     if (originalWindowApi === undefined) {
       delete window.api;
     } else {
       window.api = originalWindowApi;
     }
     originalWindowApi = undefined;
+    // Now tear down the DOM.
+    cleanupDom?.();
+    cleanupDom = null;
     workspaceState = undefined;
     openTerminalMock.mockClear();
     addReviewMock.mockClear();

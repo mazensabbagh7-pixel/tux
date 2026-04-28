@@ -107,8 +107,12 @@ describe("ProviderConfigInfoSchema conformance", () => {
       isEnabled: true,
       isConfigured: true,
       baseUrl: "https://custom.endpoint.com",
+      apiKeySource: "keyless",
       baseUrlSource: "config",
       baseUrlResolved: "https://custom.endpoint.com",
+      providerType: "openai-compatible",
+      displayName: "Local vLLM",
+      isCustom: true,
       models: ["claude-3-opus", "claude-3-sonnet"],
       serviceTier: "flex",
       store: false,
@@ -137,8 +141,12 @@ describe("ProviderConfigInfoSchema conformance", () => {
     expect(parsed.apiKeyOpRef).toBe(full.apiKeyOpRef);
     expect(parsed.isEnabled).toBe(full.isEnabled);
     expect(parsed.baseUrl).toBe(full.baseUrl);
+    expect(parsed.apiKeySource).toBe(full.apiKeySource);
     expect(parsed.baseUrlSource).toBe(full.baseUrlSource);
     expect(parsed.baseUrlResolved).toBe(full.baseUrlResolved);
+    expect(parsed.providerType).toBe(full.providerType);
+    expect(parsed.displayName).toBe(full.displayName);
+    expect(parsed.isCustom).toBe(full.isCustom);
     expect(parsed.models).toEqual(full.models);
     expect(parsed.serviceTier).toBe(full.serviceTier);
     expect(parsed.store).toBe(full.store);

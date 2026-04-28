@@ -1,4 +1,5 @@
 import assert from "node:assert";
+import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import type { XaiProviderOptions } from "@ai-sdk/xai";
 import { fromNodeProviderChain } from "@aws-sdk/credential-providers";
 import { wrapLanguageModel, type LanguageModel } from "ai";
@@ -22,6 +23,10 @@ import type { MuxProviderOptions } from "@/common/types/providerOptions";
 import type { ExternalSecretResolver } from "@/common/types/secrets";
 import { isOpReference } from "@/common/utils/opRef";
 import { isProviderDisabledInConfig } from "@/common/utils/providers/isProviderDisabled";
+import {
+  isBuiltInProvider,
+  isCustomOpenAICompatibleProviderConfig,
+} from "@/common/utils/providers/customProviders";
 import { isGatewayModelAccessibleFromAuthoritativeCatalog } from "@/common/utils/providers/gatewayModelCatalog";
 import { maybeGetProviderModelEntryId } from "@/common/utils/providers/modelEntries";
 import {
@@ -48,7 +53,11 @@ import {
 } from "@/common/utils/ai/models";
 import type { AnthropicCacheTtl } from "@/common/utils/ai/cacheStrategy";
 import { MUX_APP_ATTRIBUTION_TITLE, MUX_APP_ATTRIBUTION_URL } from "@/constants/appAttribution";
-import { resolveProviderCredentials } from "@/node/utils/providerRequirements";
+import {
+  resolveCustomProviderCredentials,
+  resolveProviderCredentials,
+  type ProviderRequirementError,
+} from "@/node/utils/providerRequirements";
 import {
   normalizeGatewayStreamUsage,
   normalizeGatewayGenerateResult,
@@ -771,6 +780,47 @@ function createGatewayModelAccessibilityChecker(providersConfig: ProvidersConfig
     );
 }
 
+function formatCustomProviderRequirementError(
+  provider: string,
+  error: ProviderRequirementError
+): SendMessageError {
+  switch (error.code) {
+    case "missing_base_url":
+      return {
+        type: "unknown",
+        raw: `Custom provider ${provider} requires baseUrl.`,
+      };
+    case "api_key_file_unreadable": {
+      const reason =
+        error.reason === "missing"
+          ? "the file does not exist"
+          : error.reason === "not_file"
+            ? "the path is not a regular file"
+            : error.reason === "too_large"
+              ? "the file is too large"
+              : error.reason === "empty"
+                ? "the file is empty"
+                : "the file could not be read";
+      return {
+        type: "unknown",
+        raw: `Failed to read API key file for ${provider} at ${error.path}: ${reason}.`,
+      };
+    }
+    case "op_resolution_failed": {
+      const reason =
+        error.reason === "unavailable"
+          ? "1Password resolution is unavailable"
+          : error.reason === "unresolved"
+            ? "the reference did not resolve to a secret"
+            : "the resolver failed while reading the secret";
+      return {
+        type: "unknown",
+        raw: `Failed to resolve API key reference ${error.ref} for ${provider}: ${reason}.`,
+      };
+    }
+  }
+}
+
 // ---------------------------------------------------------------------------
 // ProviderModelFactory
 // ---------------------------------------------------------------------------
@@ -915,9 +965,23 @@ export class ProviderModelFactory {
         });
       }
 
-      // Check if provider is supported (prevents silent failures when adding to PROVIDER_REGISTRY
-      // but forgetting to implement handler below)
-      if (!(providerName in PROVIDER_REGISTRY)) {
+      // Load providers configuration - the ONLY source of truth
+      const providersConfig = this.config.loadProvidersConfig() ?? {};
+      const providerConfigEntry = providersConfig[providerName];
+      const providerIsBuiltIn = isBuiltInProvider(providerName);
+      const providerIsCustomOpenAICompatible =
+        providerConfigEntry != null && isCustomOpenAICompatibleProviderConfig(providerConfigEntry);
+
+      // Check if provider is supported. Explicit custom OpenAI-compatible config wins
+      // even if a future release adds a built-in provider with the same id.
+      if (!providerIsCustomOpenAICompatible && providerIsBuiltIn) {
+        if (!Object.hasOwn(PROVIDER_REGISTRY, providerName)) {
+          return Err({
+            type: "provider_not_supported",
+            provider: providerName,
+          });
+        }
+      } else if (!providerIsCustomOpenAICompatible) {
         return Err({
           type: "provider_not_supported",
           provider: providerName,
@@ -925,24 +989,20 @@ export class ProviderModelFactory {
       }
 
       if (this.policyService?.isEnforced()) {
-        const provider = providerName as ProviderName;
-        if (!this.policyService.isProviderAllowed(provider)) {
+        if (!this.policyService.isProviderAllowed(providerName)) {
           return Err({
             type: "policy_denied",
             message: `Provider ${providerName} is not allowed by policy`,
           });
         }
 
-        if (!this.policyService.isModelAllowed(provider, modelId)) {
+        if (!this.policyService.isModelAllowed(providerName, modelId)) {
           return Err({
             type: "policy_denied",
             message: `Model ${providerName}:${modelId} is not allowed by policy`,
           });
         }
       }
-
-      // Load providers configuration - the ONLY source of truth
-      const providersConfig = this.config.loadProvidersConfig() ?? {};
 
       // Backend config is authoritative for Anthropic prompt cache TTL on any
       // Anthropic-routed model (direct Anthropic, mux-gateway:anthropic/*,
@@ -1000,7 +1060,7 @@ export class ProviderModelFactory {
 
       // Policy: force provider base URL (if configured).
       const forcedBaseUrl = this.policyService?.isEnforced()
-        ? this.policyService.getForcedBaseUrl(providerName as ProviderName)
+        ? this.policyService.getForcedBaseUrl(providerName)
         : undefined;
       if (forcedBaseUrl) {
         providerConfig = { ...providerConfig, baseURL: forcedBaseUrl };
@@ -1012,6 +1072,31 @@ export class ProviderModelFactory {
         ...providerConfig,
         headers: buildAppAttributionHeaders(providerConfig.headers),
       };
+
+      if (providerIsCustomOpenAICompatible) {
+        const credentials = await resolveCustomProviderCredentials(
+          providerName,
+          providerConfig,
+          this.opResolver
+        );
+        if (!credentials.ok) {
+          return Err(formatCustomProviderRequirementError(providerName, credentials.error));
+        }
+
+        const providerFetch = getProviderFetch(providerConfig);
+        const muxAttributionHeaders = buildAppAttributionHeaders(providerConfig.headers);
+
+        // Pass only explicit OpenAI-compatible SDK settings so Mux-only config
+        // fields such as models, enabled, and providerType never reach the SDK.
+        const provider = createOpenAICompatible({
+          name: providerName,
+          baseURL: credentials.baseURL,
+          ...(credentials.apiKey != null ? { apiKey: credentials.apiKey } : {}),
+          headers: { ...muxAttributionHeaders },
+          fetch: providerFetch,
+        });
+        return Ok(provider(modelId));
+      }
 
       // Handle Anthropic provider
       if (providerName === "anthropic") {
@@ -1880,10 +1965,9 @@ export class ProviderModelFactory {
     // is generalized too.
     const routedThroughGateway = effectiveModelString.startsWith("mux-gateway:");
     const [effectiveRouteProvider] = parseModelString(effectiveModelString);
-    const routeProvider =
-      effectiveRouteProvider in PROVIDER_REGISTRY
-        ? (effectiveRouteProvider as ProviderName)
-        : routeContext.routeProvider;
+    const routeProvider = Object.hasOwn(PROVIDER_REGISTRY, effectiveRouteProvider)
+      ? (effectiveRouteProvider as ProviderName)
+      : routeContext.routeProvider;
 
     const modelResult = await this.createModel(effectiveModelString, muxProviderOptions, {
       ...opts,
@@ -1913,7 +1997,7 @@ export class ProviderModelFactory {
       config.routePriority ?? ["direct"],
       config.routeOverrides ?? {},
       (provider) => {
-        if (!(provider in PROVIDER_REGISTRY)) {
+        if (!Object.hasOwn(PROVIDER_REGISTRY, provider)) {
           return false;
         }
 
@@ -1948,13 +2032,23 @@ export class ProviderModelFactory {
       return canonicalModelString;
     }
 
-    if (originProviderName === "mux-gateway" || !(originProviderName in PROVIDER_REGISTRY)) {
+    if (originProviderName === "mux-gateway") {
+      return canonicalModelString;
+    }
+
+    const providersConfig = this.config.loadProvidersConfig() ?? {};
+    if (isCustomOpenAICompatibleProviderConfig(providersConfig[originProviderName])) {
+      // Manual providers.jsonc edits can shadow a built-in provider id. Custom providers
+      // are direct-only, so keep the user's model pointed at the custom endpoint.
+      return canonicalModelString;
+    }
+
+    if (!Object.hasOwn(PROVIDER_REGISTRY, originProviderName)) {
       return canonicalModelString;
     }
 
     const originProvider = originProviderName as ProviderName;
     const config = this.config.loadConfigOrDefault();
-    const providersConfig = this.config.loadProvidersConfig() ?? {};
     const isGatewayModelAccessible = createGatewayModelAccessibilityChecker(providersConfig);
     const routeContext =
       typeof modelKeyOrRouteContext === "object" && modelKeyOrRouteContext != null
@@ -1966,7 +2060,7 @@ export class ProviderModelFactory {
             config.routePriority ?? ["direct"],
             config.routeOverrides ?? {},
             (provider) => {
-              if (!(provider in PROVIDER_REGISTRY)) {
+              if (!Object.hasOwn(PROVIDER_REGISTRY, provider)) {
                 return false;
               }
 

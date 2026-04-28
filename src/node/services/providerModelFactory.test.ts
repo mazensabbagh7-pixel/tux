@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { writeFile } from "node:fs/promises";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
@@ -21,6 +22,7 @@ import {
 } from "./providerModelFactory";
 import { MUX_ANTHROPIC_EFFORT_OVERRIDE_HEADER } from "@/common/utils/ai/providerOptions";
 import { CodexOauthService } from "./codexOauthService";
+import { PolicyService } from "./policyService";
 import { ProviderService } from "./providerService";
 
 async function withTempConfig(
@@ -34,6 +36,40 @@ async function withTempConfig(
     const factory = new ProviderModelFactory(config, providerService);
     await run(config, factory);
   } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+}
+
+async function withTempPolicyProviderFactory(
+  policy: unknown,
+  run: (
+    config: Config,
+    factory: ProviderModelFactory,
+    policyService: PolicyService
+  ) => Promise<void> | void
+): Promise<void> {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "mux-provider-model-factory-"));
+  const policyPath = path.join(tmpDir, "policy.json");
+  const prevPolicyFileEnv = process.env.MUX_POLICY_FILE;
+  let policyService: PolicyService | null = null;
+
+  try {
+    const config = new Config(tmpDir);
+    await writeFile(policyPath, JSON.stringify(policy), "utf-8");
+    process.env.MUX_POLICY_FILE = policyPath;
+
+    policyService = new PolicyService(config);
+    await policyService.initialize();
+    const providerService = new ProviderService(config, policyService);
+    const factory = new ProviderModelFactory(config, providerService, policyService);
+    await run(config, factory, policyService);
+  } finally {
+    policyService?.dispose();
+    if (prevPolicyFileEnv === undefined) {
+      delete process.env.MUX_POLICY_FILE;
+    } else {
+      process.env.MUX_POLICY_FILE = prevPolicyFileEnv;
+    }
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 }
@@ -155,6 +191,212 @@ describe("ProviderModelFactory.createModel", () => {
       const result = await factory.createModel("openai:gpt-5");
       if (!result.success) {
         expect(result.error.type).not.toBe("provider_disabled");
+      }
+    });
+  });
+
+  it("creates keyless custom OpenAI-compatible models and does not treat models as an allowlist", async () => {
+    await withTempConfig(async (config, factory) => {
+      config.saveProvidersConfig({
+        "local-vllm": {
+          providerType: "openai-compatible",
+          baseUrl: "http://localhost:8000/v1",
+          models: ["qwen3-coder"],
+        },
+      });
+
+      const listedModel = await factory.createModel("local-vllm:qwen3-coder");
+      expect(listedModel.success).toBe(true);
+      if (!listedModel.success) {
+        return;
+      }
+
+      expect((listedModel.data as { provider?: unknown }).provider).toBe("local-vllm.chat");
+      expect(listedModel.data.constructor.name).toBe("OpenAICompatibleChatLanguageModel");
+
+      const unlistedModel = await factory.createModel("local-vllm:any-other-id");
+      expect(unlistedModel.success).toBe(true);
+      if (!unlistedModel.success) {
+        return;
+      }
+
+      expect((unlistedModel.data as { provider?: unknown }).provider).toBe("local-vllm.chat");
+    });
+  });
+
+  it("allows policy-allowed custom OpenAI-compatible providers when policy is enforced", async () => {
+    await withTempPolicyProviderFactory(
+      {
+        policy_format_version: "0.1",
+        provider_access: [{ id: "local-vllm" }],
+      },
+      async (config, factory) => {
+        config.saveProvidersConfig({
+          "local-vllm": {
+            providerType: "openai-compatible",
+            baseUrl: "http://localhost:8000/v1",
+            models: ["qwen3-coder"],
+          },
+        });
+
+        const result = await factory.createModel("local-vllm:qwen3-coder");
+
+        expect(result.success).toBe(true);
+        if (!result.success) {
+          expect(result.error.type).not.toBe("policy_denied");
+        }
+      }
+    );
+  });
+
+  it("denies policy-denied custom OpenAI-compatible providers when policy is enforced", async () => {
+    await withTempPolicyProviderFactory(
+      {
+        policy_format_version: "0.1",
+        provider_access: [{ id: "openai" }],
+      },
+      async (config, factory) => {
+        config.saveProvidersConfig({
+          "local-vllm": {
+            providerType: "openai-compatible",
+            baseUrl: "http://localhost:8000/v1",
+            models: ["qwen3-coder"],
+          },
+        });
+
+        const result = await factory.createModel("local-vllm:qwen3-coder");
+
+        expect(result.success).toBe(false);
+        if (!result.success) {
+          expect(result.error.type).toBe("policy_denied");
+        }
+      }
+    );
+  });
+
+  it("returns provider_disabled for disabled custom OpenAI-compatible providers", async () => {
+    await withTempConfig(async (config, factory) => {
+      config.saveProvidersConfig({
+        "local-vllm": {
+          providerType: "openai-compatible",
+          baseUrl: "http://localhost:8000/v1",
+          enabled: false,
+        },
+      });
+
+      const result = await factory.createModel("local-vllm:qwen3-coder");
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error).toEqual({
+          type: "provider_disabled",
+          provider: "local-vllm",
+        });
+      }
+    });
+  });
+
+  it("returns a clear missing_base_url error for custom OpenAI-compatible providers without a base URL", async () => {
+    await withTempConfig(async (config, factory) => {
+      config.saveProvidersConfig({
+        "local-vllm": {
+          providerType: "openai-compatible",
+          models: ["qwen3-coder"],
+        },
+      });
+
+      const result = await factory.createModel("local-vllm:qwen3-coder");
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.type).toBe("unknown");
+        if (result.error.type === "unknown") {
+          expect(result.error.raw).not.toContain("missing_base_url");
+          expect(result.error.raw).toContain("local-vllm");
+          expect(result.error.raw).toContain("baseUrl");
+          expect(result.error.raw).not.toContain("baseURL");
+        }
+      }
+    });
+  });
+
+  it("returns a path-specific API key file error for custom providers", async () => {
+    await withTempConfig(async (config, factory) => {
+      const missingPath = path.join(os.tmpdir(), "mux-missing-custom-provider-key");
+      config.saveProvidersConfig({
+        "local-vllm": {
+          providerType: "openai-compatible",
+          baseUrl: "http://localhost:8000/v1",
+          apiKeyFile: missingPath,
+          models: ["qwen3-coder"],
+        },
+      });
+
+      const result = await factory.createModel("local-vllm:qwen3-coder");
+
+      expect(result.success).toBe(false);
+      if (!result.success && result.error.type === "unknown") {
+        expect(result.error.raw).toContain(missingPath);
+        expect(result.error.raw).toContain("the file does not exist");
+        expect(result.error.raw).not.toContain("not_file");
+        expect(result.error.raw).not.toContain("too_large");
+      }
+    });
+  });
+
+  it("returns the op reference when custom provider secret resolution fails", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "mux-provider-model-factory-"));
+    try {
+      const config = new Config(tmpDir);
+      const providerService = new ProviderService(config);
+      const opRef = "op://Personal/Local/api-key";
+      const factory = new ProviderModelFactory(
+        config,
+        providerService,
+        undefined,
+        undefined,
+        undefined,
+        () => Promise.resolve(undefined)
+      );
+      config.saveProvidersConfig({
+        "local-vllm": {
+          providerType: "openai-compatible",
+          baseUrl: "http://localhost:8000/v1",
+          apiKey: opRef,
+          models: ["qwen3-coder"],
+        },
+      });
+
+      const result = await factory.createModel("local-vllm:qwen3-coder");
+
+      expect(result.success).toBe(false);
+      if (!result.success && result.error.type === "unknown") {
+        expect(result.error.raw).toContain(opRef);
+        expect(result.error.raw).toContain("did not resolve");
+        expect(result.error.raw).not.toContain("threw");
+      }
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("returns provider_not_supported for unknown provider entries without a custom provider type", async () => {
+    await withTempConfig(async (config, factory) => {
+      config.saveProvidersConfig({
+        "local-vllm": {
+          baseUrl: "http://localhost:8000/v1",
+          models: ["qwen3-coder"],
+        },
+      });
+
+      const result = await factory.createModel("local-vllm:qwen3-coder");
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error).toEqual({
+          type: "provider_not_supported",
+          provider: "local-vllm",
+        });
       }
     });
   });
@@ -722,6 +964,30 @@ describe("ProviderModelFactory routing", () => {
 
       const resolved = factory.resolveGatewayModelString("openai:gpt-5", "openai:gpt-5");
       expect(resolved).toBe("mux-gateway:openai/gpt-5");
+    });
+  });
+
+  it("keeps shadowed custom OpenAI-compatible providers on the direct route", async () => {
+    await withTempConfig(async (config, factory) => {
+      config.saveProvidersConfig({
+        openai: {
+          providerType: "openai-compatible",
+          baseUrl: "http://localhost:8000/v1",
+        },
+        "mux-gateway": {
+          couponCode: "test-coupon",
+        },
+      });
+
+      const projectConfig = config.loadConfigOrDefault();
+      await config.saveConfig({
+        ...projectConfig,
+        muxGatewayEnabled: true,
+        routePriority: ["mux-gateway", "direct"],
+      });
+
+      const resolved = factory.resolveGatewayModelString("openai:gpt-5", "openai:gpt-5");
+      expect(resolved).toBe("openai:gpt-5");
     });
   });
 
