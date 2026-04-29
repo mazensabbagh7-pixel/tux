@@ -1,10 +1,10 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, CheckCircle, Loader2, Plug, RefreshCw, Server, Wrench } from "lucide-react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { AlertTriangle, CheckCircle, Loader2, Play, Plug, RefreshCw, Server, Wrench, XCircle } from "lucide-react";
 import { Button } from "@/browser/components/Button/Button";
 import { useAPI } from "@/browser/contexts/API";
 import { useWorkspaceContext } from "@/browser/contexts/WorkspaceContext";
 import type { AgentSkillDescriptor, AgentSkillIssue, AgentSkillScope } from "@/common/types/agentSkill";
-import type { MCPServerInfo } from "@/common/types/mcp";
+import type { MCPServerInfo, MCPTestResult } from "@/common/types/mcp";
 import { getErrorMessage } from "@/common/utils/errors";
 
 const SKILL_SCOPE_LABELS: Record<AgentSkillScope, string> = {
@@ -26,6 +26,15 @@ function groupSkillsByScope(skills: AgentSkillDescriptor[]): Record<AgentSkillSc
 function getMcpEndpoint(info: MCPServerInfo): string {
   if (info.transport === "stdio") return info.command;
   return info.url;
+}
+
+interface MCPTestState {
+  result: MCPTestResult;
+  testedAt: number;
+}
+
+function formatTestedAt(testedAt: number): string {
+  return new Date(testedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
 function StatusPill(props: { tone: "ok" | "warn" | "muted"; children: React.ReactNode }) {
@@ -57,8 +66,11 @@ export function PluginsSection() {
   const [skills, setSkills] = useState<AgentSkillDescriptor[]>([]);
   const [invalidSkills, setInvalidSkills] = useState<AgentSkillIssue[]>([]);
   const [mcpServers, setMcpServers] = useState<Record<string, MCPServerInfo>>({});
+  const [mcpTestResults, setMcpTestResults] = useState<Record<string, MCPTestState>>({});
+  const [testingServers, setTestingServers] = useState<Set<string>>(() => new Set());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const refreshRequestIdRef = useRef(0);
 
   const skillGroups = useMemo(() => groupSkillsByScope(skills), [skills]);
   const mcpEntries = useMemo(
@@ -66,7 +78,15 @@ export function PluginsSection() {
     [mcpServers]
   );
 
+  const enabledMcpServerCount = useMemo(
+    () => mcpEntries.filter(([, info]) => !info.disabled).length,
+    [mcpEntries]
+  );
+  const testingAnyServer = testingServers.size > 0;
+
   const refresh = React.useCallback(() => {
+    const requestId = ++refreshRequestIdRef.current;
+
     if (!api || !projectPath) {
       setSkills([]);
       setInvalidSkills([]);
@@ -76,7 +96,6 @@ export function PluginsSection() {
       return;
     }
 
-    let cancelled = false;
     setLoading(true);
     setError(null);
 
@@ -91,7 +110,7 @@ export function PluginsSection() {
         api.mcp.list({ projectPath }),
       ]);
 
-      if (cancelled) return;
+      if (requestId !== refreshRequestIdRef.current) return;
 
       if (skillResult.status === "fulfilled") {
         setSkills(skillResult.value.skills);
@@ -112,11 +131,46 @@ export function PluginsSection() {
       setError(errors.length > 0 ? errors.join("\n") : null);
       setLoading(false);
     })();
-
-    return () => {
-      cancelled = true;
-    };
   }, [api, projectPath]);
+
+  const testMcpServer = React.useCallback(
+    async (name: string) => {
+      if (!api || !projectPath) return;
+
+      setTestingServers((previous) => new Set(previous).add(name));
+
+      try {
+        const result = await api.mcp.test({ projectPath, name });
+        setMcpTestResults((previous) => ({
+          ...previous,
+          [name]: { result, testedAt: Date.now() },
+        }));
+      } catch (err) {
+        setMcpTestResults((previous) => ({
+          ...previous,
+          [name]: {
+            result: { success: false, error: getErrorMessage(err) },
+            testedAt: Date.now(),
+          },
+        }));
+      } finally {
+        setTestingServers((previous) => {
+          const next = new Set(previous);
+          next.delete(name);
+          return next;
+        });
+      }
+    },
+    [api, projectPath]
+  );
+
+  const testAllMcpServers = React.useCallback(async () => {
+    const enabledServerNames = mcpEntries
+      .filter(([, info]) => !info.disabled)
+      .map(([name]) => name);
+
+    await Promise.all(enabledServerNames.map((name) => testMcpServer(name)));
+  }, [mcpEntries, testMcpServer]);
 
   useEffect(() => {
     refresh();
@@ -226,26 +280,85 @@ export function PluginsSection() {
       )}
 
       <section className="space-y-3">
-        <div className="flex items-center gap-2">
-          <Plug className="h-4 w-4" />
-          <h3 className="text-foreground text-sm font-medium">MCP tool servers</h3>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <Plug className="h-4 w-4" />
+            <h3 className="text-foreground text-sm font-medium">MCP tool servers</h3>
+          </div>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => void testAllMcpServers()}
+            disabled={!api || !projectPath || enabledMcpServerCount === 0 || testingAnyServer}
+          >
+            {testingAnyServer ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Play className="mr-2 h-4 w-4" />}
+            Test all
+          </Button>
         </div>
 
         {mcpEntries.length > 0 ? (
           <div className="divide-border-light rounded-lg border">
-            {mcpEntries.map(([name, info]) => (
-              <div key={name} className="px-4 py-3">
-                <div className="flex flex-wrap items-center gap-2">
-                  <div className="text-foreground text-sm font-medium">{name}</div>
-                  <StatusPill tone={info.disabled ? "warn" : "ok"}>
-                    {info.disabled ? "disabled" : "enabled"}
-                  </StatusPill>
-                  <StatusPill tone="muted">{info.transport}</StatusPill>
-                  {info.toolAllowlist && <StatusPill tone="muted">{info.toolAllowlist.length} allowed tools</StatusPill>}
+            {mcpEntries.map(([name, info]) => {
+              const testState = mcpTestResults[name];
+              const isTesting = testingServers.has(name);
+              const testResult = testState?.result;
+              const testedAt = testState ? formatTestedAt(testState.testedAt) : null;
+
+              return (
+                <div key={name} className="px-4 py-3">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <div className="text-foreground text-sm font-medium">{name}</div>
+                        <StatusPill tone={info.disabled ? "warn" : "ok"}>
+                          {info.disabled ? "disabled" : "enabled"}
+                        </StatusPill>
+                        <StatusPill tone="muted">{info.transport}</StatusPill>
+                        {info.toolAllowlist && <StatusPill tone="muted">{info.toolAllowlist.length} allowed tools</StatusPill>}
+                        {isTesting && <StatusPill tone="muted">Testing...</StatusPill>}
+                        {testResult?.success && <StatusPill tone="ok">{testResult.tools.length} tools</StatusPill>}
+                        {testResult && !testResult.success && (
+                          <StatusPill tone="warn">{testResult.oauthChallenge ? "OAuth needed" : "failed"}</StatusPill>
+                        )}
+                      </div>
+                      <div className="text-muted mt-1 truncate text-xs">{getMcpEndpoint(info)}</div>
+                    </div>
+
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2"
+                      onClick={() => void testMcpServer(name)}
+                      disabled={!api || !projectPath || info.disabled || isTesting}
+                    >
+                      {isTesting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
+                      Test
+                    </Button>
+                  </div>
+
+                  {testResult && (
+                    <div className="mt-2 flex items-start gap-2 text-xs">
+                      {testResult.success ? (
+                        <CheckCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-green-400" />
+                      ) : (
+                        <XCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-yellow-400" />
+                      )}
+                      <div className="min-w-0">
+                        {testResult.success ? (
+                          <div className="text-muted">
+                            Last test passed{testedAt ? ` at ${testedAt}` : ""}. Tools: {testResult.tools.join(", ") || "none"}
+                          </div>
+                        ) : (
+                          <div className="text-muted whitespace-pre-wrap">
+                            Last test failed{testedAt ? ` at ${testedAt}` : ""}: {testResult.error}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
-                <div className="text-muted mt-1 truncate text-xs">{getMcpEndpoint(info)}</div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         ) : (
           !loading && !error && <div className="text-muted rounded-lg border border-dashed p-4 text-sm">No MCP servers configured.</div>
