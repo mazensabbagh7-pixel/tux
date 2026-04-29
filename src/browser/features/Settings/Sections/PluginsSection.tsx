@@ -46,9 +46,13 @@ function StatusPill(props: { tone: "ok" | "warn" | "muted"; children: React.Reac
 export function PluginsSection() {
   const { api } = useAPI();
   const workspaceContext = useWorkspaceContext();
-  const selectedWorkspace = workspaceContext?.selectedWorkspace ?? null;
-  const projectPath = selectedWorkspace?.projectPath ?? null;
-  const workspaceId = selectedWorkspace?.workspaceId ?? undefined;
+  const selectedWorkspace = workspaceContext.selectedWorkspace;
+  const fallbackWorkspace = useMemo(
+    () => Array.from(workspaceContext.workspaceMetadata.values())[0] ?? null,
+    [workspaceContext.workspaceMetadata]
+  );
+  const projectPath = selectedWorkspace?.projectPath ?? fallbackWorkspace?.projectPath ?? null;
+  const workspaceLabel = selectedWorkspace?.projectName ?? fallbackWorkspace?.projectName ?? null;
 
   const [skills, setSkills] = useState<AgentSkillDescriptor[]>([]);
   const [invalidSkills, setInvalidSkills] = useState<AgentSkillIssue[]>([]);
@@ -67,30 +71,52 @@ export function PluginsSection() {
       setSkills([]);
       setInvalidSkills([]);
       setMcpServers({});
-      setError(projectPath ? null : "Select a workspace to inspect its plugins and tools.");
+      setError(projectPath ? null : "Open or select a workspace to inspect its plugins and tools.");
+      setLoading(false);
       return;
     }
 
+    let cancelled = false;
     setLoading(true);
     setError(null);
 
-    void Promise.all([
-      api.agentSkills.listDiagnostics({ projectPath, workspaceId }),
-      api.mcp.list({ projectPath }),
-    ])
-      .then(([skillDiagnostics, servers]) => {
-        setSkills(skillDiagnostics.skills);
-        setInvalidSkills(skillDiagnostics.invalidSkills);
-        setMcpServers(servers);
-      })
-      .catch((err: unknown) => {
-        setError(getErrorMessage(err));
+    // Use projectPath-only skill discovery for this read-only inventory. Passing a workspaceId
+    // can wait on workspace runtime init, which makes Settings refresh appear stuck when a
+    // workspace is still starting or disconnected.
+    void (async () => {
+      const errors: string[] = [];
+
+      const [skillResult, mcpResult] = await Promise.allSettled([
+        api.agentSkills.listDiagnostics({ projectPath }),
+        api.mcp.list({ projectPath }),
+      ]);
+
+      if (cancelled) return;
+
+      if (skillResult.status === "fulfilled") {
+        setSkills(skillResult.value.skills);
+        setInvalidSkills(skillResult.value.invalidSkills);
+      } else {
         setSkills([]);
         setInvalidSkills([]);
+        errors.push(`Skills: ${getErrorMessage(skillResult.reason)}`);
+      }
+
+      if (mcpResult.status === "fulfilled") {
+        setMcpServers(mcpResult.value);
+      } else {
         setMcpServers({});
-      })
-      .finally(() => setLoading(false));
-  }, [api, projectPath, workspaceId]);
+        errors.push(`MCP: ${getErrorMessage(mcpResult.reason)}`);
+      }
+
+      setError(errors.length > 0 ? errors.join("\n") : null);
+      setLoading(false);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [api, projectPath]);
 
   useEffect(() => {
     refresh();
@@ -111,7 +137,7 @@ export function PluginsSection() {
           <div className="min-w-0">
             <div className="text-foreground text-sm font-medium">Workspace tool inventory</div>
             <div className="text-muted truncate text-xs">
-              {projectPath ?? "No workspace selected"}
+              {workspaceLabel ? `${workspaceLabel} — ${projectPath}` : (projectPath ?? "No workspace selected")}
             </div>
           </div>
           <Button variant="secondary" size="sm" onClick={refresh} disabled={loading || !api}>
@@ -141,7 +167,7 @@ export function PluginsSection() {
           </div>
         </div>
 
-        {error && <div className="text-muted mt-4 rounded-md border border-yellow-500/30 bg-yellow-500/10 p-3 text-sm">{error}</div>}
+        {error && <div className="text-muted mt-4 rounded-md border border-yellow-500/30 bg-yellow-500/10 p-3 text-sm whitespace-pre-line">{error}</div>}
       </div>
 
       <section className="space-y-3">
