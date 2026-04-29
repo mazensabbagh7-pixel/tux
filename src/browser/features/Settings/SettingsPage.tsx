@@ -18,6 +18,7 @@ import {
   Lock,
   HeartPulse,
   Plug,
+  Monitor,
 } from "lucide-react";
 import { useSettings } from "@/browser/contexts/SettingsContext";
 import { useOnboardingPause } from "@/browser/features/SplashScreens/SplashScreenProvider";
@@ -33,6 +34,7 @@ import { GovernorSection } from "./Sections/GovernorSection";
 import { Button } from "@/browser/components/Button/Button";
 import { MCPSettingsSection } from "./Sections/MCPSettingsSection";
 import { PluginsSection } from "./Sections/PluginsSection";
+import { ComputerUseSection } from "./Sections/ComputerUseSection";
 import { SecretsSection } from "./Sections/SecretsSection";
 import { LayoutsSection } from "./Sections/LayoutsSection";
 import { RuntimesSection } from "./Sections/RuntimesSection";
@@ -73,6 +75,12 @@ const BASE_SECTIONS: SettingsSection[] = [
     label: "Plugins",
     icon: <Plug className="h-4 w-4" />,
     component: PluginsSection,
+  },
+  {
+    id: "computer-use",
+    label: "Computer Use",
+    icon: <Monitor className="h-4 w-4" />,
+    component: ComputerUseSection,
   },
   {
     id: "mcp",
