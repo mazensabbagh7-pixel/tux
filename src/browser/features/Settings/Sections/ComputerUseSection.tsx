@@ -37,11 +37,22 @@ function getMcpEndpoint(info: MCPServerInfo): string {
   return info.url;
 }
 
-function isComputerUseCandidate(name: string, info: MCPServerInfo): boolean {
+function isComputerUseServerIdentity(name: string, info: MCPServerInfo): boolean {
   const haystack = `${name} ${getMcpEndpoint(info)}`.toLowerCase();
-  return ["desktop", "computer", "screen", "clipboard", "mouse", "keyboard", "ydotool", "wayland"].some((term) =>
+  return ["desktop", "computer", "desktop-control", "ydotool", "wayland"].some((term) =>
     haystack.includes(term)
   );
+}
+
+function hasComputerUseToolset(tools: string[]): boolean {
+  const normalizedTools = tools.map((tool) => tool.toLowerCase());
+  const hasScreen = normalizedTools.some((tool) => tool.includes("capture_screen") || tool.includes("screenshot"));
+  const hasInput = normalizedTools.some(
+    (tool) => tool.includes("click_mouse") || tool.includes("type_text") || tool.includes("press_keys")
+  );
+  const hasDesktopStatus = normalizedTools.some((tool) => tool.includes("desktop_status"));
+
+  return (hasScreen && hasInput) || (hasDesktopStatus && (hasScreen || hasInput));
 }
 
 function inferCapabilities(tools: string[]): Set<CapabilityId> {
@@ -110,9 +121,9 @@ export function ComputerUseSection() {
   const candidateEntries = useMemo(
     () =>
       serverEntries.filter(([name, info]) => {
-        if (isComputerUseCandidate(name, info)) return true;
+        if (isComputerUseServerIdentity(name, info)) return true;
         const testResult = testResults[name]?.result;
-        return testResult?.success ? inferCapabilities(testResult.tools).size > 0 : false;
+        return testResult?.success ? hasComputerUseToolset(testResult.tools) : false;
       }),
     [serverEntries, testResults]
   );
