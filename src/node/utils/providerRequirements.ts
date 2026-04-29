@@ -25,6 +25,7 @@ import type {
 import type { ExternalSecretResolver } from "@/common/types/secrets";
 import type { ProviderConfig, ProvidersConfig } from "@/node/config";
 import { parseCodexOauthAuth } from "@/node/utils/codexOauthAuth";
+import { isClaudeCodeAuthenticated } from "@/node/utils/claudeCodeAuth";
 
 // ============================================================================
 // Environment variable mappings - single source of truth
@@ -143,7 +144,7 @@ export interface ResolvedCredentials {
   baseUrl?: string; // runtime value from config or env when API-key auth is active
   baseUrlResolved?: string; // display-only metadata, including when API key auth is missing
   organization?: string; // openai
-  apiKeySource?: "config" | "file" | "env";
+  apiKeySource?: "config" | "file" | "env" | "keyless";
   baseUrlSource?: "config" | "env";
 }
 
@@ -310,6 +311,13 @@ export function resolveProviderCredentials(
   config: ProviderConfigRaw,
   env: Record<string, string | undefined> = process.env
 ): ResolvedCredentials {
+  // Claude Code: reuse the local Claude Code OAuth session, no API key entry.
+  if (provider === "claude-code") {
+    return isClaudeCodeAuthenticated()
+      ? { isConfigured: true, apiKeySource: "keyless" }
+      : { isConfigured: false, missingRequirement: "api_key" };
+  }
+
   // Bedrock: region required (credentials via AWS SDK chain)
   if (provider === "bedrock") {
     const configRegion = typeof config.region === "string" && config.region ? config.region : null;

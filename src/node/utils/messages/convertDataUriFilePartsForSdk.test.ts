@@ -31,6 +31,34 @@ describe("convertDataUriFilePartsForSdk", () => {
     }
   });
 
+  it("corrects mislabeled image data URI media types from magic bytes", () => {
+    const jpegBase64 = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46]).toString(
+      "base64"
+    );
+    const input: MuxMessage[] = [
+      {
+        id: "u-mislabeled",
+        role: "user",
+        parts: [
+          {
+            type: "file",
+            mediaType: "image/png",
+            url: `data:image/png;base64,${jpegBase64}`,
+          },
+        ],
+      },
+    ];
+
+    const converted = convertDataUriFilePartsForSdk(input);
+    const filePart = converted[0].parts[0];
+
+    expect(filePart.type).toBe("file");
+    if (filePart.type === "file") {
+      expect(filePart.mediaType).toBe("image/jpeg");
+      expect(filePart.url).toBe(jpegBase64);
+    }
+  });
+
   it("returns the original array when there are no data URI file parts", () => {
     const input: MuxMessage[] = [
       {

@@ -22,6 +22,7 @@ import type { Config, ProviderConfig, ProvidersConfig } from "@/node/config";
 import type { MuxProviderOptions } from "@/common/types/providerOptions";
 import type { ExternalSecretResolver } from "@/common/types/secrets";
 import { isOpReference } from "@/common/utils/opRef";
+import { resolveConfigBaseUrl } from "@/common/utils/providers/baseUrl";
 import { isProviderDisabledInConfig } from "@/common/utils/providers/isProviderDisabled";
 import {
   isBuiltInProvider,
@@ -58,6 +59,11 @@ import {
   resolveProviderCredentials,
   type ProviderRequirementError,
 } from "@/node/utils/providerRequirements";
+import {
+  CLAUDE_CODE_OAUTH_BETA_HEADER,
+  CLAUDE_CODE_SYSTEM_PROMPT,
+  readClaudeCodeAuth,
+} from "@/node/utils/claudeCodeAuth";
 import {
   normalizeGatewayStreamUsage,
   normalizeGatewayGenerateResult,
@@ -204,6 +210,59 @@ if (typeof globalFetchWithExtras.certificate === "function") {
 // ---------------------------------------------------------------------------
 // Fetch wrappers
 // ---------------------------------------------------------------------------
+
+function asBodyText(body: BodyInit | null | undefined): string | null {
+  if (typeof body === "string") {
+    return body;
+  }
+  if (body instanceof Uint8Array) {
+    return new TextDecoder().decode(body);
+  }
+  return null;
+}
+
+function prependClaudeCodeSystemPrompt(init: RequestInit | undefined): RequestInit | undefined {
+  const bodyText = asBodyText(init?.body);
+  if (!bodyText) {
+    return init;
+  }
+
+  try {
+    const body = JSON.parse(bodyText) as Record<string, unknown>;
+    const system = body.system;
+    const claudeCodeBlock = { type: "text", text: CLAUDE_CODE_SYSTEM_PROMPT };
+
+    if (Array.isArray(system)) {
+      const alreadyPresent = system.some(
+        (part) =>
+          isRecord(part) &&
+          part.type === "text" &&
+          typeof part.text === "string" &&
+          part.text.trim() === CLAUDE_CODE_SYSTEM_PROMPT
+      );
+      if (!alreadyPresent) {
+        const systemBlocks = Array.from(system as readonly unknown[]);
+        body.system = [claudeCodeBlock, ...systemBlocks];
+      }
+    } else if (typeof system === "string" && system.trim().length > 0) {
+      body.system = [claudeCodeBlock, { type: "text", text: system }];
+    } else {
+      body.system = [claudeCodeBlock];
+    }
+
+    return { ...(init ?? {}), body: JSON.stringify(body) };
+  } catch {
+    return init;
+  }
+}
+
+function appendHeaderValue(existing: string | null, value: string): string {
+  const values = (existing ?? "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  return values.includes(value) ? values.join(",") : [...values, value].join(",");
+}
 
 function mergeAnthropicCacheControl(
   existing: unknown,
@@ -1143,6 +1202,43 @@ export class ProviderModelFactory {
         const providerFetch = fetchWithCacheControl;
         const provider = createAnthropic({
           ...normalizedConfig,
+          fetch: providerFetch,
+        });
+        return Ok(provider(modelId));
+      }
+
+      // Handle Claude Code provider (local Claude Code OAuth session routed to Anthropic API)
+      if (providerName === "claude-code") {
+        const claudeCodeAuth = readClaudeCodeAuth();
+        if (!claudeCodeAuth) {
+          return Err({ type: "api_key_not_found", provider: providerName });
+        }
+
+        const { createAnthropic } = await PROVIDER_REGISTRY.anthropic();
+        const baseFetch = getProviderFetch(providerConfig);
+        const disableBeta = muxProviderOptions?.anthropic?.disableBetaFeatures === true;
+        const fetchWithCacheControl = wrapFetchWithAnthropicCacheControl(
+          baseFetch,
+          effectiveAnthropicCacheTtl,
+          { injectCacheControl: !disableBeta }
+        );
+        const providerFetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+          const initWithClaudeCodePrompt = prependClaudeCodeSystemPrompt(init);
+          const headers = new Headers(initWithClaudeCodePrompt?.headers);
+          headers.delete("x-api-key");
+          headers.set("Authorization", `Bearer ${claudeCodeAuth.accessToken}`);
+          headers.set(
+            "anthropic-beta",
+            appendHeaderValue(headers.get("anthropic-beta"), CLAUDE_CODE_OAUTH_BETA_HEADER)
+          );
+          return fetchWithCacheControl(input, { ...(initWithClaudeCodePrompt ?? {}), headers });
+        }) as typeof fetch;
+
+        const effectiveBaseURL = providerConfig.baseURL ?? resolveConfigBaseUrl(providerConfig);
+        const provider = createAnthropic({
+          ...providerConfig,
+          apiKey: "claude-code-oauth",
+          ...(effectiveBaseURL ? { baseURL: normalizeAnthropicBaseURL(effectiveBaseURL) } : {}),
           fetch: providerFetch,
         });
         return Ok(provider(modelId));

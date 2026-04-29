@@ -15,6 +15,7 @@ interface MockWorkspaceState {
 
 let cleanupDom: (() => void) | null = null;
 let workspaceState: MockWorkspaceState | undefined;
+let workspaceMetadata = new Map<string, any>();
 let originalWindowApi: WindowApi | undefined;
 
 const openTerminalMock = mock(() => Promise.resolve());
@@ -45,6 +46,12 @@ function installTestDoubles() {
         : workspaceState,
   }));
 }
+
+void mock.module("@/browser/contexts/WorkspaceContext", () => ({
+  useWorkspaceMetadata: () => ({
+    workspaceMetadata,
+  }),
+}));
 
 void mock.module("../ChatPane/ChatPane", () => ({
   ChatPane: (props: { workspaceId: string }) => (
@@ -147,6 +154,8 @@ describe("WorkspaceShell loading placeholders", () => {
     originalWindowApi = window.api;
     delete window.api;
     workspaceState = undefined;
+    workspaceMetadata = new Map();
+    window.localStorage.clear();
   });
 
   afterEach(() => {
@@ -245,6 +254,37 @@ describe("WorkspaceShell loading placeholders", () => {
     const secondChatPane = view.getByTestId("chat-pane");
     expect(secondChatPane).toBe(firstChatPane);
     expect(secondChatPane.textContent).toContain("workspace-2");
+  });
+
+  it("keeps the right sidebar/explorer surface mounted when split screen is enabled", () => {
+    workspaceState = {
+      isHydratingTranscript: false,
+      isStreamStarting: false,
+      loading: false,
+      messages: [],
+      queuedMessage: null,
+    };
+    workspaceMetadata = new Map([
+      [
+        "workspace-2",
+        {
+          id: "workspace-2",
+          projectPath: "/projects/other",
+          projectName: "other",
+          name: "second-chat",
+          title: "Second chat",
+          namedWorkspacePath: "/projects/other/workspaces/second-chat",
+        },
+      ],
+    ]);
+    window.localStorage.setItem("nuxSplitScreenEnabled", "true");
+    window.localStorage.setItem("nuxSplitScreenSecondaryWorkspace", JSON.stringify("workspace-2"));
+
+    const view = render(<WorkspaceShell {...defaultProps} />);
+
+    expect(view.getByTestId("right-sidebar")).toBeTruthy();
+    expect(view.getAllByTestId("chat-pane")).toHaveLength(2);
+    expect(view.getByLabelText("Resize split screen panes")).toBeTruthy();
   });
 
   it("renders loading animation during non-hydrating workspace loading", () => {

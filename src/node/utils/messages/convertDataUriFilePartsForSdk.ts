@@ -3,6 +3,45 @@ import type { MuxMessage } from "@/common/types/message";
 
 const DATA_URI_PREFIX = "data:";
 
+function detectImageMediaTypeFromBase64(base64Data: string): string | undefined {
+  let bytes: Buffer;
+  try {
+    bytes = Buffer.from(base64Data, "base64");
+  } catch {
+    return undefined;
+  }
+
+  if (bytes.length >= 8 && bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) {
+    return "image/png";
+  }
+
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
+    return "image/jpeg";
+  }
+
+  if (bytes.length >= 6) {
+    const gifHeader = bytes.subarray(0, 6).toString("ascii");
+    if (gifHeader === "GIF87a" || gifHeader === "GIF89a") {
+      return "image/gif";
+    }
+  }
+
+  if (
+    bytes.length >= 12 &&
+    bytes.subarray(0, 4).toString("ascii") === "RIFF" &&
+    bytes.subarray(8, 12).toString("ascii") === "WEBP"
+  ) {
+    return "image/webp";
+  }
+
+  return undefined;
+}
+
+function resolveMediaType(metadataMediaType: string | undefined, base64Data: string): string | undefined {
+  const detectedMediaType = detectImageMediaTypeFromBase64(base64Data);
+  return detectedMediaType ?? metadataMediaType;
+}
+
 interface ParsedDataUri {
   mediaType?: string;
   base64Data: string;
@@ -27,7 +66,7 @@ function parseDataUriToBase64(dataUri: string): ParsedDataUri {
 
   if (hasBase64Flag) {
     return {
-      mediaType,
+      mediaType: resolveMediaType(mediaType, payload),
       base64Data: payload,
     };
   }
@@ -41,9 +80,10 @@ function parseDataUriToBase64(dataUri: string): ParsedDataUri {
     );
   }
 
+  const base64Data = Buffer.from(decodedPayload, "utf8").toString("base64");
   return {
-    mediaType,
-    base64Data: Buffer.from(decodedPayload, "utf8").toString("base64"),
+    mediaType: resolveMediaType(mediaType, base64Data),
+    base64Data,
   };
 }
 

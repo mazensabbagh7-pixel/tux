@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { Download, Loader2, RefreshCw } from "lucide-react";
+import { Copy, Download, Loader2, RefreshCw, RotateCw, Wrench } from "lucide-react";
 import { VERSION } from "@/version";
 import type { UpdateStatus } from "@/common/orpc/types";
 import type { UpdateChannel } from "@/common/types/project";
-import MuxLogoDark from "@/browser/assets/logos/mux-logo-dark.svg?react";
-import MuxLogoLight from "@/browser/assets/logos/mux-logo-light.svg?react";
+import NuxLogoDark from "@/browser/assets/logos/nux-logo-dark.svg?react";
+import NuxLogoLight from "@/browser/assets/logos/nux-logo-light.svg?react";
 import { useTheme } from "@/browser/contexts/ThemeContext";
 import { useAPI } from "@/browser/contexts/API";
 import { useAboutDialog } from "@/browser/contexts/AboutDialogContext";
@@ -14,6 +14,21 @@ import {
   ToggleGroup,
   ToggleGroupItem,
 } from "@/browser/components/ToggleGroupPrimitive/ToggleGroupPrimitive";
+
+interface LinuxDiagnostics {
+  platform: string;
+  isLinux: boolean;
+  isPackaged: boolean;
+  execPath: string;
+  appImagePath: string | null;
+  appImageSha256: string | null;
+  appImageError: string | null;
+  desktopFilePath: string | null;
+  desktopFileExists: boolean;
+  desktopFileExec: string | null;
+  userDataPath: string | null;
+  nuxHomePath: string | null;
+}
 
 interface VersionRecord {
   buildTime?: unknown;
@@ -67,12 +82,15 @@ export function AboutDialog() {
   const { isOpen, close } = useAboutDialog();
   const { api } = useAPI();
   const { theme } = useTheme();
-  const MuxLogo = theme === "dark" || theme.endsWith("-dark") ? MuxLogoDark : MuxLogoLight;
+  const NuxLogo = theme === "dark" || theme.endsWith("-dark") ? NuxLogoDark : NuxLogoLight;
   const { gitDescribe, buildTime } = parseVersionInfo(VERSION satisfies unknown);
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus>({ type: "idle" });
   const [channel, setChannel] = useState<UpdateChannel | null>(null);
   const [channelLoading, setChannelLoading] = useState(false);
   const [pendingAction, setPendingAction] = useState<"check" | "download" | "install" | null>(null);
+  const [linuxDiagnostics, setLinuxDiagnostics] = useState<LinuxDiagnostics | null>(null);
+  const [linuxActionMessage, setLinuxActionMessage] = useState<string | null>(null);
+  const [linuxActionPending, setLinuxActionPending] = useState<"repair" | "restart" | null>(null);
   const channelRequestTokenRef = useRef(0);
 
   const isDesktop = typeof window !== "undefined" && Boolean(window.api);
@@ -129,6 +147,79 @@ export function AboutDialog() {
       active = false;
     };
   }, [api, isDesktop, isOpen]);
+
+  useEffect(() => {
+    if (!isOpen || !isDesktop || !api) {
+      setLinuxDiagnostics(null);
+      return;
+    }
+
+    let active = true;
+    api.general
+      .getLinuxDiagnostics()
+      .then((diagnostics) => {
+        if (active) {
+          setLinuxDiagnostics(diagnostics);
+        }
+      })
+      .catch((error) => {
+        console.error("Linux diagnostics failed:", error);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [api, isDesktop, isOpen]);
+
+  const handleCopyDiagnostics = () => {
+    if (!linuxDiagnostics) {
+      return;
+    }
+
+    const text = JSON.stringify(linuxDiagnostics, null, 2);
+    void navigator.clipboard.writeText(text).then(() => setLinuxActionMessage("Diagnostics copied."));
+  };
+
+  const handleRepairLinuxLauncher = () => {
+    if (!api) {
+      return;
+    }
+
+    setLinuxActionPending("repair");
+    api.general
+      .repairLinuxLauncher()
+      .then((result) => {
+        setLinuxActionMessage(result.message);
+        return api.general.getLinuxDiagnostics();
+      })
+      .then(setLinuxDiagnostics)
+      .catch((error) => {
+        console.error("Linux launcher repair failed:", error);
+        setLinuxActionMessage("Linux launcher repair failed.");
+      })
+      .finally(() => setLinuxActionPending(null));
+  };
+
+  const handleRestartApp = () => {
+    if (!api) {
+      return;
+    }
+
+    setLinuxActionPending("restart");
+    api.general
+      .restartApp()
+      .then((result) => {
+        if (!result.supported) {
+          setLinuxActionMessage(result.message);
+          setLinuxActionPending(null);
+        }
+      })
+      .catch((error) => {
+        console.error("Restart failed:", error);
+        setLinuxActionMessage("Restart failed.");
+        setLinuxActionPending(null);
+      });
+  };
 
   const canUseUpdateApi = isDesktop && Boolean(api);
   const isChecking =
@@ -199,7 +290,7 @@ export function AboutDialog() {
         <DialogTitle>About</DialogTitle>
 
         <div className="border-border-medium bg-modal-bg flex justify-center rounded-md border py-6">
-          <MuxLogo className="h-14 w-auto" aria-hidden="true" />
+          <NuxLogo className="h-14 w-auto" aria-hidden="true" />
         </div>
 
         <div className="space-y-1 text-sm">
@@ -212,6 +303,65 @@ export function AboutDialog() {
             <span className="text-foreground text-right text-xs">{buildTime}</span>
           </div>
         </div>
+
+        {linuxDiagnostics?.isLinux && (
+          <div className="border-border-medium space-y-3 border-t pt-3">
+            <div className="text-foreground text-sm font-medium">Linux diagnostics</div>
+            <div className="space-y-1 text-xs">
+              <div className="flex items-center justify-between gap-4">
+                <span className="text-muted">AppImage</span>
+                <span className="text-foreground max-w-[320px] truncate font-mono">
+                  {linuxDiagnostics.appImagePath ?? "Not detected"}
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-4">
+                <span className="text-muted">SHA-256</span>
+                <span className="text-foreground max-w-[320px] truncate font-mono">
+                  {linuxDiagnostics.appImageSha256 ?? linuxDiagnostics.appImageError ?? "Unknown"}
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-4">
+                <span className="text-muted">Launcher</span>
+                <span className="text-foreground max-w-[320px] truncate font-mono">
+                  {linuxDiagnostics.desktopFileExec ?? "Missing"}
+                </span>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button variant="outline" size="sm" onClick={handleCopyDiagnostics}>
+                <Copy className="h-3.5 w-3.5" />
+                Copy diagnostics
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleRepairLinuxLauncher}
+                disabled={linuxActionPending === "repair"}
+              >
+                {linuxActionPending === "repair" ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Wrench className="h-3.5 w-3.5" />
+                )}
+                Repair launcher
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleRestartApp}
+                disabled={linuxActionPending === "restart"}
+              >
+                {linuxActionPending === "restart" ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <RotateCw className="h-3.5 w-3.5" />
+                )}
+                Restart Nux
+              </Button>
+            </div>
+            {linuxActionMessage && <div className="text-muted text-xs">{linuxActionMessage}</div>}
+          </div>
+        )}
 
         <div className="border-border-medium space-y-3 border-t pt-3">
           <div className="text-foreground text-sm font-medium">Updates</div>
@@ -313,7 +463,7 @@ export function AboutDialog() {
               )}
 
               {updateStatus.type === "up-to-date" && (
-                <div className="text-muted text-xs">Mux is up to date.</div>
+                <div className="text-muted text-xs">NUX is up to date.</div>
               )}
 
               {updateStatus.type === "idle" && (
@@ -374,7 +524,7 @@ export function AboutDialog() {
           )}
 
           <a
-            href="https://github.com/coder/mux/releases"
+            href="https://github.com/mazensabbagh7-pixel/tux/releases"
             target="_blank"
             rel="noopener noreferrer"
             className="titlebar-no-drag text-accent inline-block text-xs hover:underline"

@@ -22,6 +22,7 @@ export type ProviderName =
   | "deepseek"
   | "openrouter"
   | "github-copilot"
+  | "claude-code"
   | "bedrock"
   | "ollama";
 
@@ -82,7 +83,7 @@ const fromDotSeparatedGatewayModelId = (
 // Order determines display order in UI (Settings, model selectors, etc.)
 export const PROVIDER_DEFINITIONS = {
   "mux-gateway": {
-    displayName: "Mux Gateway",
+    displayName: "NUX Gateway",
     import: () => import("ai"),
     factoryName: "createGateway",
     requiresApiKey: true, // Uses couponCode
@@ -151,6 +152,17 @@ export const PROVIDER_DEFINITIONS = {
     // Intentionally omit fromGatewayModelId: github-copilot:* model strings are canonical identities
     // with Copilot-specific pricing/capabilities, including non-OpenAI families like Claude.
     toGatewayModelId: (_origin, modelId) => modelId,
+  },
+  "claude-code": {
+    displayName: "Claude Code",
+    import: () => import("@ai-sdk/anthropic"),
+    factoryName: "createAnthropic",
+    requiresApiKey: false,
+    kind: "gateway",
+    routes: ["anthropic"],
+    passthrough: false,
+    toGatewayModelId: (_origin, modelId) => modelId,
+    fromGatewayModelId: (modelId) => ({ origin: "anthropic", modelId }),
   },
   bedrock: {
     displayName: "Bedrock",

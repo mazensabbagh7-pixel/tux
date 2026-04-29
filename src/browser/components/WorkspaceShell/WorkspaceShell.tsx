@@ -1,5 +1,6 @@
 import type { TerminalSessionCreateOptions } from "@/browser/utils/terminal";
-import React, { useCallback, useRef } from "react";
+import React, { useCallback, useEffect, useMemo, useRef } from "react";
+import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import { cn } from "@/common/lib/utils";
 import { LoadingAnimation } from "../LoadingAnimation/LoadingAnimation";
 import {
@@ -11,11 +12,12 @@ import { useResizableSidebar } from "@/browser/hooks/useResizableSidebar";
 import { useResizeObserver } from "@/browser/hooks/useResizeObserver";
 import { useOpenTerminal } from "@/browser/hooks/useOpenTerminal";
 import { usePersistedState } from "@/browser/hooks/usePersistedState";
+import { useWorkspaceMetadata } from "@/browser/contexts/WorkspaceContext";
 import { RightSidebar } from "@/browser/features/RightSidebar/RightSidebar";
 import { PopoverError } from "../PopoverError/PopoverError";
 import type { RuntimeConfig } from "@/common/types/runtime";
 import { useBackgroundBashError } from "@/browser/contexts/BackgroundBashContext";
-import { useWorkspaceState } from "@/browser/stores/WorkspaceStore";
+import { useWorkspaceState, workspaceStore } from "@/browser/stores/WorkspaceStore";
 import { useReviews } from "@/browser/hooks/useReviews";
 import type { ReviewNoteData } from "@/common/types/review";
 import { ConnectionStatusToast } from "../ConnectionStatusToast/ConnectionStatusToast";
@@ -103,6 +105,135 @@ const WorkspacePlaceholder: React.FC<{
   </div>
 );
 
+const SPLIT_SCREEN_ENABLED_KEY = "nuxSplitScreenEnabled";
+const SPLIT_SCREEN_SECONDARY_WORKSPACE_KEY = "nuxSplitScreenSecondaryWorkspace";
+const SPLIT_SCREEN_LAYOUT_KEY = "nuxSplitScreenLayout";
+const SPLIT_SCREEN_HANDLE_WIDTH_PX = 8;
+const DEFAULT_SPLIT_SCREEN_LAYOUT = [50, 50] as const;
+
+function normalizeSplitScreenLayout(value: unknown): [number, number] {
+  if (!Array.isArray(value) || value.length !== 2) {
+    return [...DEFAULT_SPLIT_SCREEN_LAYOUT];
+  }
+
+  const [primary, secondary] = value;
+  if (
+    typeof primary !== "number" ||
+    typeof secondary !== "number" ||
+    !Number.isFinite(primary) ||
+    !Number.isFinite(secondary) ||
+    primary <= 0 ||
+    secondary <= 0
+  ) {
+    return [...DEFAULT_SPLIT_SCREEN_LAYOUT];
+  }
+
+  const total = primary + secondary;
+  if (total <= 0) {
+    return [...DEFAULT_SPLIT_SCREEN_LAYOUT];
+  }
+
+  return [(primary / total) * 100, (secondary / total) * 100];
+}
+
+function isArchivedWorkspace(meta: { archivedAt?: string; unarchivedAt?: string }): boolean {
+  if (!meta.archivedAt) return false;
+  if (!meta.unarchivedAt) return true;
+  return meta.archivedAt > meta.unarchivedAt;
+}
+
+const SplitScreenToolbar: React.FC<{
+  enabled: boolean;
+  onEnabledChange: (enabled: boolean) => void;
+  secondaryWorkspaceId: string | null;
+  onSecondaryWorkspaceIdChange: (workspaceId: string | null) => void;
+  secondaryOptions: Array<{ id: string; title: string; name: string; projectName: string }>;
+}> = ({
+  enabled,
+  onEnabledChange,
+  secondaryWorkspaceId,
+  onSecondaryWorkspaceIdChange,
+  secondaryOptions,
+}) => {
+  return (
+    <div className="border-separator-light bg-surface-secondary/80 flex h-9 shrink-0 items-center gap-2 border-b px-3 text-xs backdrop-blur-sm">
+      <button
+        type="button"
+        onClick={() => onEnabledChange(!enabled)}
+        className={cn(
+          "rounded-md border px-2 py-1 font-medium transition-colors",
+          enabled
+            ? "border-accent bg-accent/15 text-accent"
+            : "border-separator text-muted hover:text-foreground hover:bg-surface-tertiary"
+        )}
+      >
+        {enabled ? "Split on" : "Split screen"}
+      </button>
+
+      {enabled && (
+        <>
+          <span className="text-muted">Right pane</span>
+          <select
+            value={secondaryWorkspaceId ?? ""}
+            onChange={(event) => onSecondaryWorkspaceIdChange(event.target.value || null)}
+            className="border-separator bg-surface-primary text-foreground h-6 min-w-[220px] rounded border px-2 text-xs outline-none"
+          >
+            <option value="">Pick a second chat…</option>
+            {secondaryOptions.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.projectName} / {option.title || option.name}
+              </option>
+            ))}
+          </select>
+          <span className="text-muted ml-auto hidden sm:inline">
+            Pick any project/workspace for the second pane.
+          </span>
+        </>
+      )}
+    </div>
+  );
+};
+
+const SplitSecondaryPane: React.FC<{
+  workspaceId: string;
+  projectPath: string;
+  projectName: string;
+  workspaceName: string;
+  namedWorkspacePath: string;
+  runtimeConfig?: RuntimeConfig;
+  leftSidebarCollapsed: boolean;
+  onToggleLeftSidebarCollapsed: () => void;
+  onOpenTerminal: (
+    workspaceId: string,
+    runtimeConfig?: RuntimeConfig,
+    options?: TerminalSessionCreateOptions
+  ) => void;
+}> = (props) => {
+  const workspaceState = useWorkspaceState(props.workspaceId);
+
+  useEffect(() => {
+    workspaceStore.setAuxiliaryActiveWorkspaceIds([props.workspaceId]);
+    return () => workspaceStore.setAuxiliaryActiveWorkspaceIds([]);
+  }, [props.workspaceId]);
+
+  return (
+    <ChatPane
+      workspaceId={props.workspaceId}
+      workspaceState={workspaceState}
+      projectPath={props.projectPath}
+      projectName={props.projectName}
+      workspaceName={props.workspaceName}
+      namedWorkspacePath={props.namedWorkspacePath}
+      leftSidebarCollapsed={props.leftSidebarCollapsed}
+      onToggleLeftSidebarCollapsed={props.onToggleLeftSidebarCollapsed}
+      runtimeConfig={props.runtimeConfig}
+      onOpenTerminal={(options) =>
+        props.onOpenTerminal(props.workspaceId, props.runtimeConfig, options)
+      }
+    />
+  );
+};
+
 export const WorkspaceShell: React.FC<WorkspaceShellProps> = (props) => {
   const shellRef = useRef<HTMLDivElement>(null);
   const shellSize = useResizeObserver(shellRef);
@@ -117,6 +248,22 @@ export const WorkspaceShell: React.FC<WorkspaceShellProps> = (props) => {
     LEFT_SIDEBAR_DEFAULT_WIDTH_PX,
     { listener: true }
   );
+  const [splitScreenEnabled, setSplitScreenEnabled] = usePersistedState<boolean>(
+    SPLIT_SCREEN_ENABLED_KEY,
+    false,
+    { listener: true }
+  );
+  const [secondaryWorkspaceId, setSecondaryWorkspaceId] = usePersistedState<string | null>(
+    SPLIT_SCREEN_SECONDARY_WORKSPACE_KEY,
+    null,
+    { listener: true }
+  );
+  const [rawSplitScreenLayout, setSplitScreenLayout] = usePersistedState<unknown>(
+    SPLIT_SCREEN_LAYOUT_KEY,
+    DEFAULT_SPLIT_SCREEN_LAYOUT,
+    { listener: true }
+  );
+  const splitScreenLayout = normalizeSplitScreenLayout(rawSplitScreenLayout);
   const containerWidthPx = shellSize?.width ?? 0;
   // Before ResizeObserver reports the real shell width, estimate it from the persisted left
   // sidebar width so a wide right sidebar doesn't first paint at a viewport-wide clamp and
@@ -131,15 +278,20 @@ export const WorkspaceShell: React.FC<WorkspaceShellProps> = (props) => {
           persistedLeftSidebarWidthPx,
         });
 
-  // Prevent ChatPane + RightSidebar from overflowing the workspace shell (which would show a
-  // horizontal scrollbar due to WorkspaceShell's `overflow-x-auto`).
+  // Prevent ChatPane(s) + RightSidebar from overflowing the workspace shell (which would show a
+  // horizontal scrollbar due to WorkspaceShell's `overflow-x-auto`). When NUX split-screen is on,
+  // keep enough space for both chat panes and the splitter so the restored explorer/right sidebar
+  // does not squeeze either chat below its usable minimum.
+  const minimumChatAreaWidthPx = splitScreenEnabled
+    ? CHAT_PANE_MIN_WIDTH_PX * 2 + SPLIT_SCREEN_HANDLE_WIDTH_PX
+    : CHAT_PANE_MIN_WIDTH_PX;
   const effectiveMaxWidthPx = isStacked
     ? RIGHT_SIDEBAR_ABS_MAX_WIDTH_PX
     : Math.min(
         RIGHT_SIDEBAR_ABS_MAX_WIDTH_PX,
         Math.max(
           RIGHT_SIDEBAR_MIN_WIDTH_PX,
-          usableWidthPx - CHAT_PANE_MIN_WIDTH_PX - RIGHT_SIDEBAR_OVERFLOW_GUARD_PX
+          usableWidthPx - minimumChatAreaWidthPx - RIGHT_SIDEBAR_OVERFLOW_GUARD_PX
         )
       );
 
@@ -165,6 +317,62 @@ export const WorkspaceShell: React.FC<WorkspaceShellProps> = (props) => {
       }
     },
     [openTerminalPopout, props.workspaceId, props.runtimeConfig]
+  );
+
+  const { workspaceMetadata } = useWorkspaceMetadata();
+
+  const splitScreenOptions = useMemo(() => {
+    return Array.from(workspaceMetadata.values())
+      .filter((meta) => meta.id !== props.workspaceId)
+      .filter((meta) => !isArchivedWorkspace(meta))
+      .map((meta) => ({
+        id: meta.id,
+        title: meta.title ?? meta.name,
+        name: meta.name,
+        projectName: meta.projectName,
+      }))
+      .sort((a, b) => {
+        const projectCompare = a.projectName.localeCompare(b.projectName);
+        if (projectCompare !== 0) return projectCompare;
+        return (a.title || a.name).localeCompare(b.title || b.name);
+      });
+  }, [props.workspaceId, workspaceMetadata]);
+
+  const secondaryWorkspaceMeta =
+    splitScreenEnabled && secondaryWorkspaceId ? workspaceMetadata.get(secondaryWorkspaceId) : null;
+  const hasValidSecondaryWorkspace = Boolean(
+    secondaryWorkspaceMeta &&
+    secondaryWorkspaceMeta.id !== props.workspaceId &&
+    !isArchivedWorkspace(secondaryWorkspaceMeta)
+  );
+
+  useEffect(() => {
+    if (!splitScreenEnabled) {
+      return;
+    }
+
+    if (hasValidSecondaryWorkspace) {
+      return;
+    }
+
+    setSecondaryWorkspaceId(splitScreenOptions[0]?.id ?? null);
+  }, [splitScreenEnabled, hasValidSecondaryWorkspace, splitScreenOptions, setSecondaryWorkspaceId]);
+
+  const openTerminalForWorkspace = useCallback(
+    (
+      workspaceId: string,
+      runtimeConfig?: RuntimeConfig,
+      options?: TerminalSessionCreateOptions
+    ) => {
+      const isMobileTouch = window.matchMedia("(max-width: 768px) and (pointer: coarse)").matches;
+      if (isMobileTouch || workspaceId !== props.workspaceId) {
+        void openTerminalPopout(workspaceId, runtimeConfig, options);
+        return;
+      }
+
+      addTerminalRef.current?.(options);
+    },
+    [openTerminalPopout, props.workspaceId]
   );
 
   const reviews = useReviews(props.workspaceId);
@@ -234,22 +442,93 @@ export const WorkspaceShell: React.FC<WorkspaceShellProps> = (props) => {
       )}
       style={{ containerType: "inline-size" }}
     >
-      {/* Keep the transcript viewport mounted across workspace switches so the browser doesn't
-          visually tear the pane while the new workspace content hydrates. ChatPane resets its
-          per-workspace local UI state internally, and the composer remains keyed by workspaceId. */}
-      <ChatPane
-        workspaceId={props.workspaceId}
-        workspaceState={workspaceState}
-        projectPath={props.projectPath}
-        projectName={props.projectName}
-        workspaceName={props.workspaceName}
-        namedWorkspacePath={props.namedWorkspacePath}
-        leftSidebarCollapsed={props.leftSidebarCollapsed}
-        onToggleLeftSidebarCollapsed={props.onToggleLeftSidebarCollapsed}
-        runtimeConfig={props.runtimeConfig}
-        onOpenTerminal={handleOpenTerminal}
-        immersiveHidden={isReviewImmersive}
-      />
+      <div className="flex min-w-0 flex-1 flex-col">
+        <SplitScreenToolbar
+          enabled={splitScreenEnabled}
+          onEnabledChange={setSplitScreenEnabled}
+          secondaryWorkspaceId={hasValidSecondaryWorkspace ? secondaryWorkspaceId : null}
+          onSecondaryWorkspaceIdChange={setSecondaryWorkspaceId}
+          secondaryOptions={splitScreenOptions}
+        />
+
+        {splitScreenEnabled && hasValidSecondaryWorkspace && secondaryWorkspaceMeta ? (
+          <PanelGroup
+            direction={isStacked ? "vertical" : "horizontal"}
+            className="min-h-0 min-w-0 flex-1"
+            onLayout={(layout) => setSplitScreenLayout(layout)}
+          >
+            <Panel
+              id="primary-chat"
+              order={1}
+              defaultSize={splitScreenLayout[0]}
+              minSize={25}
+              className="flex min-h-0 min-w-0"
+            >
+              {/* Keep transcript viewports mounted across workspace switches so the browser doesn't
+                  visually tear the pane while new workspace content hydrates. ChatPane resets its
+                  per-workspace local UI state internally, and the composer remains keyed by workspaceId. */}
+              <ChatPane
+                workspaceId={props.workspaceId}
+                workspaceState={workspaceState}
+                projectPath={props.projectPath}
+                projectName={props.projectName}
+                workspaceName={props.workspaceName}
+                namedWorkspacePath={props.namedWorkspacePath}
+                leftSidebarCollapsed={props.leftSidebarCollapsed}
+                onToggleLeftSidebarCollapsed={props.onToggleLeftSidebarCollapsed}
+                runtimeConfig={props.runtimeConfig}
+                onOpenTerminal={handleOpenTerminal}
+                immersiveHidden={isReviewImmersive}
+              />
+            </Panel>
+            <PanelResizeHandle
+              className={cn(
+                "bg-separator-light hover:bg-accent/70 focus-visible:bg-accent shrink-0 transition-colors focus-visible:outline-none",
+                isStacked ? "h-2 w-full cursor-row-resize" : "h-full w-2 cursor-col-resize"
+              )}
+              aria-label="Resize split screen panes"
+            />
+            <Panel
+              id="secondary-chat"
+              order={2}
+              defaultSize={splitScreenLayout[1]}
+              minSize={25}
+              className="flex min-h-0 min-w-0"
+            >
+              <SplitSecondaryPane
+                workspaceId={secondaryWorkspaceMeta.id}
+                projectPath={secondaryWorkspaceMeta.projectPath}
+                projectName={secondaryWorkspaceMeta.projectName}
+                workspaceName={secondaryWorkspaceMeta.name}
+                namedWorkspacePath={secondaryWorkspaceMeta.namedWorkspacePath}
+                leftSidebarCollapsed={props.leftSidebarCollapsed}
+                onToggleLeftSidebarCollapsed={props.onToggleLeftSidebarCollapsed}
+                runtimeConfig={secondaryWorkspaceMeta.runtimeConfig}
+                onOpenTerminal={openTerminalForWorkspace}
+              />
+            </Panel>
+          </PanelGroup>
+        ) : (
+          <div className="flex min-h-0 min-w-0 flex-1">
+            {/* Keep transcript viewports mounted across workspace switches so the browser doesn't
+                visually tear the pane while new workspace content hydrates. ChatPane resets its
+                per-workspace local UI state internally, and the composer remains keyed by workspaceId. */}
+            <ChatPane
+              workspaceId={props.workspaceId}
+              workspaceState={workspaceState}
+              projectPath={props.projectPath}
+              projectName={props.projectName}
+              workspaceName={props.workspaceName}
+              namedWorkspacePath={props.namedWorkspacePath}
+              leftSidebarCollapsed={props.leftSidebarCollapsed}
+              onToggleLeftSidebarCollapsed={props.onToggleLeftSidebarCollapsed}
+              runtimeConfig={props.runtimeConfig}
+              onOpenTerminal={handleOpenTerminal}
+              immersiveHidden={isReviewImmersive}
+            />
+          </div>
+        )}
+      </div>
 
       <RightSidebar
         key={props.workspaceId}

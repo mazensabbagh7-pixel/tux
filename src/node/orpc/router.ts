@@ -73,6 +73,7 @@ import { isWorkspaceArchived } from "@/common/utils/archive";
 import assert from "node:assert/strict";
 import * as fsPromises from "fs/promises";
 import * as path from "node:path";
+import { createHash } from "node:crypto";
 
 import type { DevToolsEvent } from "@/common/types/devtools";
 import type { MuxMessage } from "@/common/types/message";
@@ -144,6 +145,127 @@ async function resolveAgentDiscoveryContext(
     { projectPath: input.projectPath! }
   );
   return { runtime, discoveryPath: input.projectPath! };
+}
+
+async function sha256File(filePath: string): Promise<string> {
+  const buffer = await fsPromises.readFile(filePath);
+  return createHash("sha256").update(buffer).digest("hex");
+}
+
+function getLinuxAppImagePath(): string | null {
+  if (process.platform !== "linux") {
+    return null;
+  }
+
+  const appImage = process.env.APPIMAGE?.trim();
+  if (appImage) {
+    return appImage;
+  }
+
+  const home = process.env.HOME?.trim();
+  return home ? path.join(home, "Applications", "Nux.AppImage") : null;
+}
+
+function getLinuxDesktopFilePath(): string | null {
+  if (process.platform !== "linux") {
+    return null;
+  }
+
+  const home = process.env.HOME?.trim();
+  return home ? path.join(home, ".local", "share", "applications", "nux.desktop") : null;
+}
+
+async function readDesktopExec(desktopFilePath: string): Promise<string | null> {
+  try {
+    const content = await fsPromises.readFile(desktopFilePath, "utf-8");
+    const execLine = content
+      .split("\n")
+      .find((line) => line.trim().toLowerCase().startsWith("exec="));
+    return execLine ? execLine.slice(execLine.indexOf("=") + 1).trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+async function buildLinuxDiagnostics(context: ORPCContext) {
+  const appImagePath = getLinuxAppImagePath();
+  const desktopFilePath = getLinuxDesktopFilePath();
+  let appImageSha256: string | null = null;
+  let appImageError: string | null = null;
+
+  if (appImagePath) {
+    try {
+      appImageSha256 = await sha256File(appImagePath);
+    } catch (error) {
+      appImageError = getErrorMessage(error);
+    }
+  }
+
+  const desktopFileExists = desktopFilePath
+    ? await fsPromises
+        .stat(desktopFilePath)
+        .then((stat) => stat.isFile())
+        .catch(() => false)
+    : false;
+
+  return {
+    platform: process.platform,
+    isLinux: process.platform === "linux",
+    isPackaged: Boolean(process.env.APPIMAGE),
+    execPath: process.execPath,
+    appImagePath,
+    appImageSha256,
+    appImageError,
+    desktopFilePath,
+    desktopFileExists,
+    desktopFileExec: desktopFilePath ? await readDesktopExec(desktopFilePath) : null,
+    userDataPath:
+      typeof process.env.XDG_CONFIG_HOME === "string"
+        ? path.join(process.env.XDG_CONFIG_HOME, "nux")
+        : process.env.HOME
+          ? path.join(process.env.HOME, ".config", "nux")
+          : null,
+    nuxHomePath: context.config.rootDir,
+  };
+}
+
+async function repairLinuxLauncher(): Promise<{ success: boolean; path: string | null; message: string }> {
+  if (process.platform !== "linux") {
+    return { success: false, path: null, message: "Linux launcher repair is only available on Linux." };
+  }
+
+  const appImagePath = getLinuxAppImagePath();
+  const desktopFilePath = getLinuxDesktopFilePath();
+  if (!appImagePath || !desktopFilePath) {
+    return { success: false, path: desktopFilePath, message: "Unable to resolve AppImage or desktop file path." };
+  }
+
+  try {
+    await fsPromises.access(appImagePath);
+  } catch {
+    return { success: false, path: desktopFilePath, message: `AppImage not found at ${appImagePath}.` };
+  }
+
+  const iconPath = process.env.HOME
+    ? path.join(process.env.HOME, ".local", "share", "icons", "hicolor", "512x512", "apps", "nux.png")
+    : "nux";
+  const desktopFile = [
+    "[Desktop Entry]",
+    "Name=Nux",
+    "Comment=Mazen's split-screen AI coding workspace",
+    `Exec=${appImagePath} --no-sandbox %U`,
+    `Icon=${iconPath}`,
+    "Terminal=false",
+    "Type=Application",
+    "Categories=Development;IDE;",
+    "StartupWMClass=nux",
+    "MimeType=x-scheme-handler/nux;",
+    "",
+  ].join("\n");
+
+  await fsPromises.mkdir(path.dirname(desktopFilePath), { recursive: true });
+  await fsPromises.writeFile(desktopFilePath, desktopFile, { mode: 0o644 });
+  return { success: true, path: desktopFilePath, message: "Linux launcher repaired." };
 }
 
 function isErrnoWithCode(error: unknown, code: string): boolean {
@@ -1982,6 +2104,18 @@ export const router = (authToken?: string) => {
             unsubscribe();
             queue.end();
           }
+        }),
+      getLinuxDiagnostics: t
+        .input(schemas.general.getLinuxDiagnostics.input)
+        .output(schemas.general.getLinuxDiagnostics.output)
+        .handler(({ context }) => {
+          return buildLinuxDiagnostics(context);
+        }),
+      repairLinuxLauncher: t
+        .input(schemas.general.repairLinuxLauncher.input)
+        .output(schemas.general.repairLinuxLauncher.output)
+        .handler(() => {
+          return repairLinuxLauncher();
         }),
       restartApp: t
         .input(schemas.general.restartApp.input)

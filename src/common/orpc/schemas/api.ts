@@ -217,9 +217,9 @@ export const ProviderConfigInfoSchema = z.object({
   codexOauthDefaultAuth: CodexOauthDefaultAuthSchema.optional(),
   /** AWS-specific fields (only present for bedrock provider) */
   aws: AWSCredentialStatusSchema.optional(),
-  /** Mux Gateway-specific fields */
+  /** NUX Gateway-specific fields */
   couponCodeSet: z.boolean().optional(),
-  /** Mux Gateway-specific: which models are enabled for gateway routing */
+  /** NUX Gateway-specific: which models are enabled for gateway routing */
   gatewayModels: z.array(z.string()).optional(),
 });
 
@@ -345,7 +345,7 @@ export const policy = {
   },
 };
 
-// Mux Gateway OAuth (desktop login flow)
+// NUX Gateway OAuth (desktop login flow)
 export const muxGatewayOauth = {
   startDesktopFlow: {
     input: z.void(),
@@ -401,7 +401,7 @@ export const copilotOauth = {
   },
 };
 
-// Mux Governor OAuth (enrollment for enterprise policy service)
+// NUX Governor OAuth (enrollment for enterprise policy service)
 export const muxGovernorOauth = {
   startDesktopFlow: {
     input: z.object({ governorOrigin: z.string() }).strict(),
@@ -478,7 +478,7 @@ export const codexOauth = {
     output: ResultSchema(z.void(), z.string()),
   },
 };
-// Mux Gateway
+// NUX Gateway
 export const muxGateway = {
   getAccountStatus: {
     input: z.void(),
@@ -1545,8 +1545,8 @@ export const tasks = {
 
 // Agent definitions (unifies UI modes + subagents)
 // Agents can be discovered from either the PROJECT path or the WORKSPACE path.
-// - Project path: <projectPath>/.mux/agents - shared across all workspaces
-// - Workspace path: <worktree>/.mux/agents - workspace-specific (useful for iterating)
+// - Project path: <projectPath>/.nux/agents - shared across all workspaces
+// - Workspace path: <worktree>/.nux/agents - workspace-specific (useful for iterating)
 // Default is workspace path when workspaceId is provided.
 // Use disableWorkspaceAgents in SendMessageOptions to skip workspace agents during message sending.
 
@@ -1749,9 +1749,9 @@ export const ApiServerStatusSchema = z.object({
   networkBaseUrls: z.array(z.url()),
   /** Auth token required for HTTP/WS API access. */
   token: z.string().nullable(),
-  /** Configured bind host from ~/.mux/config.json (if set). */
+  /** Configured bind host from ~/.nux/config.json (if set). */
   configuredBindHost: z.string().nullable(),
-  /** Configured port from ~/.mux/config.json (if set). */
+  /** Configured port from ~/.nux/config.json (if set). */
   configuredPort: z.number().int().min(0).max(65535).nullable(),
   /** Whether the API server should serve the mux web UI at /. */
   configuredServeWebUi: z.boolean(),
@@ -1840,7 +1840,7 @@ export const config = {
       agentAiDefaults: AgentAiDefaultsSchema,
       // Legacy fields (downgrade compatibility)
       subagentAiDefaults: SubagentAiDefaultsSchema,
-      // Mux Governor enrollment status (safe fields only - token never exposed)
+      // NUX Governor enrollment status (safe fields only - token never exposed)
       muxGovernorUrl: z.string().nullable(),
       muxGovernorEnrolled: z.boolean(),
       llmDebugLogs: z.boolean(),
@@ -2223,6 +2223,27 @@ const EditorConfigSchema = z.object({
 
 const LogLevelSchema = z.enum(["error", "warn", "info", "debug"]);
 
+const LinuxDiagnosticsSchema = z.object({
+  platform: z.string(),
+  isLinux: z.boolean(),
+  isPackaged: z.boolean(),
+  execPath: z.string(),
+  appImagePath: z.string().nullable(),
+  appImageSha256: z.string().nullable(),
+  appImageError: z.string().nullable(),
+  desktopFilePath: z.string().nullable(),
+  desktopFileExists: z.boolean(),
+  desktopFileExec: z.string().nullable(),
+  userDataPath: z.string().nullable(),
+  nuxHomePath: z.string().nullable(),
+});
+
+const LinuxLauncherRepairResultSchema = z.object({
+  success: z.boolean(),
+  path: z.string().nullable(),
+  message: z.string(),
+});
+
 const RestartAppResultSchema = z.discriminatedUnion("supported", [
   z.object({
     supported: z.literal(true),
@@ -2261,6 +2282,14 @@ export const general = {
       intervalMs: z.number().int().min(10).max(5000),
     }),
     output: eventIterator(z.object({ tick: z.number(), timestamp: z.number() })),
+  },
+  getLinuxDiagnostics: {
+    input: z.void(),
+    output: LinuxDiagnosticsSchema,
+  },
+  repairLinuxLauncher: {
+    input: z.void(),
+    output: LinuxLauncherRepairResultSchema,
   },
   restartApp: {
     input: z.void(),
