@@ -17,6 +17,7 @@ import {
   Server,
   Lock,
   HeartPulse,
+  Plug,
 } from "lucide-react";
 import { useSettings } from "@/browser/contexts/SettingsContext";
 import { useOnboardingPause } from "@/browser/features/SplashScreens/SplashScreenProvider";
@@ -31,6 +32,7 @@ import { System1Section } from "./Sections/System1Section";
 import { GovernorSection } from "./Sections/GovernorSection";
 import { Button } from "@/browser/components/Button/Button";
 import { MCPSettingsSection } from "./Sections/MCPSettingsSection";
+import { PluginsSection } from "./Sections/PluginsSection";
 import { SecretsSection } from "./Sections/SecretsSection";
 import { LayoutsSection } from "./Sections/LayoutsSection";
 import { RuntimesSection } from "./Sections/RuntimesSection";
@@ -65,6 +67,12 @@ const BASE_SECTIONS: SettingsSection[] = [
     label: "Models",
     icon: <Cpu className="h-4 w-4" />,
     component: ModelsSection,
+  },
+  {
+    id: "plugins",
+    label: "Plugins",
+    icon: <Plug className="h-4 w-4" />,
+    component: PluginsSection,
   },
   {
     id: "mcp",
