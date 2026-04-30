@@ -245,6 +245,7 @@ dist/preload.js: src/desktop/preload.ts $(TS_SOURCES)
 
 build-renderer: node_modules/.installed src/version.ts ## Build renderer process
 	@echo "Building renderer..."
+	@./scripts/clean-renderer-artifacts.sh
 	@bun x vite build
 
 build-static: ## Copy static assets to dist
