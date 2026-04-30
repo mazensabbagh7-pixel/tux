@@ -1,3 +1,13 @@
+<!--
+NUX STATUS FOR ALL AGENTS / MAINTAINERS
+
+This repo is Mazen's Nux fork of coder/mux. The GitHub repo is still named "tux",
+but the live app/runtime is Nux. Before changing, cleaning, rebuilding, or
+reinstalling, read ./NUX_STATUS.md and /home/mazen/Documents/ThorVault/Projects/Nux.md.
+Known-good installed AppImage sha256:
+2b669c4cc83b73785fde89f8abcdbb9cab5fe1ed70c6c8612672153df16095f6
+-->
+
 <div align="center">
 
 <picture>

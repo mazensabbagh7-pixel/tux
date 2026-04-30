@@ -5,6 +5,17 @@ description: Agent instructions for AI assistants working on the Mux codebase
 
 **Prime directive:** keep edits minimal and token-efficient—say only what conveys actionable signal.
 
+## Nux Canonical Identity / Build State
+
+- This repo is Mazen's **Nux** fork of `coder/mux`; the GitHub repo is still named `tux`, but the product/runtime is **Nux**.
+- **Nux ≠ Mux.** Mux is upstream/older naming. Do not reintroduce Mux/Tux branding into user-facing surfaces unless explicitly requested for compatibility.
+- **Nux ≠ Claude Code.** Nux has a Claude Code provider that reuses local Claude Code OAuth, but Nux is the desktop multiplexer app.
+- Before changing, cleaning, rebuilding, or reinstalling Nux, read `NUX_STATUS.md` and `/home/mazen/Documents/ThorVault/Projects/Nux.md`.
+- Known-good installed AppImage: `/home/mazen/Applications/Nux.AppImage`, sha256 `2b669c4cc83b73785fde89f8abcdbb9cab5fe1ed70c6c8612672153df16095f6`.
+- Backup AppImage: `/home/mazen/Applications/Nux.AppImage.known-good-2b669c4cc83b.bak` with the same sha256.
+- Primary safety branch: `nux-safe-working-state-20260429`; live feature/source base is `e925b9ea3`; reviewable split branch is `nux-rebrand-split-2026-04-30` at `c126c634c`.
+- The installed AppImage source state is `e925b9ea3` plus the preserved 152-file working tree. That dirty tree is intentional and preserved in stash/patch/split-branch form. Do not reset, clean, drop stash, or reinstall without Mazen explicitly approving that exact action.
+
 ## Project Snapshot
 
 - `mux`: Electron + React desktop app for parallel agent workflows; UX must be fast, responsive, predictable.
