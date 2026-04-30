@@ -83,7 +83,7 @@ export function createIncompatibleWorkspace(
     ...createWorkspace(opts),
     incompatibleRuntime:
       opts.incompatibleReason ??
-      "This workspace was created with a newer version of mux.\nPlease upgrade mux to use this workspace.",
+      "This workspace was created with a newer version of NUX.\nPlease upgrade NUX to use this workspace.",
   };
 }
 

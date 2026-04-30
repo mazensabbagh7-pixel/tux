@@ -1,12 +1,12 @@
 /**
- * API CLI subcommand - delegates to a running mux server via HTTP.
+ * API CLI subcommand - delegates to a running nux server via HTTP.
  *
  * This module is loaded lazily to avoid pulling in ESM-only dependencies
  * (trpc-cli) when running other commands like the desktop app.
  *
  * Server discovery priority:
  * 1. MUX_SERVER_URL env var (explicit override)
- * 2. Lockfile at ~/.tux/server.lock (running Electron or Tux server)
+ * 2. Lockfile at ~/.nux/server.lock (running Electron or Nux server)
  * 3. Fallback to http://localhost:3000
  */
 
@@ -35,7 +35,7 @@ async function discoverServer(): Promise<ServerDiscovery> {
     };
   }
 
-  // Priority 2: Try lockfile discovery (running Electron or mux server)
+  // Priority 2: Try lockfile discovery (running Electron or NUX server)
   try {
     const lockfile = new ServerLockfile(getMuxHome());
     const data = await lockfile.read();
@@ -66,8 +66,8 @@ async function discoverServer(): Promise<ServerDiscovery> {
   // run() sets exitOverride on root, uses parseAsync, and handles process exit properly
   const { run } = createCli({
     router: proxiedRouter,
-    name: "tux api",
-    description: "Interact with the Tux API via a running server",
+    name: "nux api",
+    description: "Interact with the Nux API via a running server",
   });
 
   try {

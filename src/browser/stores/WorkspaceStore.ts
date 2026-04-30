@@ -542,14 +542,18 @@ export class WorkspaceStore {
 
   // Supporting data structures
   private aggregators = new Map<string, StreamingMessageAggregator>();
-  // Active onChat subscription cleanup handlers (must stay size <= 1).
+  // Active onChat subscription cleanup handlers. Normally this is the routed workspace only;
+  // Nux split-screen keeps secondary panes live too so messages sent there stream back in place.
   private ipcUnsubscribers = new Map<string, () => void>();
 
   // Workspace selected in the UI (set from WorkspaceContext routing state).
   private activeWorkspaceId: string | null = null;
 
-  // Workspace currently owning the live onChat subscription.
+  // Workspace currently owning the primary live onChat subscription.
   private activeOnChatWorkspaceId: string | null = null;
+
+  // Extra workspaces that should keep onChat subscriptions while visible in split screen.
+  private auxiliaryOnChatWorkspaceIds = new Set<string>();
 
   // Lightweight activity snapshots from workspace.activity.list/subscribe.
   private workspaceActivity = new Map<string, WorkspaceActivitySnapshot>();
@@ -1143,13 +1147,32 @@ export class WorkspaceStore {
     }
   }
 
+  setAuxiliaryActiveWorkspaceIds(workspaceIds: string[]): void {
+    const next = new Set(
+      workspaceIds.filter(
+        (workspaceId) => typeof workspaceId === "string" && workspaceId.length > 0
+      )
+    );
+    const current = this.auxiliaryOnChatWorkspaceIds;
+    if (next.size === current.size && [...next].every((workspaceId) => current.has(workspaceId))) {
+      return;
+    }
+
+    const affected = new Set([...current, ...next]);
+    this.auxiliaryOnChatWorkspaceIds = next;
+    this.ensureActiveOnChatSubscription();
+    for (const workspaceId of affected) {
+      this.states.bump(workspaceId);
+    }
+  }
+
   isOnChatSubscriptionActive(workspaceId: string): boolean {
     assert(
       typeof workspaceId === "string" && workspaceId.length > 0,
       "isOnChatSubscriptionActive requires a non-empty workspaceId"
     );
 
-    return this.activeOnChatWorkspaceId === workspaceId;
+    return this.ipcUnsubscribers.has(workspaceId);
   }
 
   private ensureActivitySubscription(): void {
@@ -1178,24 +1201,38 @@ export class WorkspaceStore {
     }
   }
 
-  private assertSingleActiveOnChatSubscription(): void {
-    assert(
-      this.ipcUnsubscribers.size <= 1,
-      `[WorkspaceStore] Expected at most one active onChat subscription, found ${this.ipcUnsubscribers.size}`
-    );
+  private assertActiveOnChatSubscriptions(): void {
+    const expectedWorkspaceIds = this.getTargetOnChatWorkspaceIds();
 
-    if (this.activeOnChatWorkspaceId === null) {
+    for (const workspaceId of this.ipcUnsubscribers.keys()) {
       assert(
-        this.ipcUnsubscribers.size === 0,
-        "[WorkspaceStore] onChat unsubscribe map must be empty when no active workspace is subscribed"
+        expectedWorkspaceIds.has(workspaceId),
+        `[WorkspaceStore] Unexpected onChat subscription for ${workspaceId}`
       );
-      return;
     }
 
-    assert(
-      this.ipcUnsubscribers.has(this.activeOnChatWorkspaceId),
-      `[WorkspaceStore] Missing onChat unsubscribe handler for ${this.activeOnChatWorkspaceId}`
-    );
+    for (const workspaceId of expectedWorkspaceIds) {
+      assert(
+        this.ipcUnsubscribers.has(workspaceId),
+        `[WorkspaceStore] Missing onChat unsubscribe handler for ${workspaceId}`
+      );
+    }
+  }
+
+  private getTargetOnChatWorkspaceIds(): Set<string> {
+    const ids = new Set<string>();
+
+    if (this.activeWorkspaceId && this.isWorkspaceRegistered(this.activeWorkspaceId)) {
+      ids.add(this.activeWorkspaceId);
+    }
+
+    for (const workspaceId of this.auxiliaryOnChatWorkspaceIds) {
+      if (this.isWorkspaceRegistered(workspaceId)) {
+        ids.add(workspaceId);
+      }
+    }
+
+    return ids;
   }
 
   private clearReplayBuffers(workspaceId: string): void {
@@ -1214,37 +1251,39 @@ export class WorkspaceStore {
   }
 
   private ensureActiveOnChatSubscription(): void {
-    const targetWorkspaceId =
-      this.activeWorkspaceId && this.isWorkspaceRegistered(this.activeWorkspaceId)
+    const targetWorkspaceIds = this.getTargetOnChatWorkspaceIds();
+    const nextPrimaryWorkspaceId =
+      this.activeWorkspaceId && targetWorkspaceIds.has(this.activeWorkspaceId)
         ? this.activeWorkspaceId
         : null;
 
-    if (this.activeOnChatWorkspaceId === targetWorkspaceId) {
-      this.assertSingleActiveOnChatSubscription();
-      return;
-    }
+    for (const workspaceId of Array.from(this.ipcUnsubscribers.keys())) {
+      if (targetWorkspaceIds.has(workspaceId)) {
+        continue;
+      }
 
-    if (this.activeOnChatWorkspaceId) {
-      const previousActiveWorkspaceId = this.activeOnChatWorkspaceId;
-      const previousTransient = this.chatTransientState.get(previousActiveWorkspaceId);
-      if (previousTransient) {
-        previousTransient.isHydratingTranscript = false;
+      const transient = this.chatTransientState.get(workspaceId);
+      if (transient) {
+        transient.isHydratingTranscript = false;
       }
 
       // Clear replay buffers before aborting so a fast workspace switch/reopen
       // cannot replay stale buffered rows from the previous subscription attempt.
-      this.clearReplayBuffers(previousActiveWorkspaceId);
+      this.clearReplayBuffers(workspaceId);
 
-      const unsubscribe = this.ipcUnsubscribers.get(previousActiveWorkspaceId);
+      const unsubscribe = this.ipcUnsubscribers.get(workspaceId);
       if (unsubscribe) {
         unsubscribe();
       }
-      this.ipcUnsubscribers.delete(previousActiveWorkspaceId);
-      this.activeOnChatWorkspaceId = null;
+      this.ipcUnsubscribers.delete(workspaceId);
     }
 
-    if (targetWorkspaceId) {
-      const transient = this.chatTransientState.get(targetWorkspaceId);
+    for (const workspaceId of targetWorkspaceIds) {
+      if (this.ipcUnsubscribers.has(workspaceId)) {
+        continue;
+      }
+
+      const transient = this.chatTransientState.get(workspaceId);
       if (transient) {
         transient.caughtUp = false;
         // Only show transcript hydration once we can actually establish onChat.
@@ -1253,12 +1292,12 @@ export class WorkspaceStore {
       }
 
       const controller = new AbortController();
-      this.ipcUnsubscribers.set(targetWorkspaceId, () => controller.abort());
-      this.activeOnChatWorkspaceId = targetWorkspaceId;
-      void this.runOnChatSubscription(targetWorkspaceId, controller.signal);
+      this.ipcUnsubscribers.set(workspaceId, () => controller.abort());
+      void this.runOnChatSubscription(workspaceId, controller.signal);
     }
 
-    this.assertSingleActiveOnChatSubscription();
+    this.activeOnChatWorkspaceId = nextPrimaryWorkspaceId;
+    this.assertActiveOnChatSubscriptions();
   }
 
   /**
@@ -1590,7 +1629,7 @@ export class WorkspaceStore {
         this.historyPagination.get(workspaceId) ?? createInitialHistoryPaginationState();
       const activeStreams = aggregator.getActiveStreams();
       const activity = this.workspaceActivity.get(workspaceId);
-      const isActiveWorkspace = this.activeOnChatWorkspaceId === workspaceId;
+      const isActiveWorkspace = this.isOnChatSubscriptionActive(workspaceId);
       const messages = aggregator.getAllMessages();
       const metadata = this.workspaceMetadata.get(workspaceId);
       const pendingStreamStartTime = aggregator.getPendingStreamStartTime();
@@ -3293,6 +3332,7 @@ export class WorkspaceStore {
     if (this.activeWorkspaceId === workspaceId) {
       this.activeWorkspaceId = null;
     }
+    this.auxiliaryOnChatWorkspaceIds.delete(workspaceId);
 
     const statsUnsubscribe = this.statsUnsubscribers.get(workspaceId);
     if (statsUnsubscribe) {
@@ -3923,6 +3963,8 @@ export const workspaceStore = {
    */
   setActiveWorkspaceId: (workspaceId: string | null) =>
     getStoreInstance().setActiveWorkspaceId(workspaceId),
+  setAuxiliaryActiveWorkspaceIds: (workspaceIds: string[]) =>
+    getStoreInstance().setAuxiliaryActiveWorkspaceIds(workspaceIds),
 };
 
 /**

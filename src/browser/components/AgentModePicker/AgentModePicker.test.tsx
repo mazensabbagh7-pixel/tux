@@ -252,7 +252,7 @@ describe("AgentModePicker", () => {
 
     await waitFor(() => {
       expect(queryByLabelText(autoSelectLabel)).toBeNull();
-      expect(queryByText("Mux chooses the best agent")).toBeNull();
+      expect(queryByText("NUX chooses the best agent")).toBeNull();
     });
   });
 });

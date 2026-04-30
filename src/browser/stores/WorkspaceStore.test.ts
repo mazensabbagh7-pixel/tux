@@ -2064,7 +2064,7 @@ describe("WorkspaceStore", () => {
           await Promise.resolve();
           yield {
             type: "init-start",
-            hookPath: "/tmp/project/.mux/init",
+            hookPath: "/tmp/project/.nux/init",
             timestamp: 1_000,
           };
           await Promise.resolve();
@@ -2080,7 +2080,7 @@ describe("WorkspaceStore", () => {
 
         yield {
           type: "init-start",
-          hookPath: "/tmp/project/.mux/init",
+          hookPath: "/tmp/project/.nux/init",
           timestamp: 1_000,
           replay: true,
         };

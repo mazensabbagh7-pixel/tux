@@ -171,7 +171,7 @@ export const FrontendWorkspaceMetadataSchema = WorkspaceMetadataSchema.extend({
     .meta({ description: "Worktree path (uses workspace name as directory)" }),
   incompatibleRuntime: z.string().optional().meta({
     description:
-      "If set, this workspace has an incompatible runtime configuration (e.g., from a newer version of mux). The workspace should be displayed but interactions should show this error message.",
+      "If set, this workspace has an incompatible runtime configuration (e.g., from a newer version of NUX). The workspace should be displayed but interactions should show this error message.",
   }),
   isRemoving: z.boolean().optional().meta({
     description: "True if this workspace is currently being deleted (deletion in progress).",

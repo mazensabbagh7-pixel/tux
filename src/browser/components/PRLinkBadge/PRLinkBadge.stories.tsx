@@ -33,7 +33,7 @@ function makePRLink(
     type: "github-pr",
     url: `https://github.com/coder/mux/pull/${number}`,
     owner: "coder",
-    repo: "mux",
+    repo: "NUX",
     number,
     detectedAt: 1_700_000_000_000,
     occurrenceCount: 1,

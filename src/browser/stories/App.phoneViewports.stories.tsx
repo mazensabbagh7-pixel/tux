@@ -30,7 +30,7 @@ const IPHONE_16E = {
   height: 844,
 } as const;
 
-// NOTE: Mux's mobile UI tweaks are gated on `@media (max-width: 768px) and (pointer: coarse)`.
+// NOTE: NUX's mobile UI tweaks are gated on `@media (max-width: 768px) and (pointer: coarse)`.
 // Chromatic can emulate touch via `hasTouch: true` in modes, which ensures the
 // right sidebar is hidden and the mobile header/sidebar affordances are visible.
 
@@ -116,7 +116,7 @@ export const IPhone16e: AppStory = {
         setupSimpleChatStory({
           workspaceId: "ws-iphone-16e",
           workspaceName: "mobile",
-          projectName: "mux",
+          projectName: "NUX",
           messages: [...MESSAGES],
         })
       }
@@ -154,7 +154,7 @@ export const IPhone17ProMax: AppStory = {
         setupSimpleChatStory({
           workspaceId: "ws-iphone-17-pro-max",
           workspaceName: "mobile",
-          projectName: "mux",
+          projectName: "NUX",
           messages: [...MESSAGES],
         })
       }
@@ -184,7 +184,7 @@ export const IPhone17ProMaxTouchReviewImmersive: AppStory = {
         setupSimpleChatStory({
           workspaceId: TOUCH_REVIEW_IMMERSIVE_WORKSPACE_ID,
           workspaceName: "mobile-review",
-          projectName: "mux",
+          projectName: "NUX",
           messages: [...MESSAGES],
           gitDiff: {
             diffOutput: TOUCH_REVIEW_IMMERSIVE_DIFF,

@@ -8,7 +8,7 @@ function makePRLink(statusOverrides: Partial<GitHubPRStatus> = {}): GitHubPRLink
     type: "github-pr",
     url: "https://github.com/coder/mux/pull/1",
     owner: "coder",
-    repo: "mux",
+    repo: "NUX",
     number: 1,
     detectedAt: 0,
     occurrenceCount: 1,

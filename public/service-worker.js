@@ -1,5 +1,5 @@
-// mux Service Worker for PWA support
-const CACHE_NAME = "mux-v2";
+// NUX Service Worker for PWA support
+const CACHE_NAME = "nux-v1";
 const urlsToCache = ["./", "./index.html"];
 
 // Install event - cache core assets

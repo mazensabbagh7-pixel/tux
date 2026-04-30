@@ -36,7 +36,7 @@ export interface ProjectsConfig {
    * Bind host/interface for the desktop HTTP/WS API server.
    *
    * When unset, mux binds to 127.0.0.1 (localhost only).
-   * When set to 0.0.0.0 or ::, mux can be reachable from other devices on your LAN/VPN.
+   * When set to 0.0.0.0 or ::, NUX can be reachable from other devices on your LAN/VPN.
    */
   apiServerBindHost?: string;
   /**
@@ -70,19 +70,19 @@ export interface ProjectsConfig {
   /**
    * Default parent directory for new projects (cloning and bare-name creation).
    *
-   * When unset, falls back to getMuxProjectsDir() (~/.mux/projects).
+   * When unset, falls back to getMuxProjectsDir() (~/.nux/projects).
    */
   defaultProjectDir?: string;
   /** IDs of splash screens that have been viewed */
   viewedSplashScreens?: string[];
-  /** Cross-client feature flag overrides (shared via ~/.mux/config.json). */
+  /** Cross-client feature flag overrides (shared via ~/.nux/config.json). */
   featureFlagOverrides?: Record<string, FeatureFlagOverride>;
   /** Global task settings (agent sub-workspaces, queue limits, nesting depth) */
   taskSettings?: TaskSettings;
-  /** UI layout presets + hotkeys (shared via ~/.mux/config.json). */
+  /** UI layout presets + hotkeys (shared via ~/.nux/config.json). */
   layoutPresets?: LayoutPresetsConfig;
   /**
-   * Mux Gateway routing preferences (shared via ~/.mux/config.json).
+   * NUX Gateway routing preferences (shared via ~/.nux/config.json).
    * Mirrors browser localStorage so switching server ports doesn't reset the UI.
    */
   muxGatewayEnabled?: boolean;
@@ -97,7 +97,7 @@ export interface ProjectsConfig {
   routeOverrides?: Record<string, string>;
 
   /**
-   * Default model used for new workspaces (shared via ~/.mux/config.json).
+   * Default model used for new workspaces (shared via ~/.nux/config.json).
    * Mirrors the browser localStorage cache (DEFAULT_MODEL_KEY).
    */
   defaultModel?: string;
@@ -110,7 +110,7 @@ export interface ProjectsConfig {
   /** Positive max-output-tokens cap for advisor responses; null/undefined means unlimited. */
   advisorMaxOutputTokens?: number | null;
   /**
-   * Hidden model IDs (shared via ~/.mux/config.json).
+   * Hidden model IDs (shared via ~/.nux/config.json).
    * Mirrors the browser localStorage cache (HIDDEN_MODELS_KEY).
    */
   hiddenModels?: string[];
@@ -121,9 +121,9 @@ export interface ProjectsConfig {
   /** Use built-in SSH2 library instead of system OpenSSH for remote connections (non-Windows only) */
   useSSH2Transport?: boolean;
 
-  /** Mux Governor server URL (normalized origin, no trailing slash) */
+  /** NUX Governor server URL (normalized origin, no trailing slash) */
   muxGovernorUrl?: string;
-  /** Mux Governor OAuth access token (secret - never return to UI) */
+  /** NUX Governor OAuth access token (secret - never return to UI) */
   muxGovernorToken?: string;
 
   /**
@@ -133,7 +133,7 @@ export interface ProjectsConfig {
   coderWorkspaceArchiveBehavior?: CoderWorkspaceArchiveBehavior;
 
   /**
-   * What to do with mux-managed worktree checkouts when a chat is archived.
+   * What to do with NUX-managed worktree checkouts when a chat is archived.
    *
    * - `"keep"`: leave the checkout on disk.
    * - `"delete"`: delete the checkout without a restore snapshot.
@@ -172,7 +172,7 @@ export interface ProjectsConfig {
   terminalDefaultShell?: string;
 
   /**
-   * Runtime enablement overrides (shared via ~/.mux/config.json).
+   * Runtime enablement overrides (shared via ~/.nux/config.json).
    * Defaults to enabled; store `false` only to keep config.json minimal.
    */
   runtimeEnablement?: Partial<Record<RuntimeEnablementId, false>>;

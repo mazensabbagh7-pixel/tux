@@ -32,7 +32,7 @@ function getGitHubRepo(): { owner: string; repo: string } {
   }
 
   // Fallback for non-standard repository URLs
-  return { owner: "coder", repo: "mux" };
+  return { owner: "coder", repo: "NUX" };
 }
 
 // Nightly releases are published in phases, so latest-*.yml can briefly 404.

@@ -96,7 +96,7 @@ export const MAX_THINKING_INDEX = 9;
  * returned as numbers for model-aware resolution later via
  * `resolveThinkingInput()` in policy.ts.
  *
- * Used by both `mux run --thinking` and `/model+level` oneshot.
+ * Used by both `nux run --thinking` and `/model+level` oneshot.
  */
 export function parseThinkingInput(value: string): ParsedThinkingInput | undefined {
   const normalized = value.trim().toLowerCase();
@@ -165,7 +165,7 @@ export const ANTHROPIC_THINKING_BUDGETS: Record<ThinkingLevel, number> = {
  * Anthropic effort type - matches SDK's AnthropicProviderOptions["effort"].
  *
  * Note: Opus 4.7 introduced a native "xhigh" effort level in the API, but the
- * SDK's Zod validator still rejects "xhigh". Mux handles this by sending "max"
+ * SDK's Zod validator still rejects "xhigh". NUX handles this by sending "max"
  * through the SDK and rewriting `output_config.effort` to "xhigh" in a fetch
  * wrapper for Opus 4.7 when the user selected the xhigh ThinkingLevel.
  * See `wrapFetchWithAnthropicCacheControl` and `buildRequestHeaders`.

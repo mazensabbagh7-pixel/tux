@@ -18,12 +18,12 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type { MuxDeepLinkPayload } from "@/common/types/deepLink";
 
-// tux:// deep links can arrive before the React app subscribes.
+// nux:// deep links can arrive before the React app subscribes.
 // Buffer them here so the renderer can consume them on mount.
 const pendingDeepLinks: MuxDeepLinkPayload[] = [];
 const deepLinkSubscribers = new Set<(payload: MuxDeepLinkPayload) => void>();
 
-ipcRenderer.on("tux:deep-link", (_event: unknown, payload: MuxDeepLinkPayload) => {
+ipcRenderer.on("nux:deep-link", (_event: unknown, payload: MuxDeepLinkPayload) => {
   if (deepLinkSubscribers.size === 0) {
     pendingDeepLinks.push(payload);
   }
@@ -72,15 +72,15 @@ contextBridge.exposeInMainWorld("api", {
   muxMdUrlOverride: process.env.MUX_MD_URL_OVERRIDE,
   // NOTE: This is intentionally async so the preload script does not rely on Node builtins
   // like `child_process` (which can break in hardened/sandboxed environments).
-  getIsRosetta: () => ipcRenderer.invoke("tux:get-is-rosetta"),
-  getIsWindowsWslShell: () => ipcRenderer.invoke("tux:get-is-windows-wsl-shell"),
+  getIsRosetta: () => ipcRenderer.invoke("nux:get-is-rosetta"),
+  getIsWindowsWslShell: () => ipcRenderer.invoke("nux:get-is-windows-wsl-shell"),
   // Register a callback for notification clicks (navigates to workspace)
   // Returns an unsubscribe function.
   onNotificationClicked: (callback: (data: { workspaceId: string }) => void) => {
     const listener = (_event: unknown, data: { workspaceId: string }) => callback(data);
-    ipcRenderer.on("tux:notification-clicked", listener);
+    ipcRenderer.on("nux:notification-clicked", listener);
     return () => {
-      ipcRenderer.off("tux:notification-clicked", listener);
+      ipcRenderer.off("nux:notification-clicked", listener);
     };
   },
   consumePendingDeepLinks: () => pendingDeepLinks.splice(0, pendingDeepLinks.length),

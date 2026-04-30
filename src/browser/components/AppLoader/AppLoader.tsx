@@ -162,7 +162,7 @@ function AppLoaderInner() {
               statusText={
                 apiState.status === "reconnecting"
                   ? `Reconnecting to backend (attempt ${apiState.attempt})...`
-                  : "Loading Mux"
+                  : "Loading NUX"
               }
             />
           )}

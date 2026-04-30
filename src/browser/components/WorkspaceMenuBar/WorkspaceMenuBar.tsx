@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Bell, BellOff, Ellipsis, Menu, Pencil } from "lucide-react";
+import { Bell, BellOff, Ellipsis, KeyRound, Menu, Pencil } from "lucide-react";
 import { CUSTOM_EVENTS, createCustomEvent } from "@/common/constants/events";
 import { EXPERIMENT_IDS } from "@/common/constants/experiments";
 import { cn } from "@/common/lib/utils";
@@ -158,6 +158,18 @@ export const WorkspaceMenuBar: React.FC<WorkspaceMenuBarProps> = ({
       // Fallback to popout if no integrated terminal callback provided or on mobile
       void openTerminalPopout(workspaceId, runtimeConfig);
     }
+  }, [workspaceId, openTerminalPopout, runtimeConfig, onOpenTerminal]);
+
+  const handleOpenClaudeCodeAuth = useCallback(() => {
+    const initialCommand = "claude auth status || true\nclaude auth login\n";
+    const isMobileTouch = window.matchMedia("(max-width: 768px) and (pointer: coarse)").matches;
+    const options: TerminalSessionCreateOptions = { initialCommand };
+    if (onOpenTerminal && !isMobileTouch) {
+      onOpenTerminal(options);
+      return;
+    }
+
+    void openTerminalPopout(workspaceId, runtimeConfig, options);
   }, [workspaceId, openTerminalPopout, runtimeConfig, onOpenTerminal]);
 
   const isTouchMobileScreen =
@@ -693,6 +705,22 @@ export const WorkspaceMenuBar: React.FC<WorkspaceMenuBarProps> = ({
             </TooltipContent>
           </Tooltip>
         </div>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleOpenClaudeCodeAuth}
+              className="text-muted hover:text-foreground ml-1 h-6 w-6 shrink-0"
+              aria-label="Claude Code auth"
+            >
+              <KeyRound className="h-3.5 w-3.5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" align="center">
+            Claude Code auth
+          </TooltipContent>
+        </Tooltip>
         <Tooltip>
           <TooltipTrigger asChild>
             <Button

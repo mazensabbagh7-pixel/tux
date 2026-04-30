@@ -56,7 +56,7 @@ export function buildCodexAuthorizeUrl(input: {
   // Extra authorize params required by the Codex flow.
   url.searchParams.set("id_token_add_organizations", "true");
   url.searchParams.set("codex_cli_simplified_flow", "true");
-  url.searchParams.set("originator", "mux");
+  url.searchParams.set("originator", "nux");
 
   return url.toString();
 }

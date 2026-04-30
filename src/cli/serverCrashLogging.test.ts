@@ -13,7 +13,7 @@ describe("serverCrashLogging", () => {
     expect(
       redactServerArgvForLogs([
         "node",
-        "mux",
+        "NUX",
         "server",
         "--auth-token",
         "secret-token",
@@ -23,7 +23,7 @@ describe("serverCrashLogging", () => {
       ])
     ).toEqual([
       "node",
-      "mux",
+      "NUX",
       "server",
       "--auth-token",
       "<redacted>",
@@ -39,17 +39,17 @@ describe("serverCrashLogging", () => {
       event: "Unhandled promise rejection",
       detail: error,
       context: { origin: "unhandledRejection" },
-      argv: ["node", "mux", "server", "--auth-token", "secret-token"],
+      argv: ["node", "NUX", "server", "--auth-token", "secret-token"],
       cwd: "/tmp/workspace",
       pid: 42,
       timestamp: new Date("2026-03-10T00:00:00.000Z"),
     });
 
     expect(entry).toContain(
-      "2026-03-10T00:00:00.000Z [mux server crash] Unhandled promise rejection"
+      "2026-03-10T00:00:00.000Z [nux server crash] Unhandled promise rejection"
     );
     expect(entry).toContain("pid=42 cwd=/tmp/workspace");
-    expect(entry).toContain('argv=["node","mux","server","--auth-token","<redacted>"]');
+    expect(entry).toContain('argv=["node","NUX","server","--auth-token","<redacted>"]');
     expect(entry).toContain('context={\n  "origin": "unhandledRejection"\n}');
     expect(entry).toContain("Error: boom");
     expect(entry).not.toContain("secret-token");
@@ -57,7 +57,7 @@ describe("serverCrashLogging", () => {
 
   test("falls back when crash entry construction throws", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "mux-server-crash-log-fallback-"));
-    const logFilePath = path.join(tempDir, "logs", "mux.log");
+    const logFilePath = path.join(tempDir, "logs", "nux.log");
     const cwdSpy = spyOn(process, "cwd").mockImplementation(() => {
       throw new Error("cwd missing");
     });
@@ -70,7 +70,7 @@ describe("serverCrashLogging", () => {
         timestamp: new Date("2026-03-10T00:00:00.000Z"),
       });
 
-      expect(entry).toContain("[mux server crash] Fatal process error");
+      expect(entry).toContain("[nux server crash] Fatal process error");
       expect(entry).toContain("failed_to_build_crash_entry=cwd missing");
 
       const written = await fs.readFile(logFilePath, "utf-8");
@@ -83,13 +83,13 @@ describe("serverCrashLogging", () => {
 
   test("appends crash entries to disk synchronously", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "mux-server-crash-log-"));
-    const logFilePath = path.join(tempDir, "logs", "mux.log");
+    const logFilePath = path.join(tempDir, "logs", "nux.log");
 
     try {
       appendServerCrashLogSync({
         event: "beforeExit",
         context: { code: 0 },
-        argv: ["node", "mux", "server"],
+        argv: ["node", "NUX", "server"],
         cwd: "/tmp/workspace",
         pid: 7,
         timestamp: new Date("2026-03-10T00:00:00.000Z"),
@@ -97,7 +97,7 @@ describe("serverCrashLogging", () => {
       });
 
       const written = await fs.readFile(logFilePath, "utf-8");
-      expect(written).toContain("[mux server crash] beforeExit");
+      expect(written).toContain("[nux server crash] beforeExit");
       expect(written).toContain('context={\n  "code": 0\n}');
     } finally {
       await fs.rm(tempDir, { recursive: true, force: true });

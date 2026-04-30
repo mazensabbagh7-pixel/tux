@@ -70,7 +70,7 @@ export default {
   },
 };
 
-const README_PROJECT_NAME = "mux";
+const README_PROJECT_NAME = "NUX";
 const README_PROJECT_PATH = "/home/user/projects/mux";
 
 const IPHONE_17_PRO_MAX = {
@@ -308,7 +308,7 @@ index aaa1111..bbb2222 100644
 +
 +  return (
 +    <div className="shell">
-+      <header className="shell-header" aria-label="Workspace">Mux</header>
++      <header className="shell-header" aria-label="Workspace">NUX</header>
 +      <main className="shell-content" style={{ marginRight: sidebarWidth }} />
 +      <aside className="shell-sidebar" style={{ width: sidebarWidth }} />
 +    </div>
@@ -373,7 +373,7 @@ index 0000000..def5678
                       createFileReadTool(
                         "call-read-1",
                         "src/browser/components/WorkspaceShell.tsx",
-                        'import React from \'react\';\nimport { useRightSidebarLayout } from \'../hooks/useRightSidebarLayout\';\nimport { clamp } from \'../utils/layout\';\n\nexport function WorkspaceShell(props: WorkspaceShellProps) {\n  const layout = useRightSidebarLayout(props.workspaceId);\n  const sidebarWidth = clamp(layout.width, 200, 800);\n  return (\n    <div className="shell">\n      <header className="shell-header" aria-label="Workspace">Mux</header>\n      <main className="shell-content" style={{ marginRight: sidebarWidth }} />\n      <aside className="shell-sidebar" style={{ width: sidebarWidth }} />\n    </div>\n  );\n}'
+                        'import React from \'react\';\nimport { useRightSidebarLayout } from \'../hooks/useRightSidebarLayout\';\nimport { clamp } from \'../utils/layout\';\n\nexport function WorkspaceShell(props: WorkspaceShellProps) {\n  const layout = useRightSidebarLayout(props.workspaceId);\n  const sidebarWidth = clamp(layout.width, 200, 800);\n  return (\n    <div className="shell">\n      <header className="shell-header" aria-label="Workspace">NUX</header>\n      <main className="shell-content" style={{ marginRight: sidebarWidth }} />\n      <aside className="shell-sidebar" style={{ width: sidebarWidth }} />\n    </div>\n  );\n}'
                       ),
                       createFileReadTool(
                         "call-read-2",
@@ -1189,7 +1189,7 @@ export const MobileServerMode: AppStory = {
                 createStaticChatHandler([
                   createUserMessage(
                     "msg-1",
-                    "Can I use mux server mode from my phone when I’m away from my laptop?",
+                    "Can I use nux server mode from my phone when I’m away from my laptop?",
                     {
                       historySequence: 1,
                       timestamp: STABLE_TIMESTAMP - 45_000,

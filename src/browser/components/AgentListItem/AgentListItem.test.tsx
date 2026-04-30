@@ -495,7 +495,7 @@ describe("AgentListItem", () => {
       name: "question rows",
       sidebarState: createWorkspaceSidebarState({ awaitingUserQuestion: true }),
       expectedSelector: ".bg-border-pending.border-surface-sky",
-      expectedText: "Mux has a few questions",
+      expectedText: "NUX has a few questions",
     },
     {
       name: "error rows",

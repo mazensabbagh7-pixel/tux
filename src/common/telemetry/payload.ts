@@ -57,7 +57,7 @@ export type TelemetryRuntimeType = RuntimeMode;
 
 /**
  * Frontend platform info - browser/client environment
- * Useful when backend runs on different machine (e.g., mux server mode)
+ * Useful when backend runs on different machine (e.g., nux server mode)
  */
 export interface FrontendPlatformInfo {
   /** Browser user agent string (safe, widely shared) */

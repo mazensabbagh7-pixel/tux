@@ -1,5 +1,5 @@
 /**
- * CLI entry point for the mux oRPC server.
+ * CLI entry point for the NUX oRPC server.
  * Uses ServerService for server lifecycle management.
  */
 import "source-map-support/register";
@@ -23,7 +23,7 @@ import { appendServerCrashLogSync } from "./serverCrashLogging";
 import { shouldExposeLaunchProject } from "./launchProject";
 
 // Server-mode crashes can terminate the process before the async logger flushes,
-// so these top-level hooks mirror fatal details into mux.log synchronously.
+// so these top-level hooks mirror fatal details into nux.log synchronously.
 process.on("warning", (warning) => {
   log.warn("Server process warning", warning);
 });
@@ -32,7 +32,7 @@ process.on("uncaughtExceptionMonitor", (error, origin) => {
   // Use the monitor hook instead of adding our own unhandledRejection listener.
   // In Node, installing an unhandledRejection handler changes fatal promise
   // rejections into non-fatal events; the monitor preserves the default crash
-  // while still giving server-mode users a synchronous breadcrumb in mux.log.
+  // while still giving server-mode users a synchronous breadcrumb in nux.log.
   appendServerCrashLogSync({
     event: "Fatal process error",
     detail: error,
@@ -63,8 +63,8 @@ const mockWindow: BrowserWindow = {
 async function main(): Promise<void> {
   const program = new Command();
   program
-    .name("tux server")
-    .description("HTTP/WebSocket ORPC server for Tux")
+    .name("nux server")
+    .description("HTTP/WebSocket ORPC server for Nux")
     .option("-h, --host <host>", "bind to specific host", "localhost")
     .option("-p, --port <port>", "bind to specific port", "3000")
     .option("--auth-token <token>", "bearer token for HTTP/WS auth (default: auto-generated)")
@@ -108,8 +108,8 @@ async function main(): Promise<void> {
     migrateLegacyMuxHome();
     cleanupObsoleteMuxBinArtifacts();
   } catch (error) {
-    // Server startup should remain resilient even if mux-home migrations cannot run.
-    log.debug("[mux-home] Failed server startup migrations", error);
+    // Server startup should remain resilient even if nux-home migrations cannot run.
+    log.debug("[nux-home] Failed server startup migrations", error);
   }
 
   // Early lockfile check: detect an existing server BEFORE initializing services.
@@ -120,8 +120,8 @@ async function main(): Promise<void> {
   const earlyLockfile = new ServerLockfile(muxHome);
   const existing = await earlyLockfile.read();
   if (existing) {
-    console.error(`Error: mux API server is already running at ${existing.baseUrl}`);
-    console.error(`Use 'tux api' commands to interact with the running instance.`);
+    console.error(`Error: NUX API server is already running at ${existing.baseUrl}`);
+    console.error(`Use 'nux api' commands to interact with the running instance.`);
     process.exit(1);
   }
 
@@ -160,7 +160,7 @@ async function main(): Promise<void> {
   clearInterval(startupKeepalive);
 
   // --- Startup output ---
-  console.log(`\ntux server v${VERSION.git_describe}`);
+  console.log(`\nnux server v${VERSION.git_describe}`);
   console.log(`  URL:  ${serverInfo.baseUrl}`);
   if (serverInfo.networkBaseUrls.length > 0) {
     for (const url of serverInfo.networkBaseUrls) {

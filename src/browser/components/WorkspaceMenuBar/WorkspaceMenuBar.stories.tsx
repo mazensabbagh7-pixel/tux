@@ -57,14 +57,14 @@ function createDevcontainerClient(runtimeStatus: "running" | "stopped" | "unknow
     createWorkspace({
       id: "dc-1",
       name: "feature/lazy-start",
-      projectName: "mux",
+      projectName: "NUX",
       runtimeConfig: DEVCONTAINER_RUNTIME,
       createdAt: stableCreatedAt,
     }),
     createWorkspace({
       id: "dc-2",
       name: "fix/sidebar-overflow",
-      projectName: "mux",
+      projectName: "NUX",
       createdAt: stableCreatedAt,
     }),
   ];

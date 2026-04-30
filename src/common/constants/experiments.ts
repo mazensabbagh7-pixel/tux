@@ -69,7 +69,7 @@ export const EXPERIMENTS: Record<ExperimentId, ExperimentDefinition> = {
     id: EXPERIMENT_IDS.CONFIGURABLE_BIND_URL,
     name: "Expose API server on LAN/VPN",
     description:
-      "Allow mux to listen on a non-localhost address so other devices on your LAN/VPN can connect. Anyone on your network with the auth token can access your mux API. HTTP only; use only on trusted networks (Tailscale recommended).",
+      "Allow NUX to listen on a non-localhost address so other devices on your LAN/VPN can connect. Anyone on your network with the auth token can access your NUX API. HTTP only; use only on trusted networks (Tailscale recommended).",
     enabledByDefault: false,
     userOverridable: true,
     showInSettings: true,
@@ -92,8 +92,8 @@ export const EXPERIMENTS: Record<ExperimentId, ExperimentDefinition> = {
   },
   [EXPERIMENT_IDS.MUX_GOVERNOR]: {
     id: EXPERIMENT_IDS.MUX_GOVERNOR,
-    name: "Mux Governor",
-    description: "Remote policy delivery for enterprise Mux Governor service",
+    name: "NUX Governor",
+    description: "Remote policy delivery for enterprise NUX Governor service",
     enabledByDefault: false,
     userOverridable: true,
     showInSettings: true,

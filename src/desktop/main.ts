@@ -26,13 +26,13 @@ if (process.platform === "darwin") {
   }
 }
 
-// Migrate ~/.cmux and clean obsolete Tux-managed bin artifacts before startup uses Tux home paths.
+// Migrate ~/.cmux and clean obsolete Nux-managed bin artifacts before startup uses Nux home paths.
 try {
   migrateLegacyMuxHome();
   cleanupObsoleteMuxBinArtifacts();
 } catch (error) {
   // Startup initialization must never crash the app.
-  console.debug("[tux-home] Failed Tux home startup migrations:", error);
+  console.debug("[nux-home] Failed Nux home startup migrations:", error);
 }
 
 import { randomBytes } from "crypto";
@@ -135,7 +135,7 @@ const localhostProxyTemplate =
 const devServerPort = process.env.MUX_DEVSERVER_PORT ?? "5173";
 
 console.log(
-  `Tux starting - version: ${(VERSION as { git?: string; buildTime?: string }).git ?? "(dev)"} (built: ${(VERSION as { git?: string; buildTime?: string }).buildTime ?? "dev-mode"})`
+  `Nux starting - version: ${(VERSION as { git?: string; buildTime?: string }).git ?? "(dev)"} (built: ${(VERSION as { git?: string; buildTime?: string }).buildTime ?? "dev-mode"})`
 );
 console.log("Main process starting...");
 
@@ -197,7 +197,7 @@ if (!gotTheLock) {
     try {
       handleArgvMuxDeepLinks(argv);
     } catch (error) {
-      console.debug("[deep-link] Failed to parse second-instance argv for tux deep links:", error);
+      console.debug("[deep-link] Failed to parse second-instance argv for nux deep links:", error);
     }
 
     focusMainWindow();
@@ -211,14 +211,14 @@ let isQuitting = false;
 let latestUpdateStatus: UpdateStatus = { type: "idle" };
 let isUpdateClosePromptOpen = false;
 
-// tux:// deep links can arrive before the main window exists / finishes loading.
+// nux:// deep links can arrive before the main window exists / finishes loading.
 const bufferedMuxDeepLinks: MuxDeepLinkPayload[] = [];
 let mainWindowFinishedLoading = false;
 
 function focusMainWindow() {
   if (!mainWindow) return;
   if (mainWindow.isMinimized()) mainWindow.restore();
-  // Closing Mux on Windows hides to tray; show it again when a second-instance launch occurs.
+  // Closing NUX on Windows hides to tray; show it again when a second-instance launch occurs.
   mainWindow.show();
   mainWindow.focus();
 }
@@ -229,11 +229,11 @@ function flushBufferedMuxDeepLinks() {
   while (bufferedMuxDeepLinks.length > 0) {
     const payload = bufferedMuxDeepLinks[0];
     try {
-      mainWindow.webContents.send("tux:deep-link", payload);
+      mainWindow.webContents.send("nux:deep-link", payload);
       bufferedMuxDeepLinks.shift();
     } catch (error) {
       // Best-effort: never crash startup if the renderer isn't ready.
-      console.debug("[deep-link] Failed to send mux deep link payload:", error);
+      console.debug("[deep-link] Failed to send nux deep link payload:", error);
       return;
     }
   }
@@ -250,10 +250,10 @@ function handleMuxDeepLink(raw: string) {
       return;
     }
 
-    mainWindow.webContents.send("tux:deep-link", payload);
+    mainWindow.webContents.send("nux:deep-link", payload);
   } catch (error) {
     // Best-effort: never crash startup if argv parsing/protocol handling is weird.
-    console.debug(`[deep-link] Failed to handle mux deep link: ${raw}`, error);
+    console.debug(`[deep-link] Failed to handle nux deep link: ${raw}`, error);
   }
 }
 
@@ -276,7 +276,7 @@ if (process.platform === "darwin") {
 try {
   handleArgvMuxDeepLinks(process.argv);
 } catch (error) {
-  console.debug("[deep-link] Failed to parse initial argv for tux deep links:", error);
+  console.debug("[deep-link] Failed to parse initial argv for nux deep links:", error);
 }
 
 function registerMuxProtocolClient() {
@@ -290,14 +290,14 @@ function registerMuxProtocolClient() {
     });
 
     if (registration) {
-      app.setAsDefaultProtocolClient("tux", registration.executable, registration.args);
+      app.setAsDefaultProtocolClient("nux", registration.executable, registration.args);
       return;
     }
 
-    app.setAsDefaultProtocolClient("tux");
+    app.setAsDefaultProtocolClient("nux");
   } catch (error) {
     // Best-effort: never crash startup if protocol registration fails.
-    console.debug("[deep-link] Failed to register tux:// protocol handler:", error);
+    console.debug("[deep-link] Failed to register nux:// protocol handler:", error);
   }
 }
 
@@ -447,7 +447,7 @@ function openMuxFromTray() {
   // On macOS the app stays open after all windows are closed; recreate the window.
   if (process.platform === "darwin") {
     if (!services) {
-      console.warn(`[${timestamp()}] [tray] Cannot open Tux (services not loaded yet)`);
+      console.warn(`[${timestamp()}] [tray] Cannot open Nux (services not loaded yet)`);
       return;
     }
 
@@ -485,7 +485,7 @@ function createTray() {
 
   const menu = Menu.buildFromTemplate([
     {
-      label: "Open Tux",
+      label: "Open Nux",
       click: () => {
         openMuxFromTray();
       },
@@ -612,7 +612,7 @@ async function loadServices(): Promise<void> {
   // Keep PATH-related recovery honest: Settings can re-check the current process view, but
   // shell/profile changes made after launch still need a full app relaunch to rerun startup PATH setup.
   services.windowService.setRestartAppHandler(() => {
-    assert(app, "Electron app must be available to restart mux");
+    assert(app, "Electron app must be available to restart NUX");
     app.relaunch();
     app.quit();
   });
@@ -631,7 +631,7 @@ async function loadServices(): Promise<void> {
 
   const orpcContext = services.toORPCContext();
 
-  electronIpcMain.handle("tux:get-is-rosetta", async () => {
+  electronIpcMain.handle("nux:get-is-rosetta", async () => {
     if (process.platform !== "darwin") {
       return false;
     }
@@ -646,7 +646,7 @@ async function loadServices(): Promise<void> {
       return false;
     }
   });
-  electronIpcMain.handle("tux:get-is-windows-wsl-shell", async () => {
+  electronIpcMain.handle("nux:get-is-windows-wsl-shell", async () => {
     if (process.platform !== "win32") return false;
 
     const normalize = (p: string) => p.replace(/\//g, "\\").toLowerCase();
@@ -689,7 +689,7 @@ async function loadServices(): Promise<void> {
     }
 
     // Even if WSL is the default, don't warn if Git for Windows bash is available
-    // (Mux will use that instead).
+    // (NUX will use that instead).
     if (looksLikeWsl && isBashAvailable()) {
       return false;
     }
@@ -868,7 +868,7 @@ function createWindow() {
       contextIsolation: true,
       preload: path.join(__dirname, "../preload.js"),
     },
-    title: "Tux - coding agent multiplexer",
+    title: "Nux - split-screen coding agent multiplexer",
     // Hide menu bar on Linux by default (like VS Code)
     // User can press Alt to toggle it
     autoHideMenuBar: process.platform === "linux",
@@ -913,7 +913,7 @@ function createWindow() {
         defaultId: 0,
         cancelId: 2,
         message: "An update is ready to install.",
-        detail: "Install now to restart and apply the update, or keep Mux running in the tray.",
+        detail: "Install now to restart and apply the update, or keep NUX running in the tray.",
       };
 
       const promptWindow = mainWindow;
@@ -942,13 +942,26 @@ function createWindow() {
     mainWindow?.hide();
   });
 
-  // Show window once it's ready and close splash
+  // Show window once it's ready and close splash. On some Linux/AppImage sessions,
+  // did-finish-load fires but ready-to-show never arrives, leaving the app apparently
+  // "not launching" with a hidden main window. Keep ready-to-show as the ideal path,
+  // but add a conservative did-finish-load fallback.
   console.time("main window startup");
-  mainWindow.once("ready-to-show", () => {
-    console.log(`[${timestamp()}] Main window ready to show`);
-    mainWindow?.show();
+  let mainWindowShown = false;
+  const showMainWindow = (source: "ready-to-show" | "did-finish-load-fallback") => {
+    if (mainWindowShown || !mainWindow || mainWindow.isDestroyed()) {
+      return;
+    }
+
+    mainWindowShown = true;
+    console.log(`[${timestamp()}] Main window showing via ${source}`);
+    mainWindow.show();
     closeSplashScreen();
     console.timeEnd("main window startup");
+  };
+
+  mainWindow.once("ready-to-show", () => {
+    showMainWindow("ready-to-show");
   });
 
   const openExternalUrl = (url: string): void => {
@@ -1003,6 +1016,8 @@ function createWindow() {
     console.timeEnd("[window] Content load");
     console.log(`[${timestamp()}] [window] Content finished loading`);
 
+    setTimeout(() => showMainWindow("did-finish-load-fallback"), 750);
+
     mainWindowFinishedLoading = true;
     flushBufferedMuxDeepLinks();
 
@@ -1050,7 +1065,7 @@ function createWindow() {
   });
 
   // Forward renderer console errors to the log service so they reach the log
-  // file (~/.mux/logs/mux.log) and Output Tab even when the UI is white/blank.
+  // file (~/.mux/logs/nux.log) and Output Tab even when the UI is white/blank.
   // The renderer's global error handlers (window.addEventListener("error")) log
   // to console.error, but that stays in renderer memory only — the main process
   // never sees it without this hook.
@@ -1106,7 +1121,7 @@ if (gotTheLock) {
 
       registerMuxProtocolClient();
 
-      // Safe to retry after ready: Tux home migrations are idempotent.
+      // Safe to retry after ready: Nux home migrations are idempotent.
       migrateLegacyMuxHome();
       cleanupObsoleteMuxBinArtifacts();
 

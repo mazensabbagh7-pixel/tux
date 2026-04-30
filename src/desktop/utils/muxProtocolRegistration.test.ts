@@ -42,27 +42,27 @@ describe("getMuxProtocolClientRegistration", () => {
         platform: "win32",
         isPackaged: true,
         defaultApp: undefined,
-        argv: ["/Applications/Tux.app/Contents/MacOS/Tux"],
-        execPath: "/Applications/Tux.app/Contents/MacOS/Tux",
+        argv: ["/Applications/Nux.app/Contents/MacOS/Nux"],
+        execPath: "/Applications/Nux.app/Contents/MacOS/Nux",
       })
     ).toBeNull();
   });
 });
 
 describe("getMuxDeepLinksFromArgv", () => {
-  test("finds tux:// argv entries even when a -- separator is present", () => {
+  test("finds nux:// argv entries even when a -- separator is present", () => {
     expect(
       getMuxDeepLinksFromArgv([
         "electron",
         ".",
         "--",
         "./src/cli/index.ts",
-        "tux://chat/new?project=tux",
+        "nux://chat/new?project=tux",
       ])
-    ).toEqual(["tux://chat/new?project=tux"]);
+    ).toEqual(["nux://chat/new?project=tux"]);
   });
 
-  test("ignores non-tux arguments", () => {
+  test("ignores non-nux arguments", () => {
     expect(
       getMuxDeepLinksFromArgv(["electron", ".", "--", "./src/cli/index.ts", "--help"])
     ).toEqual([]);

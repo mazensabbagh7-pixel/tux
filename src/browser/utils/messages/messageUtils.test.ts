@@ -129,7 +129,7 @@ describe("shouldBypassDeferredMessages", () => {
     id: "workspace-init",
     historySequence: -1,
     status: "running",
-    hookPath: "/tmp/project/.mux/init",
+    hookPath: "/tmp/project/.nux/init",
     lines: [{ line: "Installing dependencies...", isError: false }],
     exitCode: null,
     timestamp: 1,

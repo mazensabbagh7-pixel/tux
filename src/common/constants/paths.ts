@@ -34,7 +34,7 @@ export function migrateLegacyMuxHome(): void {
 const OBSOLETE_MUX_BIN_ARTIFACTS = ["agent-browser", "agent-browser.cmd"] as const;
 
 /**
- * Remove obsolete mux-managed bin wrappers that are no longer created at startup.
+ * Remove obsolete NUX-managed bin wrappers that are no longer created at startup.
  * Keep this startup migration narrow so we don't delete unrelated user-managed files.
  */
 export function cleanupObsoleteMuxBinArtifacts(rootDir?: string): void {
@@ -63,7 +63,7 @@ export function cleanupObsoleteMuxBinArtifacts(rootDir?: string): void {
 }
 
 /**
- * Get the root directory for all Tux configuration and data.
+ * Get the root directory for all Nux configuration and data.
  * Can be overridden with TUX_ROOT or legacy MUX_ROOT environment variables.
  * Appends '-dev' suffix when NODE_ENV=development (explicit dev mode).
  *
@@ -115,7 +115,7 @@ export function getMuxSessionsDir(rootDir?: string): string {
 }
 
 /**
- * Get the directory where Tux backend logs are stored.
+ * Get the directory where Nux backend logs are stored.
  * Example: ~/.tux/logs/mux.log
  *
  * @param rootDir - Optional root directory (defaults to getMuxHome())

@@ -220,7 +220,7 @@ export const WorkspaceMCPNoOverrides: Story = {
   play: async ({ canvasElement }) => {
     const modal = within(await findWorkspaceMCPDialog(canvasElement));
 
-    await expect(modal.findByText("mux")).resolves.toBeInTheDocument();
+    await expect(modal.findByText("NUX")).resolves.toBeInTheDocument();
     await expect(modal.findByText("posthog")).resolves.toBeInTheDocument();
   },
 };
@@ -294,7 +294,7 @@ export const WorkspaceMCPDisabledOverride: Story = {
   play: async ({ canvasElement }) => {
     const modal = within(await findWorkspaceMCPDialog(canvasElement));
 
-    await expect(modal.findByText("mux")).resolves.toBeInTheDocument();
+    await expect(modal.findByText("NUX")).resolves.toBeInTheDocument();
     await expect(modal.findByText("posthog")).resolves.toBeInTheDocument();
 
     const posthogSwitch = await modal.findByRole("switch", {

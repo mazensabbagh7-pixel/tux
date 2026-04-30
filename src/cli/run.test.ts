@@ -1,5 +1,5 @@
 /**
- * Integration tests for `mux run` CLI command.
+ * Integration tests for `nux run` CLI command.
  *
  * These tests verify the CLI interface without actually running agent sessions.
  * They test argument parsing, help output, and error handling.
@@ -127,7 +127,7 @@ describe("mux CLI", () => {
       const result = await runCli(["--help"]);
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toContain("Usage: mux");
-      expect(result.stdout).toContain("Mux - AI agent orchestration");
+      expect(result.stdout).toContain("NUX - AI agent orchestration");
       expect(result.stdout).toContain("run");
       expect(result.stdout).toContain("server");
     });
@@ -146,11 +146,11 @@ describe("mux CLI", () => {
     });
   });
 
-  describe("mux run", () => {
+  describe("nux run", () => {
     test("--help shows all options", async () => {
       const result = await runCli(["run", "--help"]);
       expect(result.exitCode).toBe(0);
-      expect(result.stdout).toContain("Usage: mux run");
+      expect(result.stdout).toContain("Usage: nux run");
       expect(result.stdout).toContain("--dir");
       expect(result.stdout).toContain("--model");
       expect(result.stdout).toContain("--runtime");
@@ -267,11 +267,11 @@ describe("mux CLI", () => {
     });
   });
 
-  describe("mux server", () => {
+  describe("nux server", () => {
     test("--help shows all options", async () => {
       const result = await runCli(["server", "--help"]);
       expect(result.exitCode).toBe(0);
-      expect(result.stdout).toContain("Usage: mux server");
+      expect(result.stdout).toContain("Usage: nux server");
       expect(result.stdout).toContain("--host");
       expect(result.stdout).toContain("--port");
       expect(result.stdout).toContain("--auth-token");

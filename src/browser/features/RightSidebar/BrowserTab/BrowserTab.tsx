@@ -415,7 +415,7 @@ function BrowserViewerState(props: {
     if (props.isStarting || props.sessionStatus === "starting") {
       return {
         title: "Connecting to browser preview",
-        description: "Mux is attaching to the selected agent-owned browser session.",
+        description: "NUX is attaching to the selected agent-owned browser session.",
       };
     }
 
@@ -423,21 +423,21 @@ function BrowserViewerState(props: {
       return {
         title: "Browser preview unavailable",
         description:
-          "Mux will keep retrying while a discovered browser session is available for this project.",
+          "NUX will keep retrying while a discovered browser session is available for this project.",
       };
     }
 
     if (props.hasDiscoveredSessions) {
       return {
         title: "Waiting for browser frames",
-        description: "Mux found a browser session and is waiting for live preview frames.",
+        description: "NUX found a browser session and is waiting for live preview frames.",
       };
     }
 
     return {
       title: "Waiting for browser preview",
       description:
-        "Mux will attach automatically when an agent-owned browser session is available for this project.",
+        "NUX will attach automatically when an agent-owned browser session is available for this project.",
     };
   })();
 

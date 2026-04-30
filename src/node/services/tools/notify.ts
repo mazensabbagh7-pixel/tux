@@ -86,7 +86,7 @@ async function sendElectronNotification(
 
         // Send IPC message to renderer to navigate to workspace
         if (workspaceId) {
-          mainWindow.webContents.send("tux:notification-clicked", { workspaceId });
+          mainWindow.webContents.send("nux:notification-clicked", { workspaceId });
         }
       }
     });

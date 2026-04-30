@@ -97,7 +97,7 @@ export const EXPANDED_PROJECTS_KEY = "expandedProjects";
 export const WORKSPACE_DRAFTS_BY_PROJECT_KEY = "workspaceDraftsByProject";
 
 /**
- * LocalStorage keys for Mux Gateway routing preferences (global).
+ * LocalStorage keys for NUX Gateway routing preferences (global).
  *
  * Note: localStorage is origin-scoped (includes port), so these values are also
  * mirrored into ~/.tux/config.json for portability across server ports.

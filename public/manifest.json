@@ -1,6 +1,6 @@
 {
-  "name": "Tux - coding agent multiplexer",
-  "short_name": "Tux",
+  "name": "NUX - Mazen split-screen agent multiplexer",
+  "short_name": "NUX",
   "description": "Parallel agentic development with Electron + React",
   "start_url": ".",
   "display": "standalone",
@@ -21,11 +21,7 @@
       "purpose": "any maskable"
     }
   ],
-  "categories": [
-    "development",
-    "productivity",
-    "utilities"
-  ],
+  "categories": ["development", "productivity", "utilities"],
   "shortcuts": [
     {
       "name": "New Workspace",

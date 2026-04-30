@@ -51,9 +51,9 @@ const INHERIT = "__inherit__";
 function getAgentDefinitionPath(agent: AgentDefinitionDescriptor): string | null {
   switch (agent.scope) {
     case "project":
-      return `.mux/agents/${agent.id}.md`;
+      return `.nux/agents/${agent.id}.md`;
     case "global":
-      return `~/.mux/agents/${agent.id}.md`;
+      return `~/.nux/agents/${agent.id}.md`;
     default:
       return null;
   }
@@ -633,7 +633,7 @@ export function TasksSection() {
           : "Advisor disabled (local override).";
 
     const enablementLocked =
-      agent.id === "exec" || agent.id === "plan" || agent.id === "compact" || agent.id === "mux";
+      agent.id === "exec" || agent.id === "plan" || agent.id === "compact" || agent.id === "NUX";
 
     const enabledValue = enablementLocked
       ? true

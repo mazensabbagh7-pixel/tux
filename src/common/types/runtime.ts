@@ -197,7 +197,7 @@ export function buildRuntimeConfig(parsed: ParsedRuntime): RuntimeConfig | undef
       return {
         type: RUNTIME_MODE.SSH,
         host: parsed.host.trim(),
-        srcBaseDir: "~/mux", // Default remote base directory (tilde resolved by backend)
+        srcBaseDir: "~/nux", // Default remote base directory (tilde resolved by backend)
         coder: parsed.coder,
       };
     case RUNTIME_MODE.DOCKER:

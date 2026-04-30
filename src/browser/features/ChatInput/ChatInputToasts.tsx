@@ -20,7 +20,7 @@ export function createInvalidCompactModelToast(model: string): Toast {
         <br />
         <br />
         <SolutionLabel>Supported models:</SolutionLabel>
-        <DocsLink path="/config/models">mux.coder.com/models</DocsLink>
+        <DocsLink path="/config/models">NUX docs / models</DocsLink>
       </>
     ),
   };
@@ -122,7 +122,7 @@ export const createErrorToast = (error: SendMessageErrorType): Toast => {
             <SolutionLabel>Fix:</SolutionLabel>
             {formatted.resolutionHint ?? "Open Settings → Providers and add an API key."}
             <br />
-            <DocsLink path="/config/providers">mux.coder.com/providers</DocsLink>
+            <DocsLink path="/config/providers">NUX docs / providers</DocsLink>
           </>
         ),
       };
@@ -140,7 +140,7 @@ export const createErrorToast = (error: SendMessageErrorType): Toast => {
             <SolutionLabel>Fix:</SolutionLabel>
             {formatted.resolutionHint ?? "Open Settings → Providers and connect your account."}
             <br />
-            <DocsLink path="/config/providers">mux.coder.com/providers</DocsLink>
+            <DocsLink path="/config/providers">NUX docs / providers</DocsLink>
           </>
         ),
       };
@@ -158,7 +158,7 @@ export const createErrorToast = (error: SendMessageErrorType): Toast => {
             <SolutionLabel>Fix:</SolutionLabel>
             {formatted.resolutionHint ?? "Open Settings → Providers and enable this provider."}
             <br />
-            <DocsLink path="/config/providers">mux.coder.com/providers</DocsLink>
+            <DocsLink path="/config/providers">NUX docs / providers</DocsLink>
           </>
         ),
       };
@@ -176,7 +176,7 @@ export const createErrorToast = (error: SendMessageErrorType): Toast => {
             <SolutionLabel>Try This:</SolutionLabel>
             Choose a supported provider in Settings → Providers.
             <br />
-            <DocsLink path="/config/providers">mux.coder.com/providers</DocsLink>
+            <DocsLink path="/config/providers">NUX docs / providers</DocsLink>
           </>
         ),
       };
@@ -207,7 +207,7 @@ export const createErrorToast = (error: SendMessageErrorType): Toast => {
         solution: (
           <>
             <SolutionLabel>Solution:</SolutionLabel>
-            Upgrade mux to use this workspace, or delete it and create a new one.
+            Upgrade NUX to use this workspace, or delete it and create a new one.
           </>
         ),
       };

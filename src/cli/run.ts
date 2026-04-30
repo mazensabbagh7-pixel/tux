@@ -1,11 +1,11 @@
 #!/usr/bin/env bun
 /**
- * `tux run` - First-class CLI for running agent sessions
+ * `nux run` - First-class CLI for running agent sessions
  *
  * Usage:
- *   mux run "Fix the failing tests"
- *   mux run --dir /path/to/project "Add authentication"
- *   mux run --runtime "ssh user@host" "Deploy changes"
+ *   nux run "Fix the failing tests"
+ *   nux run --dir /path/to/project "Add authentication"
+ *   nux run --runtime "ssh user@host" "Deploy changes"
  */
 
 import { Command } from "commander";
@@ -85,7 +85,7 @@ type CLIMode = "plan" | "exec";
 
 function parseRuntimeConfig(value: string | undefined, srcBaseDir: string): RuntimeConfig {
   if (!value) {
-    // Default to local for `tux run` (no worktree isolation needed for one-off)
+    // Default to local for `nux run` (no worktree isolation needed for one-off)
     return { type: "local" };
   }
 
@@ -111,7 +111,7 @@ function parseRuntimeConfig(value: string | undefined, srcBaseDir: string): Runt
 }
 
 function parseThinkingLevel(value: string | undefined): ParsedThinkingInput {
-  if (!value) return DEFAULT_THINKING_LEVEL; // Default for tux run
+  if (!value) return DEFAULT_THINKING_LEVEL; // Default for nux run
 
   // Accepts named levels (off, low, med, high, max, xhigh) and numeric (0–N)
   const level = parseThinkingInput(value);
@@ -235,7 +235,7 @@ function collectMcpServers(value: string, previous: MCPServerEntry[]): MCPServer
 const program = new Command();
 
 program
-  .name("tux run")
+  .name("nux run")
   .description("Run an agent session in the current directory")
   .argument("[message...]", "instruction for the agent (can also be piped via stdin)")
   .option("-d, --dir <path>", "project directory", process.cwd())
@@ -270,15 +270,15 @@ program
     "after",
     `
 Examples:
-  $ tux run "Fix the failing tests"
-  $ tux run --dir /path/to/project "Add authentication"
-  $ tux run --runtime "ssh user@host" "Deploy changes"
-  $ tux run --mode plan "Refactor the auth module"
-  $ tux run --budget 1.50 "Quick code review"
-  $ echo "Add logging" | tux run
-  $ tux run --json "List all files" | jq '.type'
-  $ tux run --mcp "memory=npx -y @modelcontextprotocol/server-memory" "Remember this"
-  $ tux run --mcp "chrome=npx chrome-devtools-mcp" --mcp "fs=npx @anthropic/mcp-fs" "Take a screenshot"
+  $ nux run "Fix the failing tests"
+  $ nux run --dir /path/to/project "Add authentication"
+  $ nux run --runtime "ssh user@host" "Deploy changes"
+  $ nux run --mode plan "Refactor the auth module"
+  $ nux run --budget 1.50 "Quick code review"
+  $ echo "Add logging" | nux run
+  $ nux run --json "List all files" | jq '.type'
+  $ nux run --mcp "memory=npx -y @modelcontextprotocol/server-memory" "Remember this"
+  $ nux run --mcp "chrome=npx chrome-devtools-mcp" --mcp "fs=npx @anthropic/mcp-fs" "Take a screenshot"
 `
   );
 
@@ -330,12 +330,12 @@ async function main(): Promise<number> {
 
   if (!message) {
     console.error("Error: No message provided. Pass as argument or pipe via stdin.");
-    console.error('Usage: tux run "Your instruction here"');
+    console.error('Usage: nux run "Your instruction here"');
     process.exit(1);
   }
 
   // Create ephemeral temp dir for session data (auto-cleaned on exit)
-  using tempDir = new DisposableTempDir("mux-run");
+  using tempDir = new DisposableTempDir("nux-run");
 
   // Use real config for providers, but ephemeral temp dir for session data
   const realConfig = new Config();
@@ -420,7 +420,7 @@ async function main(): Promise<number> {
   };
   const writeThinking = (text: string) => {
     if (suppressHumanOutput) return;
-    // Purple color matching Mux UI thinking blocks (hsl(271, 76%, 53%) = #A855F7)
+    // Purple color matching NUX UI thinking blocks (hsl(271, 76%, 53%) = #A855F7)
     const colored = stderrIsTTY ? chalk.hex("#A855F7")(text) : text;
     process.stderr.write(colored);
   };
@@ -473,7 +473,7 @@ async function main(): Promise<number> {
     },
   });
 
-  // `tux run` uses createCoreServices directly (without ServiceContainer), so wire
+  // `nux run` uses createCoreServices directly (without ServiceContainer), so wire
   // Codex OAuth explicitly to ensure Codex-routed OpenAI requests can load/refresh
   // OAuth tokens from providers.jsonc.
   const codexOauthService = new CodexOauthService(config, providerService);
@@ -495,7 +495,7 @@ async function main(): Promise<number> {
       "Set the process exit code for this CLI session. " +
       "Use this in CI/automation to signal success (0) or failure (non-zero). " +
       "For example, exit 1 to block a PR merge when issues are found. " +
-      "Only available in `tux run` CLI mode.",
+      "Only available in `nux run` CLI mode.",
     inputSchema: setExitCodeSchema,
     execute: ({ exit_code }: z.infer<typeof setExitCodeSchema>) => {
       agentExitCode = exit_code;
@@ -600,7 +600,7 @@ async function main(): Promise<number> {
   });
 
   // Note: taskService.initialize() is intentionally NOT called. It resumes tasks from a
-  // previous session, but mux run uses an ephemeral Config (temp dir) with no prior state.
+  // previous session, but nux run uses an ephemeral Config (temp dir) with no prior state.
   // Calling initialize() on a fresh config is a no-op, but skipping it makes the intent
   // clear and avoids any risk of cross-workspace side effects if config were ever shared.
 

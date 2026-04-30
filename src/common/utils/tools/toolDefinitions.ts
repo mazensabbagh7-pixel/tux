@@ -115,7 +115,7 @@ const ToolOutputUiOnlyFieldSchema = {
 export const AskUserQuestionToolArgsSchema = z
   .object({
     questions: z.array(AskUserQuestionQuestionSchema).min(1).max(4),
-    // Optional prefilled answers (Claude Code supports this, though Mux typically won't use it)
+    // Optional prefilled answers (Claude Code supports this, though NUX typically won't use it)
     answers: z.record(z.string(), z.string()).nullish(),
   })
   .strict()
@@ -282,7 +282,7 @@ const TaskToolAgentArgsSchema = z
       "Optional best-of count. Use n when several agents should try the same prompt independently. Mutually exclusive with variants; omit both for a single task. Only use grouped runs for sub-agents without interfering side effects, such as read-only agents like explore."
     ),
     variants: TaskToolVariantsSchema.nullish().describe(
-      `Optional labels for sibling runs of the same prompt template. Use variants when the task should be repeated across labeled lanes such as issue numbers, commit windows, or frontend/backend/tests/docs review lanes. Mutually exclusive with n. When provided, Mux launches one sibling per label and substitutes ${TASK_VARIANT_PLACEHOLDER} in the prompt.`
+      `Optional labels for sibling runs of the same prompt template. Use variants when the task should be repeated across labeled lanes such as issue numbers, commit windows, or frontend/backend/tests/docs review lanes. Mutually exclusive with n. When provided, NUX launches one sibling per label and substitutes ${TASK_VARIANT_PLACEHOLDER} in the prompt.`
     ),
   })
   .strict()
@@ -1105,13 +1105,13 @@ export const TOOL_DEFINITIONS = {
   mux_agents_read: {
     description:
       "Read the AGENTS.md instructions file. In a project workspace, reads the project's AGENTS.md. " +
-      "In the system workspace, reads the global ~/.mux/AGENTS.md.",
+      "In the system workspace, reads the global ~/.nux/AGENTS.md.",
     schema: z.object({}).strict(),
   },
   mux_agents_write: {
     description:
       "Write the AGENTS.md instructions file. In a project workspace, writes the project's AGENTS.md. " +
-      "In the system workspace, writes the global ~/.mux/AGENTS.md. " +
+      "In the system workspace, writes the global ~/.nux/AGENTS.md. " +
       "Requires explicit confirmation via confirm: true.",
     schema: z
       .object({
@@ -1127,7 +1127,7 @@ export const TOOL_DEFINITIONS = {
   mux_config_read: {
     description:
       "Read the mux configuration file. Returns the current configuration with secrets redacted. " +
-      "Use 'providers' for ~/.mux/providers.jsonc (API provider settings) or 'config' for ~/.mux/config.json (app settings).",
+      "Use 'providers' for ~/.nux/providers.jsonc (API provider settings) or 'config' for ~/.nux/config.json (app settings).",
     schema: z
       .object({
         file: MuxConfigFileSchema.describe("Which configuration file to read"),
@@ -1140,7 +1140,7 @@ export const TOOL_DEFINITIONS = {
   mux_config_write: {
     description:
       "Write to the mux configuration file. Applies one or more set/delete operations and validates the full document before writing. " +
-      "Use 'providers' for ~/.mux/providers.jsonc or 'config' for ~/.mux/config.json. " +
+      "Use 'providers' for ~/.nux/providers.jsonc or 'config' for ~/.nux/config.json. " +
       "Requires explicit confirmation via confirm: true.",
     schema: z
       .object({
@@ -1155,7 +1155,7 @@ export const TOOL_DEFINITIONS = {
   agent_skill_read: {
     description:
       "Load an Agent Skill's SKILL.md (YAML frontmatter + markdown body) by name. " +
-      "Skills are discovered from <projectRoot>/.mux/skills/<name>/SKILL.md, <projectRoot>/.agents/skills/<name>/SKILL.md, ~/.mux/skills/<name>/SKILL.md, and ~/.agents/skills/<name>/SKILL.md.",
+      "Skills are discovered from <projectRoot>/.nux/skills/<name>/SKILL.md, <projectRoot>/.agents/skills/<name>/SKILL.md, ~/.nux/skills/<name>/SKILL.md, and ~/.agents/skills/<name>/SKILL.md.",
     schema: z
       .object({
         name: SkillNameSchema.describe("Skill name (directory name under the skills root)"),
@@ -1193,7 +1193,7 @@ export const TOOL_DEFINITIONS = {
   },
   agent_skill_list: {
     description:
-      "List available skills. In a project workspace, lists project skills from .mux/skills/ and legacy/universal .agents/skills/, plus global skills from ~/.mux/skills/ and legacy/universal ~/.agents/skills/, each tagged with its scope. In the system workspace, lists global skills only.",
+      "List available skills. In a project workspace, lists project skills from .nux/skills/ and legacy/universal .agents/skills/, plus global skills from ~/.nux/skills/ and legacy/universal ~/.agents/skills/, each tagged with its scope. In the system workspace, lists global skills only.",
     schema: z
       .object({
         includeUnadvertised: z
@@ -1205,7 +1205,7 @@ export const TOOL_DEFINITIONS = {
   },
   agent_skill_write: {
     description:
-      "Create or update a file within the contextual skills directory. In a project workspace, writes under .mux/skills/<name>/. In the system workspace, writes under ~/.mux/skills/<name>/. " +
+      "Create or update a file within the contextual skills directory. In a project workspace, writes under .nux/skills/<name>/. In the system workspace, writes under ~/.nux/skills/<name>/. " +
       "When writing SKILL.md, content is validated as a skill definition and frontmatter.name is aligned to the skill name argument.",
     schema: z
       .object({
@@ -1221,7 +1221,7 @@ export const TOOL_DEFINITIONS = {
   },
   agent_skill_delete: {
     description:
-      "Delete either a file within the contextual skills directory or the entire skill directory. In a project workspace, deletes from .mux/skills/. In the system workspace, deletes from ~/.mux/skills/. " +
+      "Delete either a file within the contextual skills directory or the entire skill directory. In a project workspace, deletes from .nux/skills/. In the system workspace, deletes from ~/.nux/skills/. " +
       "Requires confirm: true.",
     schema: z
       .object({
@@ -1444,7 +1444,7 @@ export const TOOL_DEFINITIONS = {
   },
   system1_keep_ranges: {
     description:
-      "Internal tool used by mux to record which line ranges to keep when filtering large bash output.",
+      "Internal tool used by NUX to record which line ranges to keep when filtering large bash output.",
     schema: z
       .object({
         keep_ranges: z
@@ -1559,7 +1559,7 @@ export const TOOL_DEFINITIONS = {
     }),
   },
   analytics_query: {
-    description: `Execute a DuckDB SQL query against Mux analytics tables and optionally provide visualization hints.
+    description: `Execute a DuckDB SQL query against NUX analytics tables and optionally provide visualization hints.
 Use read-only SELECT queries over analytics data.
 
 DuckDB SQL guidelines:
@@ -1637,7 +1637,7 @@ CREATE TABLE IF NOT EXISTS delegation_rollups (
   web_fetch: {
     description:
       `Fetch a web page and extract its main content as clean markdown. ` +
-      `Uses the workspace's network context (requests originate from the workspace, not Mux host). ` +
+      `Uses the workspace's network context (requests originate from the workspace, not NUX host). ` +
       `Requires curl to be installed in the workspace. ` +
       `Output is truncated to ${Math.floor(WEB_FETCH_MAX_OUTPUT_BYTES / 1024)}KB.`,
     schema: z.object({
@@ -1646,7 +1646,7 @@ CREATE TABLE IF NOT EXISTS delegation_rollups (
   },
   code_execution: {
     description:
-      "Execute JavaScript code in a sandboxed environment with access to Mux tools. " +
+      "Execute JavaScript code in a sandboxed environment with access to NUX tools. " +
       "Available for multi-tool workflows when PTC experiment is enabled.",
     schema: z.object({
       code: z.string().min(1).describe("JavaScript code to execute in the PTC sandbox"),
@@ -2083,7 +2083,7 @@ export function getAvailableTools(
     enableAgentReport?: boolean;
     enableAnalyticsQuery?: boolean;
     enableAdvisor?: boolean;
-    /** @deprecated Mux global tools are always included. */
+    /** @deprecated NUX global tools are always included. */
     enableMuxGlobalAgentsTools?: boolean;
   }
 ): string[] {

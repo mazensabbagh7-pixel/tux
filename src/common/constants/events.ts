@@ -53,7 +53,7 @@ export const CUSTOM_EVENTS = {
   SKILLS_REFRESH_REQUESTED: "mux:skillsRefreshRequested",
 
   /**
-   * Event emitted when the mux gateway session expires.
+   * Event emitted when the NUX Gateway session expires.
    * No detail
    */
   MUX_GATEWAY_SESSION_EXPIRED: "mux:muxGatewaySessionExpired",

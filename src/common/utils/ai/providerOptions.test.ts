@@ -727,7 +727,7 @@ describe("buildProviderOptions - OpenAI", () => {
   });
 
   describe("OpenAI conversation state management", () => {
-    test("does not reuse previousResponseId when Mux already sends explicit GPT-5.5 history", () => {
+    test("does not reuse previousResponseId when NUX already sends explicit GPT-5.5 history", () => {
       const messages = [
         createMuxMessage("assistant-1", "assistant", "", {
           model: "mux-gateway:openai/gpt-5.5",
@@ -939,7 +939,7 @@ describe("buildRequestHeaders", () => {
 
     test("does not emit override header for non-passthrough gateway (openrouter)", () => {
       // Non-passthrough gateways (OpenRouter/Bedrock) must not receive this
-      // Mux-internal header because they don't run through our Anthropic fetch
+      // NUX-internal header because they don't run through our Anthropic fetch
       // wrapper that strips it; it would leak to upstream proxies.
       const result = buildRequestHeaders(
         "anthropic:claude-opus-4-7",
@@ -953,7 +953,7 @@ describe("buildRequestHeaders", () => {
     });
   });
 
-  test("should include X-Mux-Workspace-Id for non-Anthropic provider when workspaceId provided", () => {
+  test("should include X-NUX-Workspace-Id for non-Anthropic provider when workspaceId provided", () => {
     const result = buildRequestHeaders("openai:gpt-5.2", undefined, "a1b2c3d4e5");
     expect(result).toEqual({ [MUX_WORKSPACE_ID_HEADER]: "a1b2c3d4e5" });
   });
@@ -967,7 +967,7 @@ describe("buildRequestHeaders", () => {
     });
   });
 
-  test("should include both X-Mux-Workspace-Id and anthropic-beta when both apply", () => {
+  test("should include both X-NUX-Workspace-Id and anthropic-beta when both apply", () => {
     const result = buildRequestHeaders(
       "anthropic:claude-sonnet-4-20250514",
       { anthropic: { use1MContext: true } },
@@ -979,7 +979,7 @@ describe("buildRequestHeaders", () => {
     });
   });
 
-  test("should include X-Mux-Workspace-Id but not anthropic-beta for Anthropic without beta 1M intent", () => {
+  test("should include X-NUX-Workspace-Id but not anthropic-beta for Anthropic without beta 1M intent", () => {
     const result = buildRequestHeaders(
       "anthropic:claude-sonnet-4-20250514",
       undefined,

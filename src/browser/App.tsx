@@ -277,14 +277,14 @@ function AppInner() {
       // Update window title with workspace title (or name for legacy workspaces)
       const metadata = workspaceMetadata.get(selectedWorkspace.workspaceId);
       const workspaceTitle = metadata?.title ?? metadata?.name ?? selectedWorkspace.workspaceId;
-      const title = `${workspaceTitle} - ${selectedWorkspace.projectName} - mux`;
+      const title = `${workspaceTitle} - ${selectedWorkspace.projectName} - NUX`;
       // Set document.title locally for browser mode, call backend for Electron
       document.title = title;
       void api?.window.setTitle({ title });
     } else {
       // Set document.title locally for browser mode, call backend for Electron
-      document.title = "mux";
-      void api?.window.setTitle({ title: "mux" });
+      document.title = "NUX";
+      void api?.window.setTitle({ title: "NUX" });
     }
   }, [selectedWorkspace, workspaceMetadata, api]);
 
@@ -1205,7 +1205,7 @@ function AppInner() {
                 );
               })()
             ) : (
-              // The dedicated Mux home page was removed. Keep `/` as a minimal shell so
+              // The dedicated NUX home page was removed. Keep `/` as a minimal shell so
               // WorkspaceContext can redirect it to a concrete project route when possible,
               // without reintroducing a sticky dashboard screen.
               <RootRouteShell

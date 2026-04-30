@@ -11,7 +11,7 @@ const INIT_SUCCESS_MESSAGE: WorkspaceInitMessage = {
   id: "init-success",
   historySequence: 1,
   status: "success",
-  hookPath: "/home/user/projects/my-app/.mux/init.sh",
+  hookPath: "/home/user/projects/my-app/.nux/init.sh",
   lines: [
     { line: "Installing dependencies...", isError: false },
     { line: "Setting up environment variables...", isError: false },
@@ -27,7 +27,7 @@ const INIT_ERROR_MESSAGE: WorkspaceInitMessage = {
   id: "init-error",
   historySequence: 1,
   status: "error",
-  hookPath: "/home/user/projects/my-app/.mux/init.sh",
+  hookPath: "/home/user/projects/my-app/.nux/init.sh",
   lines: [
     { line: "Installing dependencies...", isError: false },
     { line: "Failed to install package 'missing-dep'", isError: true },

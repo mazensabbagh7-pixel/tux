@@ -1,7 +1,7 @@
 /**
  * mux.md Client Library
  *
- * Thin wrapper around @coder/mux-md-client for Mux app integration.
+ * Thin wrapper around @coder/mux-md-client for NUX app integration.
  * Re-exports types and provides convenience functions with default base URL.
  */
 

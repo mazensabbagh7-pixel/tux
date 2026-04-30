@@ -184,8 +184,8 @@ export function PortableDesktopExperimentWarning() {
             >
               {PORTABLE_DESKTOP_INSTALL_URL}
             </a>{" "}
-            to enable this feature. If you installed it into a location that mux can already see,
-            choose Check again. If you changed PATH after mux launched, restart mux to pick it up.
+            to enable this feature. If you installed it into a location that NUX can already see,
+            choose Check again. If you changed PATH after NUX launched, restart NUX to pick it up.
           </div>
           <div className="flex flex-wrap gap-2">
             <Button
@@ -206,7 +206,7 @@ export function PortableDesktopExperimentWarning() {
               }}
               disabled={loading || restarting}
             >
-              {restarting ? "Restarting…" : "Restart Mux"}
+              {restarting ? "Restarting…" : "Restart NUX"}
             </Button>
           </div>
           {error && <div className="text-[11px]">{error}</div>}
@@ -372,7 +372,7 @@ function ConfigurableBindUrlControls() {
   if (!api) {
     return (
       <div className="bg-background-secondary px-4 py-3">
-        <div className="text-muted text-xs">Connect to mux to configure this setting.</div>
+        <div className="text-muted text-xs">Connect to NUX to configure this setting.</div>
       </div>
     );
   }
@@ -391,7 +391,7 @@ function ConfigurableBindUrlControls() {
   return (
     <div className="bg-background-secondary space-y-4 px-4 py-3">
       <div className="text-warning text-xs">
-        Exposes mux’s API server to your LAN/VPN. Devices on your local network can connect if they
+        Exposes NUX’s API server to your LAN/VPN. Devices on your local network can connect if they
         have the auth token. Traffic is unencrypted HTTP; enable only on trusted networks (Tailscale
         recommended).
       </div>
@@ -400,7 +400,7 @@ function ConfigurableBindUrlControls() {
         <div className="flex items-center justify-between gap-4">
           <div>
             <div className="text-foreground text-sm">Bind host</div>
-            <div className="text-muted text-xs">Where mux listens for HTTP + WS connections</div>
+            <div className="text-muted text-xs">Where NUX listens for HTTP + WS connections</div>
           </div>
           <Select value={hostMode} onValueChange={(value) => setHostMode(value as BindHostMode)}>
             <SelectTrigger className="border-border-medium bg-background-secondary hover:bg-hover h-9 w-64 cursor-pointer rounded-md border px-3 text-sm transition-colors">
@@ -433,7 +433,7 @@ function ConfigurableBindUrlControls() {
           <div>
             <div className="text-foreground text-sm">Port</div>
             <div className="text-muted text-xs">
-              Use a fixed port to avoid changing URLs each time mux restarts
+              Use a fixed port to avoid changing URLs each time NUX restarts
             </div>
           </div>
           <Select value={portMode} onValueChange={(value) => setPortMode(value as PortMode)}>
@@ -464,15 +464,15 @@ function ConfigurableBindUrlControls() {
 
         <div className="flex items-center justify-between gap-4">
           <div>
-            <div className="text-foreground text-sm">Serve mux web UI</div>
+            <div className="text-foreground text-sm">Serve NUX web UI</div>
             <div className="text-muted text-xs">
-              Serve the mux web interface at / (browser mode)
+              Serve the NUX web interface at / (browser mode)
             </div>
           </div>
           <Switch
             checked={serveWebUi}
             onCheckedChange={(value) => setServeWebUi(value)}
-            aria-label="Toggle serving mux web UI"
+            aria-label="Toggle serving NUX web UI"
           />
         </div>
 
@@ -581,7 +581,7 @@ function ConfigurableBindUrlControls() {
             </>
           ) : (
             <div className="text-muted text-xs">
-              Web UI serving is disabled (enable “Serve mux web UI” and Apply to access /).
+              Web UI serving is disabled (enable “Serve NUX web UI” and Apply to access /).
             </div>
           )}
 

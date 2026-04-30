@@ -100,7 +100,7 @@ describe("UpdaterService", () => {
       expect(mockAutoUpdater.setFeedURL).toHaveBeenCalledWith({
         provider: "github",
         owner: "coder",
-        repo: "mux",
+        repo: "NUX",
         releaseType: "release",
       });
     });
@@ -114,7 +114,7 @@ describe("UpdaterService", () => {
       expect(mockAutoUpdater.setFeedURL).toHaveBeenCalledWith({
         provider: "github",
         owner: "coder",
-        repo: "mux",
+        repo: "NUX",
         releaseType: "prerelease",
       });
       expect(mockAutoUpdater.allowPrerelease).toBe(true);
@@ -134,7 +134,7 @@ describe("UpdaterService", () => {
       expect(mockAutoUpdater.setFeedURL).toHaveBeenLastCalledWith({
         provider: "github",
         owner: "coder",
-        repo: "mux",
+        repo: "NUX",
         releaseType: "prerelease",
       });
       expect(mockAutoUpdater.channel).toBe("nightly");
@@ -427,7 +427,7 @@ describe("UpdaterService", () => {
 
   describe("transient error backoff", () => {
     const missingNightlyManifestError =
-      'Cannot find latest-mac.yml in the latest release artifacts (https://github.com/coder/mux/releases/download/v0.18.1-nightly.16/latest-mac.yml): HttpError: 404 "method: GET url: https://github.com/coder/mux/releases/download/v0.18.1-nightly.16/latest-mac.yml\n\nPlease double check that your authentication token is correct.\n" Headers: { ... }\n    at createHttpError (/path/httpExecutor.ts:31:10)';
+      'Cannot find latest-mac.yml in the latest release artifacts (https://github.com/mazensabbagh7-pixel/tux/releases/download/v0.18.1-nightly.16/latest-mac.yml): HttpError: 404 "method: GET url: https://github.com/mazensabbagh7-pixel/tux/releases/download/v0.18.1-nightly.16/latest-mac.yml\n\nPlease double check that your authentication token is correct.\n" Headers: { ... }\n    at createHttpError (/path/httpExecutor.ts:31:10)';
     const nightlyManifestPendingMessage =
       "Update metadata isn't available yet. The latest release may still be publishing; please try again in a few minutes.";
 

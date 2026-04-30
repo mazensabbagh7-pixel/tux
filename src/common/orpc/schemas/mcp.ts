@@ -3,7 +3,7 @@ import { z } from "zod";
 /**
  * Per-workspace MCP overrides.
  *
- * Stored per-workspace in <workspace>/.mux/mcp.local.jsonc (workspace-local, intended to be gitignored).
+ * Stored per-workspace in <workspace>/.nux/mcp.local.jsonc (workspace-local, intended to be gitignored).
  * Allows workspaces to disable servers or restrict tool allowlists
  * without modifying the project-level .mux/mcp.jsonc.
  */

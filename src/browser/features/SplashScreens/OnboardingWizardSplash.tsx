@@ -32,10 +32,7 @@ import { useAPI } from "@/browser/contexts/API";
 import { updatePersistedState } from "@/browser/hooks/usePersistedState";
 import { useProvidersConfig } from "@/browser/hooks/useProvidersConfig";
 import { useRouting } from "@/browser/hooks/useRouting";
-import {
-  formatMuxGatewayBalance,
-  useMuxGatewayAccountStatus,
-} from "@/browser/hooks/useMuxGatewayAccountStatus";
+import { useMuxGatewayAccountStatus } from "@/browser/hooks/useMuxGatewayAccountStatus";
 import { KEYBINDS, formatKeybind } from "@/browser/utils/ui/keybinds";
 import { getAgentsInitNudgeKey } from "@/common/constants/storage";
 import { PROVIDER_DEFINITIONS, type ProviderName } from "@/common/constants/providers";
@@ -287,7 +284,7 @@ export function OnboardingWizardSplash(props: { onDismiss: () => void }) {
       if (isDesktop) {
         if (!api) {
           setMuxGatewayLoginStatus("error");
-          setMuxGatewayLoginError("Mux API not connected.");
+          setMuxGatewayLoginError("NUX API not connected.");
           return;
         }
 
@@ -502,8 +499,8 @@ export function OnboardingWizardSplash(props: { onDismiss: () => void }) {
       : muxGatewayLoginInProgress
         ? "Waiting for login..."
         : muxGatewayIsLoggedIn
-          ? "Re-login to Mux Gateway"
-          : "Login with Mux Gateway";
+          ? "Re-login to NUX Gateway"
+          : "Login with NUX Gateway";
 
   const onboardingProviders = useMemo(() => {
     const gatewayPriority: ProviderName[] = ["mux-gateway", "openrouter"];
@@ -588,163 +585,7 @@ export function OnboardingWizardSplash(props: { onDismiss: () => void }) {
 
     const nextSteps: WizardStep[] = [];
 
-    if (hasConfiguredProvidersAtStart === false) {
-      nextSteps.push({
-        key: "mux-gateway",
-        title: "Mux Gateway (evaluation credits)",
-        icon: <Sparkles className="h-4 w-4" />,
-        body: (
-          <>
-            <p>
-              Mux Gateway enables you to use free AI tokens from{" "}
-              <a
-                href="https://coder.com"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-accent hover:underline"
-              >
-                Coder
-              </a>
-              .
-            </p>
-
-            <p>
-              OSS contributors with GitHub accounts older than 12 months (or GitHub Pro members) can
-              use this to get free evaluation credits.
-            </p>
-
-            {muxGatewayIsLoggedIn ? (
-              <div className="mt-3 space-y-2">
-                <div className="border-border-medium bg-background-secondary rounded-md border p-2 text-xs">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="text-foreground font-medium">Mux Gateway account</div>
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => {
-                        void refreshMuxGatewayAccountStatus();
-                      }}
-                      disabled={muxGatewayAccountLoading}
-                    >
-                      {muxGatewayAccountLoading ? "Refreshing..." : "Refresh"}
-                    </Button>
-                  </div>
-
-                  <div className="mt-2 space-y-1">
-                    <div className="flex items-center justify-between gap-4">
-                      <span className="text-muted">Balance</span>
-                      <span className="text-foreground font-mono">
-                        {formatMuxGatewayBalance(muxGatewayAccountStatus?.remaining_microdollars)}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center justify-between gap-4">
-                      <span className="text-muted">Concurrent requests per user</span>
-                      <span className="text-foreground font-mono">
-                        {muxGatewayAccountStatus?.ai_gateway_concurrent_requests_per_user ?? "—"}
-                      </span>
-                    </div>
-                  </div>
-
-                  {muxGatewayAccountError && (
-                    <div className="text-destructive mt-2">{muxGatewayAccountError}</div>
-                  )}
-                </div>
-
-                {muxGatewayAccountStatus?.remaining_microdollars === 0 && (
-                  <div className="border-destructive/20 bg-destructive/5 mt-2 rounded-md border p-2 text-xs">
-                    <p className="text-destructive font-medium">
-                      Your Mux Gateway credits are depleted.
-                    </p>
-                    <p className="text-muted mt-1">
-                      Gateway routing has been disabled. Configure another provider below, or visit{" "}
-                      <a
-                        href="https://gateway.mux.coder.com"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-accent hover:underline"
-                      >
-                        gateway.mux.coder.com
-                      </a>{" "}
-                      to add credits.
-                    </p>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <Button
-                    onClick={() => {
-                      void startMuxGatewayLogin();
-                    }}
-                    disabled={muxGatewayLoginInProgress}
-                  >
-                    {muxGatewayLoginButtonLabel}
-                  </Button>
-
-                  {muxGatewayLoginInProgress && (
-                    <Button variant="secondary" onClick={cancelMuxGatewayLogin}>
-                      Cancel
-                    </Button>
-                  )}
-                </div>
-
-                {muxGatewayLoginStatus === "waiting" && (
-                  <p className="mt-3">Finish the login flow in your browser, then return here.</p>
-                )}
-
-                {muxGatewayLoginStatus === "error" && muxGatewayLoginError && (
-                  <p className="mt-3">
-                    <strong className="text-destructive">Login failed:</strong>{" "}
-                    {muxGatewayLoginError}
-                  </p>
-                )}
-              </>
-            )}
-
-            <p className="mt-3">You can also receive those credits through:</p>
-
-            <ul className="ml-4 list-disc space-y-1">
-              <li>
-                early adopters can request credits tied to their GH logins on our{" "}
-                <a
-                  href="https://discord.gg/VfZXvtnR"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-accent hover:underline"
-                >
-                  Discord
-                </a>
-              </li>
-              <li>
-                vouchers which you can{" "}
-                <a
-                  href="https://gateway.mux.coder.com"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-accent hover:underline"
-                >
-                  claim here
-                </a>
-              </li>
-            </ul>
-
-            <p className="mt-3">
-              You can enable this in{" "}
-              <button
-                type="button"
-                className="text-accent hover:underline"
-                onClick={() => openProvidersSettings()}
-              >
-                Settings → Providers
-              </button>
-              .
-            </p>
-          </>
-        ),
-      });
-    }
+    // Nux does not block first launch with the upstream NUX Gateway sales/login step.
 
     nextSteps.push({
       key: "providers",
@@ -753,7 +594,7 @@ export function OnboardingWizardSplash(props: { onDismiss: () => void }) {
       body: (
         <>
           <p>
-            Mux is provider-agnostic: bring your own keys, mix and match models, or run locally.
+            Nux is provider-agnostic: bring your own keys, mix and match models, or run locally.
           </p>
 
           {configuredProviders.length > 0 && configuredProvidersSummary ? (
@@ -822,7 +663,7 @@ export function OnboardingWizardSplash(props: { onDismiss: () => void }) {
       body: (
         <>
           <p>
-            Projects are the folders or repos you want Mux to work in. Add a local folder or clone
+            Projects are the folders or repos you want Nux to work in. Add a local folder or clone
             from GitHub, then click Next.
           </p>
 
@@ -869,8 +710,8 @@ export function OnboardingWizardSplash(props: { onDismiss: () => void }) {
         <>
           <p>
             Agents are file-based definitions (system prompt + tool policy). You can create
-            project-local agents in <code className="text-accent">.mux/agents/*.md</code> or global
-            agents in <code className="text-accent">~/.mux/agents/*.md</code>.
+            project-local agents in <code className="text-accent">.nux/agents/*.md</code> or global
+            agents in <code className="text-accent">~/.nux/agents/*.md</code>.
           </p>
 
           <div className="mt-3 grid gap-2">
@@ -914,7 +755,7 @@ export function OnboardingWizardSplash(props: { onDismiss: () => void }) {
               Work directly in your project directory.
             </Card>
             <Card icon={<WorktreeIcon size={14} />} title="Worktree">
-              Isolated git worktree under <code className="text-accent">~/.mux/src</code>.
+              Isolated git worktree under <code className="text-accent">~/.nux/src</code>.
             </Card>
             <Card icon={<SSHIcon size={14} />} title="SSH">
               Remote clone and commands run on an SSH host.
@@ -939,19 +780,19 @@ export function OnboardingWizardSplash(props: { onDismiss: () => void }) {
       body: (
         <>
           <p>
-            MCP servers extend Mux with tools (memory, ticketing, databases, internal APIs).
+            MCP servers extend Nux with tools (memory, ticketing, databases, internal APIs).
             Configure them globally, with optional repo overrides and per-workspace overrides.
           </p>
 
           <div className="mt-3 grid gap-2">
             <Card icon={<Server className="h-4 w-4" />} title="Global config">
-              <code className="text-accent">~/.mux/mcp.jsonc</code>
+              <code className="text-accent">~/.nux/mcp.jsonc</code>
             </Card>
             <Card icon={<Server className="h-4 w-4" />} title="Repo overrides">
-              <code className="text-accent">./.mux/mcp.jsonc</code>
+              <code className="text-accent">./.nux/mcp.jsonc</code>
             </Card>
             <Card icon={<Server className="h-4 w-4" />} title="Workspace overrides">
-              <code className="text-accent">.mux/mcp.local.jsonc</code>
+              <code className="text-accent">.nux/mcp.local.jsonc</code>
             </Card>
           </div>
 

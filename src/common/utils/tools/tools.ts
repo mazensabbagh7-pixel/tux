@@ -119,7 +119,7 @@ export interface ToolConfiguration {
   workspaceSessionDir?: string;
   /** Workspace ID for tracking background processes and plan storage */
   workspaceId?: string;
-  /** Pre-resolved mux-managed resource scope (global ~/.mux vs project root). */
+  /** Pre-resolved NUX-managed resource scope (global ~/.mux vs project root). */
   muxScope?: MuxToolScope;
   /** Callback to record file state for external edit detection (plan files) */
   recordFileState?: (filePath: string, state: FileState) => Promise<void>;
@@ -277,9 +277,9 @@ function wrapToolsWithModelOnlyNotifications(
  * Wrap tools with hook support.
  *
  * If any of these exist, each tool execution is wrapped:
- * - `.mux/tool_pre` (pre-hook)
- * - `.mux/tool_post` (post-hook)
- * - `.mux/tool_hook` (legacy pre+post)
+ * - `.nux/tool_pre` (pre-hook)
+ * - `.nux/tool_post` (post-hook)
+ * - `.nux/tool_hook` (legacy pre+post)
  */
 function wrapToolsWithHooks(
   tools: Record<string, Tool>,
@@ -475,7 +475,7 @@ export async function getToolsForModel(
         // - mux.md share links rely on client-side decryption via URL fragment (#key);
         //   Anthropic drops the fragment when making HTTP requests, so decryption silently fails.
         // - Not bridgeable in the PTC sandbox (no execute()); see BridgeableToolName comment.
-        // - Tool hooks (.mux/tool_pre/.mux/tool_post) are skipped because withHooks() returns
+        // - Tool hooks (.nux/tool_pre/.nux/tool_post) are skipped because withHooks() returns
         //   early when execute() is absent — same limitation as web_search (provider-native).
         if (supportsAnthropicNativeWebFetch(modelId)) {
           allTools = {
@@ -542,7 +542,7 @@ export async function getToolsForModel(
       enableAgentReport: config.enableAgentReport,
       enableAnalyticsQuery: Boolean(config.analyticsService),
       enableAdvisor: Boolean(config.advisorRuntime),
-      // Mux global tools are always created; tool policy (agent frontmatter)
+      // NUX global tools are always created; tool policy (agent frontmatter)
       // controls which agents can actually use them.
       enableMuxGlobalAgentsTools: true,
     })

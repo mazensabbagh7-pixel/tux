@@ -724,7 +724,7 @@ export function parseRuntimeString(
       return {
         type: RUNTIME_MODE.SSH,
         host: parsed.host,
-        srcBaseDir: "~/mux", // Default remote base directory (tilde resolved by backend)
+        srcBaseDir: "~/nux", // Default remote base directory (tilde resolved by backend)
       };
 
     case RUNTIME_MODE.DEVCONTAINER: {

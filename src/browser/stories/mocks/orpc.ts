@@ -124,7 +124,7 @@ export interface MockORPCClientOptions {
   subagentAiDefaults?: SubagentAiDefaults;
   /** Coder lifecycle preferences for config.getConfig (e.g., Settings → Coder section) */
   coderWorkspaceArchiveBehavior?: CoderWorkspaceArchiveBehavior;
-  /** What to do with mux-managed worktrees when archiving a chat. */
+  /** What to do with NUX-managed worktrees when archiving a chat. */
   worktreeArchiveBehavior?: WorktreeArchiveBehavior;
   /** Initial runtime enablement for config.getConfig */
   runtimeEnablement?: Record<string, boolean>;
@@ -252,9 +252,9 @@ export interface MockORPCClientOptions {
   agentSkills?: AgentSkillDescriptor[];
   /** Agent skills that were discovered but couldn't be loaded (SKILL.md parse errors, etc.) */
   invalidAgentSkills?: AgentSkillIssue[];
-  /** Mux Governor URL (null = not enrolled) */
+  /** NUX Governor URL (null = not enrolled) */
   muxGovernorUrl?: string | null;
-  /** Whether enrolled with Mux Governor */
+  /** Whether enrolled with NUX Governor */
   muxGovernorEnrolled?: boolean;
   /** Policy response for policy.get */
   policyResponse?: {
@@ -1232,7 +1232,7 @@ export function createMockORPCClient(options: MockORPCClientOptions = {}): APICl
           data: { projectConfig: { workspaces: [] }, normalizedPath: "/mock/project" },
         }),
       pickDirectory: () => Promise.resolve(null),
-      getDefaultProjectDir: () => Promise.resolve("~/.mux/projects"),
+      getDefaultProjectDir: () => Promise.resolve("~/.nux/projects"),
       setDefaultProjectDir: () => Promise.resolve(),
       clone: () =>
         Promise.resolve(

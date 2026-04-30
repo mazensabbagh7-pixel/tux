@@ -18,7 +18,7 @@ function createWorkspaceMetadata(
   return {
     id: workspaceId,
     name: workspaceId,
-    projectName: "mux",
+    projectName: "NUX",
     projectPath: "/tmp/mux",
     namedWorkspacePath: `/tmp/mux/${workspaceId}`,
     runtimeConfig,

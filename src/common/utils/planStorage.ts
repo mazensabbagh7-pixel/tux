@@ -20,7 +20,7 @@ const DEFAULT_MUX_HOME = "~/.mux";
  *
  * @param workspaceName - Human-readable workspace name with suffix (e.g., "fix-plan-a1b2")
  * @param projectName - Project name extracted from project path (e.g., "mux")
- * @param muxHome - Mux home directory (default: ~/.mux, Docker uses /var/mux)
+ * @param muxHome - NUX home directory (default: ~/.mux, Docker uses /var/mux)
  */
 export function getPlanFilePath(
   workspaceName: string,

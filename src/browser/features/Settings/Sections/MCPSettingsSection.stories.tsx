@@ -267,7 +267,7 @@ export const ProjectSettingsWithServers: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
 
-    await canvas.findByText("mux");
+    await canvas.findByText("NUX");
     await canvas.findByText("posthog");
     await canvas.findByText("filesystem");
   },
@@ -333,7 +333,7 @@ export const ProjectSettingsWithToolAllowlist: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
 
-    await canvas.findByText("mux");
+    await canvas.findByText("NUX");
     await canvas.findByText(/3\/8/);
   },
 };

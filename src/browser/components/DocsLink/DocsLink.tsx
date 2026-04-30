@@ -13,7 +13,7 @@ interface DocsLinkProps {
 }
 
 /**
- * A styled link to mux documentation.
+ * A styled link to NUX documentation.
  * Renders as a small badge with an external link icon.
  */
 export function DocsLink({ path, children = "docs", className }: DocsLinkProps) {

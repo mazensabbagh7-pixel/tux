@@ -1,11 +1,11 @@
 {
-  "name": "tux",
+  "name": "nux",
   "version": "0.23.2",
-  "description": "Tux - fork of the Coder multiplexer",
+  "description": "Nux - Mazen's split-screen fork of the Coder multiplexer",
   "author": "Coder",
   "main": "dist/cli/index.js",
   "bin": {
-    "tux": "dist/cli/index.js"
+    "nux": "dist/cli/index.js"
   },
   "license": "AGPL-3.0-only",
   "repository": {
@@ -256,13 +256,13 @@
     "LICENSE"
   ],
   "build": {
-    "appId": "com.tux.app",
-    "productName": "Tux",
+    "appId": "com.nux.app",
+    "productName": "Nux",
     "protocols": [
       {
-        "name": "Tux",
+        "name": "Nux",
         "schemes": [
-          "tux"
+          "nux"
         ]
       }
     ],

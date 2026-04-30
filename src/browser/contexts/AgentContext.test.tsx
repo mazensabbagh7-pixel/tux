@@ -435,7 +435,7 @@ describe("AgentContext", () => {
     const projectPath = "/tmp/project";
     const scopeKey = getAgentIdKey(getProjectScopeId(projectPath));
     mockAgentDefinitions = [LOCKED_AGENT, EXEC_AGENT, PLAN_AGENT];
-    window.localStorage.setItem(scopeKey, JSON.stringify("mux"));
+    window.localStorage.setItem(scopeKey, JSON.stringify("NUX"));
 
     let contextValue: AgentContextValue | undefined;
     let openPickerEvents = 0;

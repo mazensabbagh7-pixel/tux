@@ -201,7 +201,7 @@ export function preserveAnthropic1MContextForFollowUp(
  * 1. Enable reasoning traces (transparency into model's thought process)
  * 2. Set reasoning level (control depth of reasoning based on task complexity)
  * 3. Enable parallel tool calls (allow concurrent tool execution)
- * 4. Keep provider-specific request knobs consistent with Mux's explicit history model
+ * 4. Keep provider-specific request knobs consistent with NUX's explicit history model
  *
  * @param modelString - Full model string (e.g., "anthropic:claude-opus-4-1")
  * @param thinkingLevel - Unified thinking level (must be pre-clamped via enforceThinkingPolicy)
@@ -266,7 +266,7 @@ export function buildProviderOptions(
 
   // Build Anthropic-specific options
   if (formatProvider === "anthropic") {
-    // Anthropic prompt caching is already applied on Mux's manual cache markers
+    // Anthropic prompt caching is already applied on NUX's manual cache markers
     // (cached system message, conversation tail, last tool) deeper in the
     // request pipeline. Do not also send top-level cacheControl here: the SDK
     // serializes it to a top-level cache_control block, which adds an extra
@@ -284,7 +284,7 @@ export function buildProviderOptions(
     if (isOpus45 || usesAdaptiveThinking) {
       // Map to SDK-accepted effort. For Opus 4.7 + xhigh ThinkingLevel, the SDK
       // gets "max" as a placeholder and the Anthropic fetch wrapper rewrites
-      // `output_config.effort` to "xhigh" via the X-Mux-Anthropic-Effort header
+      // `output_config.effort` to "xhigh" via the X-NUX-Anthropic-Effort header
       // (added in buildRequestHeaders).
       const effortLevel = getAnthropicEffort(effectiveThinking);
       const budgetTokens = ANTHROPIC_THINKING_BUDGETS[effectiveThinking];
@@ -346,7 +346,7 @@ export function buildProviderOptions(
   if (formatProvider === "openai") {
     const reasoningEffort = OPENAI_REASONING_EFFORT[effectiveThinking];
 
-    // Mux always sends the latest conversation history explicitly. OpenAI's
+    // NUX always sends the latest conversation history explicitly. OpenAI's
     // previous_response_id is an alternative state-management path, not an additive one.
     // Chaining it on top of explicit history double-counts prior turns and caused GPT-5.4
     // requests to hit context_exceeded far below the documented native window.
@@ -534,7 +534,7 @@ export function buildProviderOptions(
 export const ANTHROPIC_1M_CONTEXT_HEADER = "context-1m-2025-08-07";
 
 /** HTTP header sent on AI requests for workspace-level observability. */
-export const MUX_WORKSPACE_ID_HEADER = "X-Mux-Workspace-Id";
+export const MUX_WORKSPACE_ID_HEADER = "X-NUX-Workspace-Id";
 
 const HTTP_HEADER_VALUE_SAFE_PATTERN = /^[\t\x20-\x7E\x80-\xFF]+$/;
 
@@ -592,7 +592,7 @@ export function buildRequestHeaders(
   }
 
   // Opus 4.7 introduced a native "xhigh" effort level that the @ai-sdk/anthropic
-  // Zod schema doesn't accept yet. Emit a Mux-internal header so the Anthropic
+  // Zod schema doesn't accept yet. Emit a NUX-internal header so the Anthropic
   // fetch wrapper can rewrite `output_config.effort` to "xhigh" on the wire.
   //
   // Only emit when the route will pass through our Anthropic fetch wrapper

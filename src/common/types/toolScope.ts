@@ -1,10 +1,10 @@
 /**
- * Pre-resolved scope for mux-managed resource tools (skills, AGENTS.md, config).
+ * Pre-resolved scope for NUX-managed resource tools (skills, AGENTS.md, config).
  *
  * Global: tools operate under ~/.mux/.
  * Project: tools operate under the project root (any project workspace).
  *
- * `projectRoot` is a **host-local** filesystem root used by mux tools that call
+ * `projectRoot` is a **host-local** filesystem root used by NUX tools that call
  * Node `fs/promises`. For remote/container runtime-backed workspaces (ssh, docker),
  * this intentionally differs from the runtime execution cwd (workspacePath).
  */
