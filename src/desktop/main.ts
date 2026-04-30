@@ -69,6 +69,13 @@ crashReporter.start({ uploadToServer: false });
 // Must be called before app.whenReady().
 app.commandLine.appendSwitch("js-flags", "--max-old-space-size=8192");
 
+// Zorin/Wayland/AppImage sessions can fail Electron GPU process startup before the UI shows.
+// Disable GPU in-app on Linux so Nux launches reliably from the desktop launcher without
+// requiring users to know the --disable-gpu flag.
+if (process.platform === "linux") {
+  app.commandLine.appendSwitch("disable-gpu");
+}
+
 import type { Config } from "../node/config";
 import type { ServiceContainer } from "../node/services/serviceContainer";
 import { VERSION } from "../version";
